@@ -1,0 +1,1003 @@
+"""planners CLI — the documented entry point for the plan-file lifecycle.
+
+Commands: ``skill``, ``rule``, ``install``, ``add``, ``index``, ``schema``,
+``validate``. Filesystem and subprocess (git) work is confined to this module,
+``install``, and the ``add`` helpers; the schema/index/skill/rule transforms stay
+pure.
+"""
+
+import secrets
+import shutil
+import subprocess
+import sys
+from importlib import metadata
+from pathlib import Path
+
+import typer
+
+from planners import install as install_mod
+from planners.index import render_index, render_plans_table
+from planners.metadata import (
+    PLAN_FILENAME,
+    PlanError,
+    PlanMetadata,
+    Status,
+    is_plan_dirname,
+    next_number,
+    next_sub,
+)
+from planners.rule import RULE_NAMES, get_rule, list_rules
+from planners.skill import SKILL_NAMES, get_skill, list_skills
+from planners.utils import is_safe_slug, parse_frontmatter, split_frontmatter
+
+app = typer.Typer(
+    help="Own a repo's plan-file lifecycle: schema, CLI, and skillstub.",
+    no_args_is_help=True,
+)
+
+PLANS_DIR = Path(".planners/plans")
+# Deferred-numbering staging area for collision-safe batch creation: `add --defer`
+# writes unnumbered plans here (no shared state), and `finalize` is the single
+# serialized writer that numbers, materializes, and commits them.
+STAGING_DIR = Path(".planners/staging")
+INDEX_PATH = Path(".planners/README.md")
+INDEX_TITLE = "Plans"
+
+
+def _version() -> str:
+    try:
+        return metadata.version("planners")
+    except metadata.PackageNotFoundError:
+        return "0+unknown"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"planners {_version()}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-v",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed planners version and exit.",
+    ),
+) -> None:
+    """Own a repo's plan-file lifecycle: schema, CLI, and skillstub."""
+
+
+def _err(message: str) -> None:
+    typer.echo(message, err=True)
+
+
+def _warn(message: str) -> None:
+    """A non-fatal note to stderr — unlike :func:`_err`, no exit follows it."""
+    typer.echo(message, err=True)
+
+
+def _shown(path: Path, root: Path) -> Path:
+    """``path`` relative to ``root`` when possible; a global artifact is under $HOME."""
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        return path
+
+
+def _confirm_force_overwrite(
+    path: Path, mode: install_mod.Mode, noun: str = "holder"
+) -> None:
+    """Show what a ``--force`` overwrite will destroy and require an Enter.
+
+    Generalized over the artifact ``noun`` (``"holder"`` or ``"rule"``). Only
+    reached when the existing file is *drifted* (differs from the canonical
+    render), so there is genuinely something to lose. Whether the file is
+    planners-generated (regenerated harmlessly) or hand-edited/foreign (custom
+    content lost) is the key signal, so it is surfaced. When stdin is not a TTY
+    (CI, a piped installer) the prompt is skipped — passing ``--force`` is itself
+    the authorization there — but the same context is still printed.
+    """
+    ours = install_mod.is_generated_artifact(path)
+    _err(f"--force will overwrite a drifted {noun}:")
+    _err(f"  path: {path}")
+    _err(f"  mode: {mode}")
+    if ours:
+        _err(f"  this is a planners-generated {noun} — it will be regenerated")
+    else:
+        _err(
+            "  this is NOT a planners-generated file (hand-edited or foreign) — "
+            "its contents will be lost"
+        )
+    if not sys.stdin.isatty():
+        _err("  stdin is not a TTY; proceeding because --force was given")
+        return
+    typer.prompt(
+        "  press Enter to overwrite (Ctrl-C to cancel)",
+        default="",
+        show_default=False,
+    )
+
+
+def _guard_artifact_overwrite(
+    root: Path,
+    version: str,
+    mode: install_mod.Mode,
+    art: install_mod.GeneratedArtifact,
+    noun: str,
+    *,
+    force: bool,
+) -> None:
+    """Block (or, with ``--force``, confirm) overwriting a drifted artifact.
+
+    Guards the file install is about to write for ``mode`` — don't clobber a
+    hand-edited (or unrelated) holder/rule without ``--force``. Names the path and
+    says "overwrite", since the blocking file may not be a planners artifact at
+    all. A non-drifted (matching or absent) artifact needs no guard.
+    """
+    if install_mod.check_artifact(root, version, mode, art) != "drifted":
+        return
+    path = install_mod.artifact_path(root, mode, art)
+    if not force:
+        _err(
+            f"a planners {noun} already exists at {path} and differs from what "
+            "planners would generate; re-run with --force to overwrite it, then "
+            "start a fresh context."
+        )
+        raise typer.Exit(1)
+    _confirm_force_overwrite(path, mode, noun)
+
+
+def _plan_files(plans_dir: Path) -> list[Path]:
+    """The ``plan.md`` of each plan dir (``NNN-slug/plan.md``), sorted by dir name.
+
+    Each plan is a directory; iterating the plan-shaped subdirectories that
+    contain a ``plan.md`` keeps stray files (the generated ``README.md`` index,
+    notes) and non-plan directories out of indexing and validation.
+    """
+    if not plans_dir.is_dir():
+        return []
+    plans: list[Path] = []
+    for child in sorted(plans_dir.iterdir()):
+        if child.is_dir() and is_plan_dirname(child.name):
+            plan = child / PLAN_FILENAME
+            if plan.is_file():
+                plans.append(plan)
+    return plans
+
+
+def _resolve_dir_plans(directory: Path) -> list[Path]:
+    """The plan files a *directory* argument contributes, by resolution priority.
+
+    1. a plan directory named directly (it holds a ``plan.md``) -> that one file;
+    2. a repo root (it holds a ``.planners/plans`` tree) -> every plan under it;
+    3. otherwise a container of plan dirs -> its plan-shaped subdirs, swept.
+
+    The repo-root case (2) is what makes ``validate .`` from a checkout discover
+    the plans instead of sweeping the root for top-level ``NNN-slug`` dirs (of
+    which there are none) and silently matching zero files — the vacuous-pass bug.
+    """
+    own = directory / PLAN_FILENAME
+    if own.is_file():
+        return [own]
+    nested = directory / PLANS_DIR
+    if nested.is_dir():
+        return _plan_files(nested)
+    return _plan_files(directory)
+
+
+def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
+    """Parse every ``NNN-slug/plan.md``. In non-strict mode, skip unparseable files."""
+    metas: list[PlanMetadata] = []
+    for path in _plan_files(plans_dir):
+        try:
+            metas.append(PlanMetadata.from_file(path))
+        except PlanError as exc:
+            if strict:
+                raise
+            _err(f"warning: skipping {path}: {exc}")
+    return metas
+
+
+def _git(args: list[str]) -> None:
+    """Run a git command with arguments passed as a list (never shell=True).
+
+    Converts the usual failure modes — git missing, or a non-zero exit (e.g. not
+    a git worktree, or no commit identity configured) — into a clear CLI error
+    instead of a traceback.
+    """
+    try:
+        subprocess.run(["git", *args], check=True)
+    except FileNotFoundError:
+        _err("git not found on PATH; install git or re-run with --no-commit.")
+        raise typer.Exit(1) from None
+    except subprocess.CalledProcessError as exc:
+        joined = " ".join(args)
+        _err(
+            f"`git {joined}` failed (exit {exc.returncode}); "
+            "the plan file was written — commit it manually or use --no-commit."
+        )
+        raise typer.Exit(1) from None
+
+
+def _refresh_index(repo_root: Path, cols: str) -> Path:
+    """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter."""
+    plans_dir = repo_root / PLANS_DIR
+    index = repo_root / INDEX_PATH
+    metas = _collect_metas(plans_dir, strict=False)
+    table = render_plans_table(metas, cols=cols)
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(render_index(INDEX_TITLE, table), encoding="utf-8")
+    return index
+
+
+def _now() -> str:
+    """Current local time as an ISO-8601 string (keeps the clock out of import)."""
+    from datetime import datetime
+
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _render_staged_plan(slug: str, title: str, branch: str) -> str:
+    """A deferred plan's text: conformant frontmatter with the ``id`` left blank.
+
+    Identical to a normal plan except ``id:`` is empty — the number is assigned by
+    :func:`finalize`, the single serialized writer, so concurrent ``add --defer``
+    creators share no state and cannot race on numbering. The body (the title
+    heading, and any ``## Plan`` the creator appends before finalize) is preserved
+    verbatim when the plan is materialized.
+    """
+    branch_line = f"branch: {branch}" if branch else "branch:"
+    return (
+        "---\n"
+        "id:\n"
+        f"slug: {slug}\n"
+        "status: draft\n"
+        f"{branch_line}\n"
+        f"created: {_now()}\n"
+        "concluded:\n"
+        "pr:\n"
+        "---\n"
+        "\n"
+        f"# {title}\n"
+    )
+
+
+def _created_key(value: str | None) -> tuple[int, float]:
+    """Sort key for a staged plan's ``created``: present-and-parseable first.
+
+    Returns ``(0, instant)`` for a parseable timestamp (older instant sorts first,
+    so it takes the lower number) and ``(1, 0.0)`` for a missing or malformed one,
+    which sorts last. Comparing the parsed instant — not the raw string — keeps
+    ordering correct across plans written under different UTC offsets.
+    """
+    if not value:
+        return (1, 0.0)
+    from datetime import datetime
+
+    try:
+        return (0, datetime.fromisoformat(value).timestamp())
+    except ValueError:
+        return (1, 0.0)
+
+
+def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], str]]:
+    """Read staged (deferred) plans, ordered by ``created`` then directory name.
+
+    Each staged plan directory contributes ``(dir, frontmatter, body)``. Ordering
+    by ``created`` (tie-broken by directory name for determinism) reproduces the
+    numbering a sequence of foreground ``add`` calls would have produced,
+    independent of the filesystem's iteration order.
+    """
+    if not staging.is_dir():
+        return []
+    staged: list[tuple[Path, dict[str, str | None], str]] = []
+    for child in sorted(staging.iterdir()):
+        if not child.is_dir():
+            continue
+        plan = child / PLAN_FILENAME
+        if not plan.is_file():
+            continue
+        fm, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        data = parse_frontmatter(fm) if fm is not None else {}
+        staged.append((child, data, body))
+    staged.sort(key=lambda item: (_created_key(item[1].get("created")), item[0].name))
+    return staged
+
+
+def _git_status_porcelain(root: Path) -> str | None:
+    """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _finalize_self_check(
+    root: Path,
+    finalized: list[tuple[int, str, Path]],
+    start_id: int,
+    *,
+    committed: bool,
+) -> None:
+    """Verify a finalize run landed cleanly; report and exit non-zero if not.
+
+    The sole serialized writer self-checks the invariants the batch flow promises,
+    so a batch never silently leaves a half-finished or mis-numbered state: every
+    new plan validates, the numbers are sequential from ``start_id`` with no gaps
+    or reuse, the staging area is drained, the index matches a fresh render, and —
+    in commit mode — the git tree is clean.
+    """
+    problems: list[str] = []
+
+    expected = list(range(start_id, start_id + len(finalized)))
+    actual = [plan_id for plan_id, _, _ in finalized]
+    if actual != expected:
+        problems.append(f"numbers not sequential: expected {expected}, got {actual}")
+
+    for _, _, plan_dir in finalized:
+        plan = plan_dir / PLAN_FILENAME
+        if not plan.is_file():
+            problems.append(f"missing materialized plan: {plan_dir}")
+            continue
+        try:
+            errs = PlanMetadata.from_file(plan).validate()
+        except PlanError as exc:
+            problems.append(f"{plan}: {exc}")
+            continue
+        problems.extend(f"{plan}: {err}" for err in errs)
+
+    staging = root / STAGING_DIR
+    leftover: list[str] = (
+        [p.name for p in staging.iterdir()] if staging.is_dir() else []
+    )
+    if leftover:
+        problems.append(f"staging not drained: {sorted(leftover)}")
+
+    index = root / INDEX_PATH
+    metas = _collect_metas(root / PLANS_DIR, strict=False)
+    fresh = render_index(INDEX_TITLE, render_plans_table(metas, cols="curated"))
+    if not index.is_file() or index.read_text(encoding="utf-8") != fresh:
+        problems.append("index is stale (does not match a fresh render)")
+
+    if committed:
+        dirty = _git_status_porcelain(root)
+        if dirty is None:
+            problems.append("could not check git status")
+        elif dirty:
+            # Scope "clean" to the plan files finalize manages: a stray untracked
+            # file elsewhere in the repo is not this command's concern, only an
+            # uncommitted staging leftover or plan/index change would be.
+            plan_dirty = [line for line in dirty.splitlines() if ".planners" in line]
+            if plan_dirty:
+                joined = "\n".join(plan_dirty)
+                problems.append(f"uncommitted plan changes after commit:\n{joined}")
+
+    if problems:
+        _err("self-check FAILED:")
+        for problem in problems:
+            _err(f"  - {problem}")
+        raise typer.Exit(1)
+    typer.echo("self-check OK")
+
+
+@app.command()
+def skill(
+    name: str | None = typer.Argument(
+        None, help="Skill name; omit with --list to enumerate."
+    ),
+    list_skills_flag: bool = typer.Option(
+        False, "--list", help="List bundled skill names."
+    ),
+) -> None:
+    """Print a bundled skill's body (frontmatter stripped)."""
+    if list_skills_flag or name is None:
+        for sub in list_skills():
+            typer.echo(sub)
+        return
+    # Render the body for the installed holder's authoritative (stamped) mode so
+    # its commands are runnable as-is and agree with `install --check`; falls back
+    # to global when no holder is found.
+    mode = install_mod.resolve_mode(Path.cwd())
+    try:
+        typer.echo(get_skill(name, mode), nl=False)
+    except KeyError:
+        _err(f"unknown skill: {name!r}; choose from {', '.join(SKILL_NAMES)}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def rule(
+    name: str | None = typer.Argument(
+        None, help="Rule name; omit with --list to enumerate."
+    ),
+    list_rules_flag: bool = typer.Option(
+        False, "--list", help="List bundled rule names."
+    ),
+) -> None:
+    """Print a bundled convention rule's body (frontmatter stripped)."""
+    if list_rules_flag or name is None:
+        for r in list_rules():
+            typer.echo(r)
+        return
+    # Render the body for the installed holder's authoritative (stamped) mode so
+    # its commands are runnable as-is and agree with `install --check`; falls back
+    # to global when no holder is found — the same resolution `skill` uses.
+    mode = install_mod.resolve_mode(Path.cwd())
+    try:
+        typer.echo(get_rule(name, mode), nl=False)
+    except KeyError:
+        _err(f"unknown rule: {name!r}; choose from {', '.join(RULE_NAMES)}")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def install(
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite a drifted holder without prompting."
+    ),
+    check: bool = typer.Option(
+        False, "--check", help="Report drift (ok|drifted|missing) and exit."
+    ),
+    global_: bool = typer.Option(
+        False,
+        "--global",
+        help="Install one CLI + holder (bare `planners`) for every repo, "
+        "instead of a per-repo `uv run planners` dep.",
+    ),
+    no_activate: bool = typer.Option(
+        False,
+        "--no-activate",
+        help="Write the hook config but do not register the git hook "
+        "(skip `pre-commit install`).",
+    ),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="One-step setup: also `uv add --dev pre-commit`, then register the "
+        "git hook, so validation is live without a follow-up command.",
+    ),
+    no_rule: bool = typer.Option(
+        False,
+        "--no-rule",
+        help="Skip the .claude/rules/planners.md convention rule: with install, "
+        "don't write it (mirrors --no-activate); with --check, don't check it, so "
+        "a deliberately rule-less install can pass.",
+    ),
+) -> None:
+    """Generate the /planners holder + rule and wire the pre-commit hook."""
+    root = Path.cwd()
+    version = _version()
+
+    if full and no_activate:
+        _err("--full and --no-activate are mutually exclusive.")
+        raise typer.Exit(1)
+
+    # --check is mode-agnostic: the holder auto-detects its installed mode, and
+    # the rule is checked at *both* auto-loaded locations. Both gate — a
+    # drifted/missing rule is as stale as a drifted holder (both load into
+    # context), so either non-ok exits non-zero.
+    if check:
+        holder_status = install_mod.check(root, version)
+        # When both holders exist the global one wins (and is what `check`
+        # reports), so a per-repo stub is silently shadowed — say so, or the
+        # local stub's self-check looks like it's verifying itself when it isn't.
+        if install_mod.both_holders_present(root):
+            _err(
+                "note: both a global and a per-repo /planners holder exist; "
+                "--check reports the global one, which takes precedence."
+            )
+        typer.echo(f"holder: {holder_status}")
+        if no_rule:
+            # Symmetric with how `install --no-rule` skips *writing* the rule: a
+            # deliberately rule-less install passes --check by also passing
+            # --no-rule, so the rule it never installed is not held against it.
+            typer.echo("rule:   skipped (--no-rule)")
+            ok = holder_status == "ok"
+        else:
+            # The rule auto-loads from ~/.claude/rules/ AND <repo>/.claude/rules/
+            # at once, so check both — a stale per-repo rule left behind by a
+            # --global switch is real drift even when the global rule is ok, and a
+            # local-only rule with no holder must not read as missing.
+            rule_check = install_mod.check_rule(root, version)
+            typer.echo(f"rule:   {rule_check.status}")
+            for loc, loc_status in rule_check.locations.items():
+                if loc_status == "drifted":
+                    path = install_mod.artifact_path(root, loc, install_mod.RULE)
+                    _err(
+                        f"note: the {loc} convention rule at {path} is drifted or "
+                        "stale and is still auto-loaded into context; remove it or "
+                        "re-run install to regenerate it."
+                    )
+            ok = holder_status == "ok" and rule_check.status == "ok"
+        raise typer.Exit(0 if ok else 1)
+
+    mode: install_mod.Mode = "global" if global_ else "local"
+
+    # Detect a genuine mode switch from the holder that exists *before* this
+    # install writes the new one (afterwards the just-written holder would always
+    # read as the requested mode). Only a real switch should resync the per-repo
+    # hook entry; a same-mode re-install must leave a deliberate committed entry
+    # alone — e.g. refreshing the global holder from a repo that keeps
+    # `uv run planners validate`.
+    prior = install_mod.resolve_installed_holder(root)
+    prior_mode = prior[1] if prior is not None else None
+    switching = prior_mode is not None and prior_mode != mode
+
+    # Guard each artifact we're about to write for this mode, not whatever is
+    # already installed — don't clobber a hand-edited (or unrelated) holder/rule
+    # without --force. Guard both up front so a blocked rule never leaves a
+    # half-written install (holder written, rule refused).
+    _guard_artifact_overwrite(
+        root, version, mode, install_mod.HOLDER, "holder", force=force
+    )
+    if not no_rule:
+        _guard_artifact_overwrite(
+            root, version, mode, install_mod.RULE, "rule", force=force
+        )
+
+    if mode == "global" and not install_mod.bare_cli_available():
+        _err(
+            "warning: `planners` is not on PATH; the global holder dispatches via "
+            "bare `planners`. Install it with `uv tool install --editable <path-to-"
+            "planners>` (pre-PyPI) or `uv tool install planners` once published. "
+            "Writing artifacts anyway."
+        )
+
+    path = install_mod.write_holder(root, version, mode)
+    # The global holder lives under $HOME, outside the repo; show it as-is.
+    typer.echo(f"wrote {_shown(path, root)}")
+
+    removed = install_mod.remove_stale_holder(root, mode)
+    if removed is not None:
+        typer.echo(f"removed stale local holder {_shown(removed, root)}")
+    elif mode == "local" and install_mod.both_holders_present(root):
+        _err(
+            "note: a global planners holder exists at "
+            f"{install_mod.holder_path(root, 'global')} and takes precedence over "
+            "this per-repo one, so the local stub you just wrote will be shadowed "
+            "— remove the global holder or use --global here."
+        )
+
+    # The convention rule rides the holder's resolved mode (one bundled value, not
+    # an independent axis). --no-rule skips it, mirroring --no-activate for the hook.
+    if not no_rule:
+        rule_path = install_mod.write_artifact(root, version, mode, install_mod.RULE)
+        typer.echo(f"wrote {_shown(rule_path, root)}")
+        rule_removed = install_mod.remove_stale(root, mode, install_mod.RULE)
+        if rule_removed is not None:
+            typer.echo(f"removed stale local rule {_shown(rule_removed, root)}")
+        # A hand-maintained plan-files.md on the same topic is a contradiction
+        # risk; it is not ours to delete (no generated marker), so warn instead.
+        legacy = install_mod.superseded_legacy_rule(root, mode)
+        if legacy is not None:
+            _err(
+                f"note: a hand-maintained {legacy} is superseded by the generated "
+                f"{rule_path.name}; remove it so the repo doesn't carry two rules "
+                "on the same topic. planners will not delete it (not generated)."
+            )
+
+    wired = install_mod.wire_precommit(root, mode, resync=switching)
+    typer.echo(
+        "wrote pre-commit hook config"
+        if wired
+        else "pre-commit hook config already present"
+    )
+
+    # --full opts into the one invasive step the default install avoids: putting
+    # pre-commit in the consumer's env so the hook can actually run. Best-effort
+    # — a failure degrades to the same instruction the default path prints.
+    if full:
+        if install_mod.ensure_precommit_dependency(root):
+            typer.echo("added pre-commit dev dependency (uv add --dev pre-commit)")
+        else:
+            _err(
+                "warning: `uv add --dev pre-commit` did not succeed; add it "
+                "yourself, then run `uv run pre-commit install` to activate."
+            )
+
+    # Register the git hook (best-effort) and report exactly what is true — the
+    # whole point of this plan is to never claim an active hook when only the
+    # config was written.
+    status = install_mod.activate_precommit(root, attempt=not no_activate)
+    if status == "activated":
+        typer.echo("pre-commit hook activated")
+    elif status == "already_active":
+        typer.echo("pre-commit hook already active")
+    elif status == "hookspath_blocked":
+        # config_only's cause is known precisely here: git's core.hooksPath is set,
+        # so `pre-commit install` refuses. Name that cause and the real remedies
+        # rather than the catch-all "pre-commit unavailable", which would send the
+        # user to a command that will refuse the same way.
+        typer.echo(
+            "pre-commit hook config written but NOT active: git's core.hooksPath "
+            "is set, so `pre-commit install` refuses to register the hook. Unset "
+            "it with `git config --unset-all core.hooksPath`, then run `uv run "
+            "pre-commit install` — or install the validate hook into your "
+            "configured core.hooksPath directory manually."
+        )
+    elif no_activate:
+        typer.echo(
+            "skipped hook activation (--no-activate); "
+            "run `uv run pre-commit install` to activate it"
+        )
+    elif not install_mod.is_git_repo(root):
+        # config_only with a different cause than a missing tool: there is no git
+        # repo to register a hook in, so pointing at `pre-commit install` (which
+        # needs one) would be the dishonest message this plan exists to avoid.
+        typer.echo(
+            "pre-commit hook config written; not a git repository, so the git "
+            "hook was not registered — run `git init`, then `uv run pre-commit "
+            "install`, to activate"
+        )
+    else:
+        typer.echo(
+            "pre-commit hook config written but NOT active (pre-commit "
+            "unavailable); run `uv add --dev pre-commit && uv run pre-commit "
+            "install` — or re-run with --full — to activate"
+        )
+
+    # Global mode bootstraps the per-repo plans folder; local mode leaves repo
+    # content untouched (the user gets .planners/ via `planners add`).
+    if mode == "global" and install_mod.ensure_plans_dir(root):
+        typer.echo("created .planners/plans/")
+
+
+@app.command()
+def add(
+    slug: str = typer.Argument(..., help="kebab-case plan slug."),
+    title: str | None = typer.Option(None, "--title", help="Fill the # Title heading."),
+    branch: str | None = typer.Option(
+        None, "--branch", help="Fill the branch: field at creation."
+    ),
+    parent: int | None = typer.Option(
+        None,
+        "--parent",
+        help="Umbrella plan number; scaffold a lettered subplan (e.g. 010a) under it.",
+    ),
+    defer: bool = typer.Option(
+        False,
+        "--defer",
+        help="Stage an unnumbered plan under .planners/staging for collision-safe "
+        "batch creation; number it later with `planners finalize`.",
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Scaffold a conformant plan file; by default refresh the index and commit."""
+    if not is_safe_slug(slug):
+        _err(f"unsafe slug: {slug!r}; use kebab-case with no '/', '..', or null bytes.")
+        raise typer.Exit(1)
+
+    root = Path.cwd()
+
+    if defer:
+        # Deferred creation: write an unnumbered plan into a per-creator staging
+        # directory with no commit and no shared state, so any number of concurrent
+        # `add --defer` creators can run in parallel. `finalize` is the single
+        # serialized writer that orders, numbers, and commits the batch.
+        if parent is not None:
+            _err(
+                "--defer cannot be combined with --parent: a subplan is numbered "
+                "against its umbrella, which `finalize` does not assign."
+            )
+            raise typer.Exit(1)
+        staging = root / STAGING_DIR
+        staging.mkdir(parents=True, exist_ok=True)
+        # A random token keys the staging dir so two creators picking the same slug
+        # never collide on the directory name (the number, and any slug clash, are
+        # resolved at finalize, the sole writer).
+        staged_dir = staging / f"{secrets.token_hex(4)}-{slug}"
+        if staged_dir.exists():
+            _err(f"staging collision at {staged_dir.relative_to(root)}; retry.")
+            raise typer.Exit(1)
+        staged_dir.mkdir(parents=True)
+        staged_path = staged_dir / PLAN_FILENAME
+        staged_path.write_text(
+            _render_staged_plan(slug, title or "", branch or ""), encoding="utf-8"
+        )
+        typer.echo(
+            f"staged {staged_path.relative_to(root)} "
+            "(assign its number with `planners finalize`)"
+        )
+        return
+
+    plans_dir = root / PLANS_DIR
+    plans_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = _collect_metas(plans_dir, strict=False)
+    if parent is None:
+        # Top-level plan: next free number, no subplan letter.
+        plan_id, sub = next_number([m.id for m in existing]), ""
+    else:
+        # Subplan: share the umbrella's number and take the next free letter. The
+        # umbrella must already exist — a subplan with no umbrella is invalid.
+        if not any(m.id == parent and not m.sub for m in existing):
+            _err(
+                f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
+                "create it first with `planners add`."
+            )
+            raise typer.Exit(1)
+        plan_id = parent
+        try:
+            sub = next_sub([m.sub for m in existing if m.id == parent])
+        except ValueError as exc:
+            _err(str(exc))
+            raise typer.Exit(1) from None
+
+    prefix = f"{plan_id:03d}{sub}"
+    plan_dir = plans_dir / f"{prefix}-{slug}"
+    if plan_dir.exists():
+        _err(f"refusing to overwrite existing plan: {plan_dir.relative_to(root)}")
+        raise typer.Exit(1)
+    plan_dir.mkdir(parents=True)
+    path = plan_dir / PLAN_FILENAME
+
+    meta = PlanMetadata(
+        id=plan_id,
+        slug=slug,
+        sub=sub,
+        status=Status.draft,
+        branch=branch or "",
+        created=_now(),
+        concluded="",
+        pr="",
+        title=title or "",
+    )
+    path.write_text(meta.render(), encoding="utf-8")
+    typer.echo(f"wrote {path.relative_to(root)}")
+
+    if no_commit:
+        return
+
+    readme = _refresh_index(root, cols="curated")
+    _git(["add", str(path.relative_to(root)), str(readme.relative_to(root))])
+    _git(["commit", "-m", f"plan [add]: {prefix} - {slug}"])
+
+
+@app.command()
+def finalize(
+    no_commit: bool = typer.Option(
+        False,
+        "--no-commit",
+        help="Materialize and refresh the index, but don't commit.",
+    ),
+) -> None:
+    """Number, materialize, and commit staged (deferred) plans in ``created`` order.
+
+    The single serialized writer behind ``add --defer``: it orders the staged
+    plans by ``created``, assigns the next sequential numbers, moves each into
+    ``.planners/plans/<NNN>-<slug>/`` (sidecar files included), refreshes the
+    index, commits each one (mirroring a foreground ``add``), and then runs a
+    self-check. Being the sole writer, it cannot race on numbering or the commit.
+    """
+    root = Path.cwd()
+    staging = root / STAGING_DIR
+    staged = _collect_staged(staging)
+    if not staged:
+        _err(f"no staged plans under {STAGING_DIR}; nothing to finalize.")
+        raise typer.Exit(1)
+
+    plans_dir = root / PLANS_DIR
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    existing = _collect_metas(plans_dir, strict=False)
+    start_id = next_number([m.id for m in existing])
+
+    # Pass 1 — validate and resolve every staged plan WITHOUT touching the
+    # filesystem. A bad entry aborts the batch before any plan is moved out of
+    # staging, so a later failure can't strand earlier plans materialized-but-
+    # uncommitted (the partial-batch hazard the single commit avoids, one step
+    # earlier). Constructing the meta is pure, so it belongs in this pass too.
+    resolved: list[tuple[PlanMetadata, str, Path, Path]] = []
+    seen_slugs: set[str] = set()
+    for offset, (src_dir, data, body) in enumerate(staged):
+        slug = data.get("slug") or ""
+        if not is_safe_slug(slug):
+            _err(
+                f"staged plan {src_dir.name!r} has an unsafe or missing slug "
+                f"{slug!r}; fix it under {STAGING_DIR} and re-run."
+            )
+            raise typer.Exit(1)
+        created = data.get("created") or ""
+        if not created:
+            _err(
+                f"staged plan {src_dir.name!r} has no created timestamp; it cannot "
+                "be ordered. Fix it and re-run."
+            )
+            raise typer.Exit(1)
+        raw_status = data.get("status") or "draft"
+        try:
+            status = Status(raw_status)
+        except ValueError:
+            _err(f"staged plan {src_dir.name!r} has invalid status {raw_status!r}.")
+            raise typer.Exit(1) from None
+
+        plan_id = start_id + offset
+        plan_dir = plans_dir / f"{plan_id:03d}-{slug}"
+        if plan_dir.exists():
+            _err(f"refusing to overwrite existing plan: {plan_dir.relative_to(root)}")
+            raise typer.Exit(1)
+        if slug in seen_slugs:
+            # Numbering keeps them distinct, but two same-slug dirs is worth a heads-up.
+            _warn(
+                f"note: duplicate slug {slug!r} in this batch (kept distinct by number)"
+            )
+        seen_slugs.add(slug)
+
+        meta = PlanMetadata(
+            id=plan_id,
+            slug=slug,
+            status=status,
+            branch=data.get("branch", "") or "",
+            created=created,
+            concluded=data.get("concluded", "") or "",
+            pr=data.get("pr", "") or "",
+        )
+        resolved.append((meta, body, src_dir, plan_dir))
+
+    # Pass 2 — materialize: every entry is validated, so this only moves files.
+    finalized: list[tuple[int, str, Path]] = []
+    for meta, body, src_dir, plan_dir in resolved:
+        plan_dir.mkdir(parents=True)
+        # Preserve the creator's body (title + any drafted ## Plan) verbatim; only
+        # the frontmatter is re-rendered, now that the id is known.
+        (plan_dir / PLAN_FILENAME).write_text(
+            meta.render_frontmatter() + body, encoding="utf-8"
+        )
+        for child in sorted(src_dir.iterdir()):
+            if child.name != PLAN_FILENAME:
+                shutil.move(str(child), str(plan_dir / child.name))
+        (src_dir / PLAN_FILENAME).unlink()
+        src_dir.rmdir()
+        finalized.append((meta.id, meta.slug, plan_dir))
+        typer.echo(f"numbered {src_dir.name} -> {plan_dir.relative_to(root)}")
+
+    # Drop the staging root once drained (leave it if anything unexpected remains).
+    if staging.is_dir() and not any(staging.iterdir()):
+        staging.rmdir()
+
+    readme = _refresh_index(root, cols="curated")
+
+    if no_commit:
+        typer.echo(f"finalized {len(finalized)} plan(s) (no commit)")
+        _finalize_self_check(root, finalized, start_id, committed=False)
+        return
+
+    # One commit for the whole batch: atomic at the commit boundary. A mid-batch
+    # per-plan commit loop could land some plans and strand the rest materialized
+    # but uncommitted with no diagnostic; a single commit instead either lands the
+    # whole batch or leaves every plan in the same recoverable "written, not yet
+    # committed" state (the documented `add` trade-off, applied uniformly).
+    rels = [str(plan_dir.relative_to(root)) for _, _, plan_dir in finalized]
+    rels.append(str(readme.relative_to(root)))
+    _git(["add", *rels])
+    first, last = finalized[0][0], finalized[-1][0]
+    message = (
+        f"plan [add]: {first:03d} - {finalized[0][1]}"
+        if len(finalized) == 1
+        else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
+    )
+    _git(["commit", "-m", message])
+    typer.echo(f"finalized and committed {len(finalized)} plan(s)")
+    _finalize_self_check(root, finalized, start_id, committed=True)
+
+
+@app.command()
+def index(
+    repo_path: Path = typer.Argument(
+        Path("."), help="Repo root (contains .planners/)."
+    ),
+    cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
+) -> None:
+    """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter."""
+    if cols not in ("curated", "all"):
+        _err(f"--cols must be 'curated' or 'all', got {cols!r}")
+        raise typer.Exit(1)
+    readme = _refresh_index(repo_path, cols=cols)
+    typer.echo(f"updated {readme}")
+
+
+@app.command()
+def schema(
+    model: str | None = typer.Argument(
+        None, help="Schema model name (default: PlanMetadata)."
+    ),
+    list_models: bool = typer.Option(
+        False, "--list", help="List available schema models."
+    ),
+) -> None:
+    """Print the plan metadata schema with per-field descriptions."""
+    if list_models:
+        typer.echo("PlanMetadata")
+        return
+    if model not in (None, "PlanMetadata"):
+        _err(f"unknown schema model: {model!r}; only 'PlanMetadata' is defined.")
+        raise typer.Exit(1)
+    typer.echo("PlanMetadata — plan-file frontmatter schema\n")
+    for doc in PlanMetadata.schema():
+        typer.echo(f"  {doc.name:<10} {doc.type:<12} {doc.description}")
+
+
+@app.command()
+def validate(
+    paths: list[Path] = typer.Argument(
+        ..., help="Plan files, a plans directory, or a repo root."
+    ),
+    allow_empty: bool = typer.Option(
+        False,
+        "--allow-empty",
+        help="Treat a zero-file match as a pass (warn only) instead of the "
+        "default nonzero exit — for scripts that tolerate an empty plan set.",
+    ),
+) -> None:
+    """Validate plan frontmatter; exit non-zero on any violation or no match.
+
+    A directory argument is resolved by :func:`_resolve_dir_plans` — a named plan
+    dir, a repo root with a ``.planners/plans`` tree, or a plain container — so
+    ``validate .`` from a checkout discovers its plans. Matching **zero** files is
+    a failure by default (the vacuous-pass bug: a script asserting on the exit
+    code would otherwise green-light a repo whose plans were never examined);
+    ``--allow-empty`` opts back into the old warn-and-pass.
+    """
+    files: list[Path] = []
+    for p in paths:
+        if p.is_dir():
+            found = _resolve_dir_plans(p)
+            if not found:
+                # Name the empty directory so a mistaken target (e.g. `.planners`
+                # instead of `.planners/plans`) is visible, not a silent skip.
+                _err(f"no plans found under {p}")
+            files.extend(found)
+        else:
+            # An explicitly named file is always validated (and flagged if it
+            # isn't a conformant plan).
+            files.append(p)
+
+    if not files:
+        if allow_empty:
+            typer.echo("ok: 0 file(s) — no plans to validate (--allow-empty)")
+            return
+        _err(
+            "no plan files matched; nothing was validated. Point at a repo root, a "
+            "plans directory, or plan files — or pass --allow-empty to permit an "
+            "empty match."
+        )
+        raise typer.Exit(1)
+
+    failures = 0
+    for path in files:
+        try:
+            meta = PlanMetadata.from_file(path)
+        except PlanError as exc:
+            _err(f"{path}: {exc}")
+            failures += 1
+            continue
+        errors = meta.validate()
+        for error in errors:
+            _err(f"{path}: {error}")
+        failures += len(errors)
+
+    if failures:
+        _err(f"{failures} violation(s) across {len(files)} file(s)")
+        raise typer.Exit(1)
+    typer.echo(f"ok: {len(files)} file(s) valid")
+
+
+def main() -> None:
+    app()
+
+
+if __name__ == "__main__":
+    sys.exit(app())  # pragma: no cover
