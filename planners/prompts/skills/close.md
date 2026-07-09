@@ -44,7 +44,11 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   Record intentional skips as conscious no-ops.
 - Run the full check gate (`uv run pytest && uv run ruff check . && uv run pyrefly check`)
   until clean; commit fixes and push.
-- `gh pr ready <number>`.
+- `gh pr ready <number>` — also a self-authored write, so the classifier can
+  block it the same way. If it's denied, don't retry in a loop: report that the
+  PR is still a draft and stop before the merge (a draft can't be merged). The
+  same `Bash(gh pr ready:*)` allow-rule pre-authorizes it, or the user can mark
+  it ready by hand.
 
 ### 3. Final log entry
 
