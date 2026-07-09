@@ -1,7 +1,7 @@
 ---
 id: 1
 slug: permission-automation-levels
-status: draft
+status: active
 branch: feature/permission-automation-levels
 created: 2026-07-09T00:34:01-07:00
 concluded:
