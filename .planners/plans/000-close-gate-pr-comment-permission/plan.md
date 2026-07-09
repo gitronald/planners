@@ -1,10 +1,10 @@
 ---
 id: 0
 slug: close-gate-pr-comment-permission
-status: active
+status: done
 branch: feature/close-gate-pr-comment-permission
 created: 2026-07-08T14:39:15-07:00
-concluded:
+concluded: 2026-07-09T01:16:11-07:00
 pr: https://github.com/gitronald/planners/pull/6
 ---
 
@@ -52,3 +52,42 @@ Edit to the packaged `close` skill text (and possibly a one-line note in the
 top-level planners rules about the permission). Keep it brief; likely (1) + (2)
 together. `merge` is the consequential, irreversible step and should stay behind
 the classifier regardless.
+
+## Log
+
+### 2026-07-09 — implement
+
+Shipped options (1) + (2) together, as anticipated:
+
+- `close.md` review gate: posting the review is now explicitly **best-effort** —
+  a blocked `gh pr comment` surfaces the review inline and carries on instead of
+  stalling the close. Documented the `Bash(gh pr comment:*)` allow-rule (deny >
+  allow > classifier) via `/update-config`, and kept `gh pr merge` behind the
+  classifier.
+- Extended the same degrade-don't-stall treatment to **`gh pr ready`**, the
+  blocked-self-authored-write twin (a draft can't be merged, so a blocked ready
+  pauses before merge rather than looping).
+- Softened `pipeline.md`'s gate summary to "post it best-effort" for consistency.
+
+Option (3) (opt-in posting) was folded into the best-effort framing rather than a
+separate flag. The allow-rule note lives in `close.md` where it's contextual; the
+broader permission story became plan 001 (automation levels).
+
+**Review follow-up.** The close review gate flagged one issue: the `pipeline.md`
+edit left a 97-char prose line inconsistent with the file's ~78-char wrap.
+Re-wrapped the paragraph (commit `413af90`). No code paths changed, so no
+regression test applies; `uv run pytest` stayed green (263 passed).
+
+## Retrospective
+
+- The fix split cleanly into "works with zero grants" (graceful degradation) and
+  "opt into fewer prompts" (the allow-rule) — keeping both meant the close never
+  hard-depends on a permission the user may not have set.
+- Finding `gh pr ready`'s identical failure mode mid-implementation was the useful
+  surprise: the same class of blocked self-authored write, one step later, where
+  it actually pauses the merge instead of being cosmetic.
+- Dogfooding paid off — this very close posted its review comment successfully and
+  degraded nowhere, but the guidance is now in place for the sessions where it
+  won't.
+- Scope discipline held: the "should planners grant the permission itself?"
+  question was deliberately spun out to plan 001 rather than growing this plan.
