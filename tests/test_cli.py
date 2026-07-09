@@ -1390,3 +1390,33 @@ def test_permissions_apply_creates_missing_settings_file(
     assert settings.is_file()
     allow = json.loads(settings.read_text(encoding="utf-8"))["permissions"]["allow"]
     assert "Bash(gh pr comment:*)" in allow
+
+
+def test_permissions_apply_none_writes_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["permissions", "--level", "none", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "no new rules to add" in result.output
+    # `none` grants nothing, so apply must not create a settings file.
+    assert not (tmp_path / ".claude" / "settings.local.json").exists()
+
+
+def test_permissions_apply_noop_leaves_existing_file_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = tmp_path / ".claude" / "settings.local.json"
+    settings.parent.mkdir(parents=True)
+    # Every assist rule already present -> applying assist changes nothing.
+    from planners.permissions import Level, rules_for
+
+    already = {"permissions": {"allow": rules_for(Level.assist, "local")}}
+    original = json.dumps(already) + "\n"
+    settings.write_text(original, encoding="utf-8")
+    result = runner.invoke(app, ["permissions", "--level", "assist", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "no new rules to add" in result.output
+    # Byte-for-byte unchanged: a no-op apply never reformats the user's file.
+    assert settings.read_text(encoding="utf-8") == original

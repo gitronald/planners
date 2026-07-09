@@ -724,8 +724,19 @@ def permissions(
     existing = settings.get("permissions")
     perms_block = existing if isinstance(existing, dict) else {}
     result = perms_mod.merge_allow(perms_block, rules)
-    settings["permissions"] = result.permissions
 
+    if not result.added:
+        # Nothing new to grant (level `none`, or every rule is already allowed or
+        # held by an existing deny/ask): leave the file untouched rather than
+        # create or reformat it for a no-op write.
+        typer.echo(f"no new rules to add at level {lvl.value} ({mode})")
+        for rule in result.already:
+            typer.echo(f"  = {rule} (already allowed)")
+        for rule, reason in result.skipped:
+            _warn(f"  ! {rule} skipped ({reason})")
+        return
+
+    settings["permissions"] = result.permissions
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
