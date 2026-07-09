@@ -56,20 +56,28 @@ without a prompt*. Each level is a superset of the one above it.
 
 | Level | Name | Pre-authorizes | Lifecycle effect |
 |---|---|---|---|
-| 0 | `none` | nothing | every remote write prompts; fully portable, relies on 000-style degradation |
-| 1 | `assist` **(default)** | `git worktree`, `gh pr comment`, `gh pr ready` | worktree setup and the review-gate publish just work; push and merge still confirmed |
-| 2 | `unattended-push` | + `git add`, `git commit`, `git push`, `uv run`, `uv sync` | implement → pushed draft PR, and close up to merge, run unprompted |
-| 3 | `unattended-merge` | + `gh pr merge` | full close including the irreversible merge runs unprompted |
+| 0 | `none` | nothing | every write prompts; fully portable, relies on 000-style degradation |
+| 1 | `assist` **(default)** | `git worktree`, `git add`, `git commit`, `uv run`, `uv sync`, `gh pr comment`, `gh pr ready` | local work, the check gate, and the review-gate publish run unprompted; pushing code and merging still confirmed |
+| 2 | `confirm` | + `git push` | the pipeline runs unattended through push; only the irreversible merge is still confirmed |
+| 3 | `full` | + `gh pr merge` | nothing is confirmed; a fully hands-off close including the merge |
 
-- Level 1 grants only **reversible, self-authored** verbs (a comment can be
-  deleted, a PR re-drafted, a worktree removed) — the plan-000 class of friction
-  — without touching anything irreversible or policy-sensitive.
-- `gh pr merge` is isolated at the **top level only**. planners' own `close`
-  skill says merge should stay behind the classifier, so granting it must be an
-  explicit, clearly-labeled choice, never reachable by default.
-- `git push` first appears at level 2; because several repos `ask`-gate it on
-  purpose, the writer must be additive and must not downgrade that (see
-  guardrails).
+- The names describe the **supervision posture**: `assist` handles local work
+  but asks before anything leaves the machine; `confirm` runs the whole pipeline
+  and pauses only to confirm the irreversible merge; `full` confirms nothing.
+- Level 1 (`assist`) is everything **local and reversible** — the commit spine
+  (`git add`/`git commit`), the worktree, and the `uv run` check gate — plus the
+  **low-blast-radius, self-authored** remote writes (`gh pr comment`, `gh pr
+  ready`), the plan-000 class of friction. It deliberately stops short of
+  anything that publishes code or is irreversible: `git push` and `gh pr merge`
+  still prompt. The commit spine sits here, not with push, so the local/remote
+  risk split is kept intact — commits are local and reversible, a push is not.
+- `git push` is the **sole** grant at `confirm`, on its own tier because it is
+  the first command that publishes code to the shared remote and several repos
+  `ask`-gate it on purpose — so the writer must be additive and must not
+  downgrade that (see guardrails).
+- `gh pr merge` is isolated at the **top level (`full`) only**. planners' own
+  `close` skill recommends merge stay behind the classifier, so granting it must
+  be an explicit, clearly-labeled choice, never reachable by default.
 
 ### Mechanism
 
@@ -105,8 +113,8 @@ Complementary, not overlapping:
 
 Also reconcile 000's claim that "merge stays behind the classifier regardless"
 with the reality that some repos already `allow` merge: soften it to *advisory*
-(the recommended default, overridable by the `unattended-merge` level), rather
-than an absolute.
+(the recommended default, overridable by the `full` level), rather than an
+absolute.
 
 ### Guardrails / non-goals
 
@@ -132,13 +140,13 @@ than an absolute.
    points at `/update-config`).
 5. Tests: the rule set per (level, mode); additive merge preserves existing
    `deny`/`ask`; `--print` output is stable; `gh pr merge` never appears below
-   `unattended-merge`.
+   `full`.
 
 ### Open questions
 
-- Level names (`none`/`assist`/`unattended-push`/`unattended-merge`) vs numeric
-  `--level 0..3`, or both.
-- Whether `git push` should be its own opt-in within a level rather than bundled
-  into level 2, given the deliberate `ask`-gating seen in the wild.
+- Whether to accept numeric `--level 0..3` as aliases for the named profiles
+  (`none`/`assist`/`confirm`/`full`), or names only.
+- Whether `assist` should gate `gh pr comment`/`gh pr ready` behind a sub-flag
+  for users who want the local spine but no remote writes at all.
 - Whether `--print` should emit a paste-ready JSON fragment, a `/update-config`
   invocation, or both.
