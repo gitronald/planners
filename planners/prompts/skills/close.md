@@ -19,8 +19,10 @@ are uncommitted changes, stop and tell the user.
 
 ### 2. Review gate (review → fix → verify) — MANDATORY, BEFORE MERGE
 
-Do not call `gh pr merge` until this gate has run, its review is posted to the
-PR, and every finding is fixed or recorded as a conscious no-op.
+Do not call `gh pr merge` until this gate has run and every finding is fixed or
+recorded as a conscious no-op. Running the review and resolving its findings is
+what gates the merge; **posting the review to the PR is best-effort** — a blocked
+post never stalls the close.
 
 ```bash
 gh pr list --head "$(git branch --show-current)" --state open --json number --jq '.[0].number'
@@ -28,12 +30,25 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
 
 - Review the PR diff with the project's review skill (`/code-review`, or
   `/review PR <number>`).
-- Post it: `gh pr comment <number> --body-file <file>`.
+- Post it: `gh pr comment <number> --body-file <file>`. Under Claude Code's
+  auto-permission mode this self-authored external write is often **blocked by
+  the classifier** (closing a plan doesn't obviously request posting a comment).
+  If it's denied, don't retry or stall — surface the review inline and note it
+  wasn't posted, then carry on. To post automatically, add a Bash allow-rule
+  `Bash(gh pr comment:*)` (and optionally `Bash(gh pr ready:*)`) in
+  `~/.claude/settings.json` (all repos) or the repo's `.claude/settings.local.json`
+  via `/update-config`; precedence is deny > allow > classifier, so an explicit
+  allow pre-authorizes the command. `gh pr merge` is irreversible and stays behind
+  the classifier regardless.
 - Fix actionable findings at the source, each with a paired regression test.
   Record intentional skips as conscious no-ops.
 - Run the full check gate (`uv run pytest && uv run ruff check . && uv run pyrefly check`)
   until clean; commit fixes and push.
-- `gh pr ready <number>`.
+- `gh pr ready <number>` — also a self-authored write, so the classifier can
+  block it the same way. If it's denied, don't retry in a loop: report that the
+  PR is still a draft and stop before the merge (a draft can't be merged). The
+  same `Bash(gh pr ready:*)` allow-rule pre-authorizes it, or the user can mark
+  it ready by hand.
 
 ### 3. Final log entry
 
