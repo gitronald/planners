@@ -34,16 +34,21 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   auto-permission mode this self-authored external write is often **blocked by
   the classifier** (closing a plan doesn't obviously request posting a comment).
   If it's denied, don't retry or stall — surface the review inline and note it
-  wasn't posted, then carry on. To post automatically, add a Bash allow-rule
-  `Bash(gh pr comment:*)` (and optionally `Bash(gh pr ready:*)`) in
-  `~/.claude/settings.json` (all repos) or the repo's `.claude/settings.local.json`
-  via `/update-config`; precedence is deny > allow > classifier, so an explicit
-  allow pre-authorizes the command. `gh pr merge` is irreversible and stays behind
-  the classifier regardless.
+  wasn't posted, then carry on. To post automatically, pre-authorize the command
+  with a Bash allow-rule `Bash(gh pr comment:*)` (and optionally
+  `Bash(gh pr ready:*)`): `{cli} permissions --level assist` writes the planners
+  profile that includes them, or add the rule by hand via `/update-config`. It
+  lives in the repo's `.claude/settings.local.json` (or `~/.claude/settings.json`
+  for all repos); precedence is deny > allow > classifier. `gh pr merge` is
+  irreversible, so by default it stays behind the classifier — the `full` level
+  (`{cli} permissions --level full`) is the explicit opt-in to pre-authorize it.
 - Fix actionable findings at the source, each with a paired regression test.
   Record intentional skips as conscious no-ops.
-- Run the full check gate (`uv run pytest && uv run ruff check . && uv run pyrefly check`)
-  until clean; commit fixes and push.
+- Run the full check gate until clean, then commit fixes and push. **Mirror the
+  repo's CI** so a green local run can't fail CI — for this repo that is
+  `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check &&
+  uv run pytest` (the `ruff format --check` is easy to omit locally and is the
+  usual reason CI fails a run that passed on the machine).
 - `gh pr ready <number>` — also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
   PR is still a draft and stop before the merge (a draft can't be merged). The
