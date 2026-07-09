@@ -5,7 +5,7 @@ status: active
 branch: feature/close-gate-pr-comment-permission
 created: 2026-07-08T14:39:15-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/6
 ---
 
 # Handle blocked PR-comment posting in the close review gate
