@@ -92,7 +92,17 @@ def levels() -> list[str]:
 
 
 def parse_level(name: str) -> Level:
-    """Resolve a level name to a :class:`Level`; raise ``ValueError`` if unknown."""
+    """Resolve a level name — or its ``0``-``3`` numeric alias — to a :class:`Level`.
+
+    ``"0"``-``"3"`` map to ``none``/``assist``/``confirm``/``full`` by ladder
+    position; every other value raises ``ValueError`` so the CLI can report the
+    valid choices.
+    """
+    if name.isdigit():
+        index = int(name)
+        if 0 <= index < len(LEVELS):
+            return LEVELS[index]
+        raise ValueError(name)
     return Level(name)
 
 

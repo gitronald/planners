@@ -677,7 +677,7 @@ def permissions(
     level: str = typer.Option(
         "assist",
         "--level",
-        help="Automation level (lowest to highest): none | assist | confirm | full.",
+        help="Automation level, lowest to highest: none|assist|confirm|full (or 0-3).",
     ),
     local_: bool = typer.Option(
         True,
@@ -702,7 +702,10 @@ def permissions(
     try:
         lvl = perms_mod.parse_level(level)
     except ValueError:
-        _err(f"unknown level: {level!r}; choose from {', '.join(perms_mod.levels())}")
+        _err(
+            f"unknown level: {level!r}; choose from "
+            f"{', '.join(perms_mod.levels())} (or 0-3)"
+        )
         raise typer.Exit(1) from None
 
     mode: install_mod.Mode = "local" if local_ else "global"

@@ -31,6 +31,19 @@ def test_parse_level_rejects_unknown() -> None:
         parse_level("unsupervised")
 
 
+def test_parse_level_accepts_numeric_aliases() -> None:
+    # "0".."3" map to the ladder positions.
+    assert parse_level("0") is Level.none
+    assert parse_level("1") is Level.assist
+    assert parse_level("2") is Level.confirm
+    assert parse_level("3") is Level.full
+
+
+def test_parse_level_rejects_out_of_range_number() -> None:
+    with pytest.raises(ValueError):
+        parse_level("4")
+
+
 def test_none_grants_nothing() -> None:
     assert rules_for(Level.none, "local") == []
     assert rules_for(Level.none, "global") == []

@@ -1349,6 +1349,14 @@ def test_permissions_print_full_includes_merge() -> None:
     assert "Bash(gh pr merge:*)" in result.output
 
 
+def test_permissions_numeric_level_alias() -> None:
+    # `3` is an alias for `full`, so it too grants the merge rule.
+    by_number = runner.invoke(app, ["permissions", "--level", "3"])
+    assert by_number.exit_code == 0, by_number.output
+    assert "automation level: full" in by_number.output
+    assert "Bash(gh pr merge:*)" in by_number.output
+
+
 def test_permissions_unknown_level_errors() -> None:
     result = runner.invoke(app, ["permissions", "--level", "unsupervised"])
     assert result.exit_code == 1
