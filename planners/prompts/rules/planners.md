@@ -178,3 +178,14 @@ skills):
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
+
+## Automation levels
+
+The lifecycle commands shell out to git and `gh`; whether each runs unprompted
+depends on the ambient Claude Code permission config. `{cli} permissions
+[--level none|assist|confirm|full]` prints (or, with `--apply`, additively
+merges) a matching allow-rule profile so you can pick how hands-off the run is:
+`assist` (default) grants the local, reversible spine plus the self-authored PR
+writes; `confirm` adds `git push`; `full` adds the irreversible `gh pr merge`. It
+writes the repo's `.claude/settings.local.json` by default (`--global` for the
+user-wide file) and never downgrades an existing `deny`/`ask` rule.

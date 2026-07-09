@@ -10,6 +10,11 @@ from that activation commit, start building, and open a draft PR. Parse the plan
 number (e.g. `021`) or path from the request; if ambiguous, glob
 `.planners/plans/{NNN}-*/plan.md`.
 
+The worktree, commit, and push steps below each shell out to git; if they prompt
+for permission on every command, `{cli} permissions` writes an allow-rule profile
+(default `assist`) that pre-authorizes the reversible ones — see *Automation
+levels* in the planners rule.
+
 ## Steps
 
 ### 1. Read the plan
