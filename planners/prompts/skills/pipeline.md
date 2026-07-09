@@ -52,11 +52,11 @@ pipeline-loops convention so the loop is defined once, not twice.
 ## Human-input points
 
 `close` stops at a **mandatory review gate** (review the PR diff, post it
-best-effort, fix or consciously no-op every finding) before it merges. The pipeline **pauses** at
-that gate — it does not abort and does not merge unreviewed. Surface the review,
-wait for approval, then resume `close` from the gate (final log, retrospective,
-closing frontmatter, merge, cleanup). This is the one expected pause in an
-otherwise unattended run.
+best-effort, fix or consciously no-op every finding) before it merges. The
+pipeline **pauses** at that gate — it does not abort and does not merge
+unreviewed. Surface the review, wait for approval, then resume `close` from the
+gate (final log, retrospective, closing frontmatter, merge, cleanup). This is
+the one expected pause in an otherwise unattended run.
 
 ## Steps
 
