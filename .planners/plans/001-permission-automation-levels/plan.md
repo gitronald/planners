@@ -5,7 +5,7 @@ status: active
 branch: feature/permission-automation-levels
 created: 2026-07-09T00:34:01-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/7
 ---
 
 # Add opt-in permission profiles so users choose the automation level
@@ -150,3 +150,26 @@ absolute.
   for users who want the local spine but no remote writes at all.
 - Whether `--print` should emit a paste-ready JSON fragment, a `/update-config`
   invocation, or both.
+
+## Log
+
+### 2026-07-09 — implement
+
+- New pure module `planners/permissions.py`: `Level` (`StrEnum`), the cumulative
+  mode-aware `_INCREMENT`/`_GLOBAL_ONLY` rule sets, `rules_for`, `settings_path`,
+  and an additive `merge_allow` that defers to any existing `deny`/`ask` (exact-
+  string match) and never mutates its input. CLI `permissions` command: `--level`
+  (default `assist`), `--local`/`--global` (default local), print by default with
+  `--apply` to merge. `--print` emits a paste-ready JSON fragment (resolved the
+  open question that way).
+- Tests: `tests/test_permissions.py` (pure logic — levels, supersets, mode-aware
+  planners grant, deny/ask deferral, no-mutation) and CLI cases in `test_cli.py`
+  (print per mode/level, unknown-level error, apply creates/merges and preserves
+  policy). Full gate green (288 passed, ruff, pyrefly).
+- **Deviations from spec.** Numeric `--level 0..3` aliases: not implemented
+  (names only) — left as the open question it was. Docs (step 4): added to the
+  rule summary and `implement` skill, but **not** `close.md` — that file is owned
+  by plan 000's still-open branch, so editing it here would collide on merge. The
+  `close` pointer at `planners permissions` (and softening 000's "merge stays
+  behind the classifier" to advisory) should land once 000 merges — a small
+  follow-up, folded into 000 or a new plan.
