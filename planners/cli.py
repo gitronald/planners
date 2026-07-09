@@ -6,16 +6,19 @@ Commands: ``skill``, ``rule``, ``install``, ``add``, ``index``, ``schema``,
 pure.
 """
 
+import json
 import secrets
 import shutil
 import subprocess
 import sys
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from planners import install as install_mod
+from planners import permissions as perms_mod
 from planners.index import render_index, render_plans_table
 from planners.metadata import (
     PLAN_FILENAME,
@@ -221,6 +224,26 @@ def _git(args: list[str]) -> None:
             "the plan file was written — commit it manually or use --no-commit."
         )
         raise typer.Exit(1) from None
+
+
+def _read_settings(path: Path) -> dict[str, Any]:
+    """Load a settings.json object (empty dict if absent); exit on malformed JSON.
+
+    A missing file is a fresh, empty settings object. A present file must parse as
+    a JSON object — a syntax error or a top-level array/scalar is a hard error
+    rather than a silent overwrite of whatever the user had there.
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _err(f"could not read {path}: {exc}")
+        raise typer.Exit(1) from None
+    if not isinstance(data, dict):
+        _err(f"{path} is not a JSON object; refusing to overwrite it.")
+        raise typer.Exit(1)
+    return data
 
 
 def _refresh_index(repo_root: Path, cols: str) -> Path:
@@ -647,6 +670,84 @@ def install(
             "unavailable); run `uv add --dev pre-commit && uv run pre-commit "
             "install` — or re-run with --full — to activate"
         )
+
+
+@app.command()
+def permissions(
+    level: str = typer.Option(
+        "assist",
+        "--level",
+        help="Automation level, lowest to highest: none|assist|confirm|full (or 0-3).",
+    ),
+    local_: bool = typer.Option(
+        True,
+        "--local/--global",
+        help="Target the repo's .claude/settings.local.json (default) or the "
+        "user-wide ~/.claude/settings.json.",
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Merge the rules into settings.json (default: print the block only).",
+    ),
+) -> None:
+    """Print or apply an automation-level permission profile for planners' commands.
+
+    Higher levels pre-authorize more of the lifecycle (fewer prompts): `assist`
+    grants the local, reversible spine plus the self-authored PR writes, `confirm`
+    adds `git push`, and `full` adds the irreversible `gh pr merge`. The default
+    prints a paste-ready block; `--apply` merges it additively into settings.json,
+    never downgrading an existing deny/ask rule.
+    """
+    try:
+        lvl = perms_mod.parse_level(level)
+    except ValueError:
+        _err(
+            f"unknown level: {level!r}; choose from "
+            f"{', '.join(perms_mod.levels())} (or 0-3)"
+        )
+        raise typer.Exit(1) from None
+
+    mode: install_mod.Mode = "local" if local_ else "global"
+    root = Path.cwd()
+    rules = perms_mod.rules_for(lvl, mode)
+    path = perms_mod.settings_path(root, mode)
+
+    if not apply:
+        typer.echo(f"# automation level: {lvl.value} ({mode})")
+        typer.echo(f"# target: {_shown(path, root)}")
+        if not rules:
+            typer.echo("# no rules — everything falls to the classifier")
+        typer.echo(perms_mod.render_block(rules), nl=False)
+        return
+
+    settings = _read_settings(path)
+    existing = settings.get("permissions")
+    perms_block = existing if isinstance(existing, dict) else {}
+    result = perms_mod.merge_allow(perms_block, rules)
+
+    if not result.added:
+        # Nothing new to grant (level `none`, or every rule is already allowed or
+        # held by an existing deny/ask): leave the file untouched rather than
+        # create or reformat it for a no-op write.
+        typer.echo(f"no new rules to add at level {lvl.value} ({mode})")
+        for rule in result.already:
+            typer.echo(f"  = {rule} (already allowed)")
+        for rule, reason in result.skipped:
+            _warn(f"  ! {rule} skipped ({reason})")
+        return
+
+    settings["permissions"] = result.permissions
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+    typer.echo(f"wrote {_shown(path, root)} (level {lvl.value}, {mode})")
+    for rule in result.added:
+        typer.echo(f"  + {rule}")
+    for rule in result.already:
+        typer.echo(f"  = {rule} (already allowed)")
+    for rule, reason in result.skipped:
+        _warn(f"  ! {rule} skipped ({reason})")
 
 
 @app.command()

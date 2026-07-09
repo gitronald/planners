@@ -187,6 +187,16 @@ def test_validate_rejects_literal_none() -> None:
     assert any("literal string 'none'" in e for e in meta.validate())
 
 
+def test_validate_rejects_pr_with_multiple_urls() -> None:
+    # A pr value with internal whitespace (e.g. the URL stored twice) would
+    # render a broken markdown link in the index; validate must flag it so the
+    # pre-commit gate catches it before the clobbered value is committed.
+    meta = _valid_active()
+    url = "https://github.com/o/r/pull/3"
+    meta.pr = f"{url} {url}"
+    assert any("must be a single URL" in e for e in meta.validate())
+
+
 def test_validate_concluded_must_be_empty_on_open_plan() -> None:
     meta = _valid_active()
     meta.status = Status.draft

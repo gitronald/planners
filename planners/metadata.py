@@ -262,6 +262,12 @@ class PlanMetadata(_Serializable):
                     f"{name} is the literal string {value!r}; use empty or null"
                 )
 
+        # A PR URL is a single token — internal whitespace means the value is
+        # malformed (e.g. the URL accidentally stored twice), which the index
+        # then renders verbatim into a broken markdown link.
+        if isinstance(self.pr, str) and len(self.pr.split()) > 1:
+            errors.append(f"pr {self.pr!r} must be a single URL, not multiple values")
+
         if self.created == "":
             errors.append("created is required")
         elif not _parses_iso(self.created):

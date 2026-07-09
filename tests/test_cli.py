@@ -1,5 +1,6 @@
 """End-to-end tests for the CLI commands via Typer's runner."""
 
+import json
 import subprocess
 from importlib import metadata
 from pathlib import Path
@@ -1322,3 +1323,108 @@ def test_add_defer_then_finalize_roundtrip(
         assert PlanMetadata.from_file(plans / d / "plan.md").validate() == []
     # staging cleaned up
     assert not (tmp_path / ".planners" / "staging").exists()
+
+
+def test_permissions_print_default_is_assist_local() -> None:
+    result = runner.invoke(app, ["permissions"])
+    assert result.exit_code == 0, result.output
+    assert "automation level: assist (local)" in result.output
+    assert "Bash(git commit:*)" in result.output
+    # local mode: the CLI is covered by uv run, so no bare-planners grant, and
+    # assist stops short of push/merge.
+    assert "Bash(planners:*)" not in result.output
+    assert "Bash(git push:*)" not in result.output
+    assert "Bash(gh pr merge:*)" not in result.output
+
+
+def test_permissions_print_global_includes_planners() -> None:
+    result = runner.invoke(app, ["permissions", "--global"])
+    assert result.exit_code == 0, result.output
+    assert "Bash(planners:*)" in result.output
+
+
+def test_permissions_print_full_includes_merge() -> None:
+    result = runner.invoke(app, ["permissions", "--level", "full"])
+    assert result.exit_code == 0, result.output
+    assert "Bash(gh pr merge:*)" in result.output
+
+
+def test_permissions_numeric_level_alias() -> None:
+    # `3` is an alias for `full`, so it too grants the merge rule.
+    by_number = runner.invoke(app, ["permissions", "--level", "3"])
+    assert by_number.exit_code == 0, by_number.output
+    assert "automation level: full" in by_number.output
+    assert "Bash(gh pr merge:*)" in by_number.output
+
+
+def test_permissions_unknown_level_errors() -> None:
+    result = runner.invoke(app, ["permissions", "--level", "unsupervised"])
+    assert result.exit_code == 1
+    assert "unknown level" in result.output
+    assert "assist" in result.output
+
+
+def test_permissions_apply_writes_and_defers_to_existing_ask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = tmp_path / ".claude" / "settings.local.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(
+        '{"permissions": {"allow": [], "ask": ["Bash(git push:*)"]}, "model": "x"}',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["permissions", "--level", "confirm", "--apply"])
+    assert result.exit_code == 0, result.output
+
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    allow = data["permissions"]["allow"]
+    # additive: the commit spine landed...
+    assert "Bash(git commit:*)" in allow
+    # ...but push stayed on ask (a deliberate policy is never downgraded)...
+    assert "Bash(git push:*)" not in allow
+    assert data["permissions"]["ask"] == ["Bash(git push:*)"]
+    # ...and unrelated keys survive.
+    assert data["model"] == "x"
+
+
+def test_permissions_apply_creates_missing_settings_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["permissions", "--level", "assist", "--apply"])
+    assert result.exit_code == 0, result.output
+    settings = tmp_path / ".claude" / "settings.local.json"
+    assert settings.is_file()
+    allow = json.loads(settings.read_text(encoding="utf-8"))["permissions"]["allow"]
+    assert "Bash(gh pr comment:*)" in allow
+
+
+def test_permissions_apply_none_writes_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["permissions", "--level", "none", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "no new rules to add" in result.output
+    # `none` grants nothing, so apply must not create a settings file.
+    assert not (tmp_path / ".claude" / "settings.local.json").exists()
+
+
+def test_permissions_apply_noop_leaves_existing_file_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = tmp_path / ".claude" / "settings.local.json"
+    settings.parent.mkdir(parents=True)
+    # Every assist rule already present -> applying assist changes nothing.
+    from planners.permissions import Level, rules_for
+
+    already = {"permissions": {"allow": rules_for(Level.assist, "local")}}
+    original = json.dumps(already) + "\n"
+    settings.write_text(original, encoding="utf-8")
+    result = runner.invoke(app, ["permissions", "--level", "assist", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "no new rules to add" in result.output
+    # Byte-for-byte unchanged: a no-op apply never reformats the user's file.
+    assert settings.read_text(encoding="utf-8") == original

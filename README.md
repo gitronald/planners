@@ -54,6 +54,7 @@ planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
 planners rule <name>                     # print a bundled convention rule body
 planners install                         # install global holder + rule + repo hook (--local: per-repo)
+planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
 ```
 
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
