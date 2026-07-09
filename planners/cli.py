@@ -702,9 +702,7 @@ def permissions(
     try:
         lvl = perms_mod.parse_level(level)
     except ValueError:
-        _err(
-            f"unknown level: {level!r}; choose from {', '.join(perms_mod.levels())}"
-        )
+        _err(f"unknown level: {level!r}; choose from {', '.join(perms_mod.levels())}")
         raise typer.Exit(1) from None
 
     mode: install_mod.Mode = "local" if local_ else "global"
