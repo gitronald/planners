@@ -1,10 +1,10 @@
 ---
 id: 1
 slug: permission-automation-levels
-status: active
+status: done
 branch: feature/permission-automation-levels
 created: 2026-07-09T00:34:01-07:00
-concluded:
+concluded: 2026-07-09T01:18:28-07:00
 pr: https://github.com/gitronald/planners/pull/7
 ---
 
@@ -173,3 +173,27 @@ absolute.
   `close` pointer at `planners permissions` (and softening 000's "merge stays
   behind the classifier" to advisory) should land once 000 merges — a small
   follow-up, folded into 000 or a new plan.
+
+### 2026-07-09 — close review follow-up
+
+The close review gate found one issue in the new command: `--apply` always
+rewrote `settings.json`, so `--level none --apply` created a pointless empty
+`permissions` block and a no-op apply reformatted the user's file. Made apply a
+genuine no-op when nothing is added — it leaves the file untouched and reports it
+(commit `c27d3de`), with two regression tests (`none` creates no file; an
+all-present apply is byte-for-byte unchanged). Gate green (290 passed).
+
+## Retrospective
+
+- Splitting the ladder by *supervision posture* (`none`/`assist`/`confirm`/`full`)
+  rather than by verb made the boundaries self-explaining — and moving the commit
+  spine down to `assist` mid-design (a reviewer catch) kept the local/remote risk
+  split honest.
+- The pure-module split paid off: every level, mode, and merge rule was testable
+  without touching the filesystem, so the CLI command stayed thin.
+- The review gate earned its keep — the no-op-write finding was a real
+  deferential-behavior bug that surfaced only by exercising `--apply` on edge
+  inputs, not from the happy-path tests.
+- Declaring needs (print) over seizing them (auto-writing settings) kept the tool
+  from owning the user's security config — the right default for a permission
+  writer, and the reason `--print` is the default.
