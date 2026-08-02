@@ -41,12 +41,12 @@ only-include = [
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.155.2",
+    "hypothesis>=6.163.0",
     "pre-commit",
-    "pyrefly>=1.0.0",
-    "pytest>=9.1.0",
+    "pyrefly>=1.1.1",
+    "pytest>=9.1.1",
     "pytest-cov",
-    "ruff>=0.15.17",
+    "ruff>=0.16.0",
 ]
 
 [tool.ruff]
