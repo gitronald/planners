@@ -27,12 +27,26 @@ spec. If `status` is `done` or `retired`, stop and tell the user — it is close
 ```bash
 git status
 git branch --show-current
+{cli} base --all
 git rev-list --left-right --count HEAD...@{upstream}
 ```
 
 - The activation commit (step 3) lands on the **base**, so be on the base branch
-  in the main checkout — usually `dev`. If the current branch is not `dev`, ask
-  whether to base it on the current branch or `dev`, then check that branch out.
+  in the main checkout. `{cli} base --all` prints the branches this repo counts
+  as mainline (`dev` when it exists, plus the default branch) — the same
+  detection `{cli} add` enforces, so trust it over the `dev` convention. If the
+  current branch is not one of them, ask whether to base the work on the current
+  branch or on the first mainline branch, then check that branch out.
+- **Do not create the branch or worktree first.** Running add/activate from
+  inside a feature branch puts both commits only on that branch, so the mainline
+  never records the plan if the branch does not land. `{cli} add` now refuses
+  outright in that position; the activation commit in step 3 is a hand-written
+  `git commit` with no such guard, so this check is the only thing protecting it.
+- If `{cli} base` exits non-zero, the repo's mainline could not be detected
+  (no `dev`, no `refs/remotes/origin/HEAD`, no `main`/`master`). Ask the user
+  which branch is the base rather than guessing — and note that
+  `git remote set-head origin --auto` records the remote's default branch if
+  that is what is missing.
 - Behind upstream → pull the base first so the activation commit sits on top of
   the latest; ahead → note the unpushed commits.
 - The activation commit stages only the plan file and the index, so unrelated

@@ -11,7 +11,7 @@ infer the action from the user's words or the plan's current state.
 
 | Action | Triggers | Effect |
 |--------|----------|--------|
-| **activate** | "start", "activate", "begin" | `status: active`; fill `branch` if on a non-main branch |
+| **activate** | "start", "activate", "begin" | `status: active`; fill `branch`. Commit on the mainline |
 | **log** | "log", "note", "update" | Append a dated entry to the `## Log` section |
 | **close** | "close", "finish", "done", "complete" | Hand off to `/planners close` (review gate, merge, cleanup) |
 | **retire** | "abandon", "drop", "cancel", "retire", "supersede" | `status: retired`; fill `concluded` |
@@ -28,8 +28,12 @@ whether a `## Log` section exists.
 
 ### 2. Apply the action
 
-**Activate** — set `status: active`; if `branch` is empty and you are on a
-non-main branch, fill it (`git branch --show-current`). Commit
+**Activate** — set `status: active` and fill `branch` if empty (the plan's
+intended branch, or `feature/<slug>`). **Commit on the mainline**, before the
+branch or worktree exists — `{cli} base --all` prints the branches that qualify.
+The activation commit is a hand-written `git commit`, so no CLI guard covers it;
+if `git branch --show-current` is not in that set, switch before committing or
+the plan is recorded only on a branch that may never merge. Commit
 `plan [activate]: {NNN} - {title lowercase}`.
 
 **Log** — append under `## Log` (create it before `## Retrospective` or at the

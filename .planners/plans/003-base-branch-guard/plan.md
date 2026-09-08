@@ -1,11 +1,11 @@
 ---
 id: 3
 slug: base-branch-guard
-status: active
+status: done
 branch: feature/base-branch-guard
 created: 2026-07-23T12:04:08-07:00
-concluded:
-pr:
+concluded: 2026-09-08T14:11:42-07:00
+pr: https://github.com/gitronald/planners/pull/12
 ---
 
 # Guard add/activate against running on a non-base branch
@@ -112,3 +112,137 @@ answer from its own history), and it costs a history walk on every `add`.
 The design absorbs the weakness rather than denying it: an accepted set rather
 than one branch, `--allow-branch` as the escape hatch, and inert-when-unresolvable
 so the guard never blocks a repo it cannot reason about.
+
+## Log
+
+**2026-09-08** — Implemented on `feature/base-branch-guard` (PR #12).
+
+- `planners/base.py` (new): `detect()` resolves the mainline set from git's refs
+  and `guard_message()` renders the refusal. Read-only and best-effort — every
+  git failure collapses to "absent", so detection degrades to `UNRESOLVED` rather
+  than turning a missing binary or an odd repo into a command failure.
+- `add` and `finalize` call the guard **before writing anything**. A refused
+  `add` leaves no half-scaffolded plan directory (the ordering the unsafe-slug
+  check already relied on), and a refused `finalize` leaves the batch staged and
+  recoverable rather than half-moved out of staging.
+- Only the committing paths are guarded. `--no-commit` and `--defer` write no
+  commit, so no branch can strand one; guarding them would refuse work that is
+  not at risk.
+- `planners base` prints the mainline (`--all` for the set), exits non-zero when
+  nothing resolves, and appends the `git remote set-head origin --auto` remedy to
+  stderr when detection fell back past `origin/HEAD`. stdout stays clean so a
+  script can consume it.
+- Prose updated at the source rather than restated: the convention rule gained a
+  *Plan commits belong on the mainline* section, and `add.md`/`implement.md` now
+  run `base --all` instead of asserting "usually `dev`". `implement.md` step 2
+  also says outright not to create the branch first, and flags that the
+  activation commit is hand-written `git commit` with no CLI guard behind it —
+  that check is the only thing protecting it.
+
+### Verification
+
+19 tests in `tests/test_base.py`, all against real git repos — the module's whole
+job is reporting what git's refs say, so a mocked `subprocess` would only assert
+that the code calls the commands it calls. Full suite 312 passed; ruff and
+pyrefly clean.
+
+Reproduced the failure this plan was written about in a scratch repo: branch
+created first, then `add` — now refused, with the plan committed to `dev` on the
+correct ordering. Confirmed detection resolves the shared refs correctly from
+inside a linked worktree, which is the position the original failure happened in.
+
+### Notes
+
+- The guard caught itself during development: running `planners add` from this
+  plan's own worktree was refused, which is the exact scenario in *Observed
+  failure* above.
+- `git init` leaves an unborn HEAD, so the first `add` in a fresh repo has no
+  mainline to be off of. That case is inert by construction, not a refusal — and
+  it is what keeps the pre-existing `add` tests (which `git init` and immediately
+  add) green without an `--allow-branch`.
+- Tripped the repo's `test_no_abandoned_anywhere_in_package_source` convention
+  while writing docstrings. The word is banned because `retired` deliberately
+  carries no failure connotation; rephrased to "never merged".
+- Deliberately out of scope, per the resolved design: no `validate` reachability
+  check and no configuration knob. The activation commit remains unguarded by
+  code — prose is the only lever, since `activate` has no CLI command.
+
+### Review follow-up
+
+`/code-review` at level `high` on PR #12: four finder passes, then adversarial
+verification per file. 19 candidates, 16 confirmed, 1 rejected. Everything
+actionable was fixed before merge.
+
+**Two real defects, both in code this plan added.**
+
+The guard *failed open* under an ambient `GIT_DIR`. `_git_out` passed `cwd=root`
+but inherited the git-location environment variables, which outrank `cwd`.
+Reproduced end to end: with `GIT_DIR` pointing elsewhere, `add` run in a repo
+sitting on a feature branch reported `on_mainline=True`, passed, and committed
+the plan **into the unrelated repo**, leaving the real one with orphaned untracked
+files. `cwd=root` does not save you — `_is_repo` still succeeds, just against the
+wrong repository. Fixed by stripping those variables for the duration of
+detection.
+
+A dangling `origin/HEAD` was trusted without checking the ref existed, so
+detection reported a confident (`thin=False`) answer naming a branch that cannot
+be checked out — a refusal whose advice fails with `pathspec did not match`. The
+fallback path already required `_has_branch`; the `origin/HEAD` path did not.
+Fixed by verifying the remote-tracking ref, falling back and reporting `thin`
+when it is absent.
+
+**A test-integrity finding worth more than either.** No test anywhere covered
+`finalize` committing on a mainline branch. Both `finalize` commit-mode tests in
+`test_cli.py` init a repo with no commit, so HEAD is unborn and the guard
+short-circuits before `on_mainline` is ever consulted — proven by mutation:
+patching `on_mainline` to return `False` unconditionally left them green.
+`test_base.py` covered only the refusal path. The unborn-HEAD carve-out that keeps
+fresh repos working is the same thing that made those tests vacuous.
+
+**Docs contradictions the diff created.** The generated rule's own Skills summary
+still read "check git status, create branch, activate, start coding" — branch
+before activation, in the same file as the new section forbidding exactly that.
+`update.md`'s activate action still assumed the session was already on a feature
+branch. Both rewritten.
+
+Also folded in: one shared `THIN_NOTE` (the two copies had already drifted),
+`UNRESOLVED.thin` corrected to `False`, and a tautological containment check
+removed. Rejected one finding — "abandoned" in this plan's *Observed failure* is
+pre-existing text, and the convention test scans only `planners/` package source.
+
+`base.py` coverage 96% -> 99%. Gate green: ruff, ruff format --check, pyrefly,
+323 tests.
+
+### Known gap, not fixed here
+
+`cli._git` — the runner that makes the actual commit — has the same `GIT_DIR`
+exposure and does not even pass `cwd`. So once the guard allows a commit,
+`planners add` under an ambient `GIT_DIR` can still write it into another
+repository. That is pre-existing on `dev` and outside this plan's scope. The
+detection fix makes the *guard* accurate; it does not make the *commit*
+location-safe. Worth its own plan.
+
+## Retrospective
+
+- The design survived review; the implementation did not. Every confirmed defect
+  was in how the module talked to git, not in the accepted-set/inert-when-
+  unresolvable policy settled up front. Deciding the policy before writing code
+  was worth it — and did nothing to protect the plumbing underneath it.
+- A guard has an asymmetric failure mode that ordinary code does not, and I did
+  not design for it. Failing *closed* is a nuisance; failing *open* is silent and
+  leaves the user believing they are protected. `cwd=root` reads as obviously
+  sufficient and is not. Anything that shells out to git for a security or
+  correctness decision should pin the environment, not just the directory.
+- The carve-out that makes a feature usable can be the thing that makes its tests
+  vacuous. Unborn-HEAD inertness is correct behavior *and* the reason three
+  pre-existing tests never reached the guard. Worth asking, of any new
+  short-circuit: which existing tests now stop early because of it?
+- Mutation was the only technique that produced this. Coverage reported those
+  tests as exercising the code; they did. Breaking `on_mainline` on purpose and
+  watching them stay green is what showed they asserted nothing about it.
+- Prose fixes at the source still missed a spot. I updated `implement.md` and the
+  rule's body but not the rule's own one-line Skills summary, leaving a generated
+  always-on file contradicting itself. When a doc restates itself at two
+  altitudes, both are the source.
+- Dogfooding caught a real thing early: the guard refused my own `add` from
+  inside this plan's worktree. Cheap signal, worth reaching for sooner.

@@ -30,6 +30,12 @@ Derive a kebab-case `<slug>` from the request, then run:
   `status: draft`, and `created` filled in, regenerates the plans table in
   `.planners/README.md`, and commits both on the current branch
   (`plan [add]: NNN - <slug>`).
+- **The commit must land on the mainline**, so the plan is recorded there even if
+  a feature branch never merges. `add` refuses when HEAD is off it — `dev` when
+  that branch exists, plus the repo's default branch; `{cli} base --all` prints
+  the set. Switch to a mainline branch rather than reaching for the override.
+  `--allow-branch` exists for a repo whose mainline genuinely is not detectable
+  by name, not as a way past the refusal.
 - Pass `--no-commit` to write the file only — no index refresh, no commit — when
   you want to author the `## Plan` body before committing, or are batching.
 - Pass `--parent <N>` to scaffold a **subplan** of umbrella `N` (see *Umbrella +
@@ -86,7 +92,9 @@ Use deferred numbering instead:
   `plans/` (sidecar files included), refreshes the index, commits the batch in one
   commit (`plan [add]: NNN - <slug>` for one plan, else `plan [add]: NNN-MMM
   (N plans)`), and runs a self-check. Run it **once**, after every deferred creator
-  has finished (the explicit "batch complete" signal).
+  has finished (the explicit "batch complete" signal). It commits, so the same
+  mainline guard applies — run it from a mainline branch. A refused finalize
+  leaves the batch staged and recoverable, nothing half-materialized.
 - Two creators may pick the same slug; finalize keeps them distinct by number and
   notes the duplicate. `--defer` is for top-level plans only (not `--parent`).
 
