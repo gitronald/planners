@@ -324,3 +324,226 @@ def test_base_exits_nonzero_with_no_commits(
     result = runner.invoke(app, ["base"])
     assert result.exit_code == 1
     assert "no commits yet" in result.output
+
+
+def test_base_notes_the_remedy_when_resolution_is_thin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guessed-by-name answer says so, and names the command that fixes it."""
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)  # no origin/HEAD -> fallback to the local 'main'
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["base"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "main"
+    assert "git remote set-head origin --auto" in result.output
+
+
+def test_base_accepts_an_explicit_repo_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positional argument is honored, not silently replaced by the cwd."""
+    repo = tmp_path / "elsewhere"
+    repo.mkdir()
+    _init_git(repo, branch="main")
+    _commit(repo)
+    _set_origin_head(repo, "main")
+    # Stand somewhere that is deliberately NOT a git repo, so a cwd-based
+    # implementation would resolve nothing and fail this test.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    result = runner.invoke(app, ["base", str(repo)])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "main"
+
+
+# --- environment independence ------------------------------------------------
+
+
+def test_detection_ignores_an_ambient_git_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An inherited GIT_DIR must not redirect detection to another repository.
+
+    GIT_DIR outranks ``cwd``, so without stripping it the guard would clear a
+    branch it never looked at — a guard that fails *open*, which is worse than no
+    guard. Git exports GIT_DIR to its own hooks, so this is a reachable state.
+    """
+    other = tmp_path / "other"
+    other.mkdir()
+    _init_git(other, branch="dev")
+    _commit(other)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git(repo, branch="main")
+    _commit(repo)
+    _branch(repo, "feature/x")
+
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+
+    mainline = base_mod.detect(repo)
+    # Describes `repo` (on feature/x, off its mainline), not `other` (on dev).
+    assert mainline.current == "feature/x"
+    assert mainline.on_mainline is False
+    assert base_mod.guard_message(mainline, "plan [add]") is not None
+
+
+def test_add_refuses_despite_an_ambient_git_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: the guard still refuses, and nothing is written anywhere."""
+    other = tmp_path / "other"
+    other.mkdir()
+    _init_git(other, branch="dev")
+    _commit(other)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git(repo, branch="main")
+    _commit(repo)
+    _branch(repo, "feature/x")
+
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.chdir(repo)
+
+    result = runner.invoke(app, ["add", "my-plan"])
+    assert result.exit_code == 1
+    assert "not a mainline branch" in result.output
+    assert not (repo / ".planners" / "plans").exists()
+    # The unrelated repo is untouched — no stray plan commit landed in it.
+    log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=other,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "plan [add]" not in log
+
+
+# --- resolution edge cases ---------------------------------------------------
+
+
+def test_dangling_origin_head_is_not_trusted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A symbolic ref to a missing branch must not become the advertised remedy.
+
+    ``git symbolic-ref`` reports a dangling target happily. Trusting it names a
+    branch the user cannot check out, and marks the answer confident.
+    """
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://example.invalid/repo.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    # Point origin/HEAD at a branch that does not exist.
+    subprocess.run(
+        [
+            "git",
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/ghost",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    mainline = base_mod.detect(tmp_path)
+    assert "ghost" not in mainline.branches
+    # Falls back to the local 'main', and admits the answer was a guess.
+    assert mainline.branches == ("main",)
+    assert mainline.thin is True
+
+
+def test_detect_falls_back_to_master(tmp_path: Path) -> None:
+    """The second fallback name resolves, not only the first."""
+    _init_git(tmp_path, branch="master")
+    _commit(tmp_path)
+    mainline = base_mod.detect(tmp_path)
+    assert mainline.branches == ("master",)
+    assert mainline.on_mainline is True
+
+
+def test_detect_unresolved_when_head_is_born_but_nothing_matches(
+    tmp_path: Path,
+) -> None:
+    """Commits exist, but no dev, no origin/HEAD, and no main/master -> inert.
+
+    Distinct from the unborn and non-repo paths, which return earlier.
+    """
+    _init_git(tmp_path, branch="trunk")
+    _commit(tmp_path)
+    mainline = base_mod.detect(tmp_path)
+    assert mainline.resolved is False
+    assert mainline.unborn is False
+    assert base_mod.guard_message(mainline, "plan [add]") is None
+
+
+def test_detect_is_unresolved_without_git_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No git binary must degrade to inert, never raise."""
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "no-such-bin"))
+
+    mainline = base_mod.detect(tmp_path)
+    assert mainline.resolved is False
+    assert base_mod.guard_message(mainline, "plan [add]") is None
+
+
+def test_unresolved_sentinel_is_not_marked_thin() -> None:
+    """Nothing resolved is not the same as a guessed-by-name answer."""
+    assert base_mod.UNRESOLVED.resolved is False
+    assert base_mod.UNRESOLVED.thin is False
+
+
+# --- finalize's permit path --------------------------------------------------
+
+
+def test_finalize_commits_on_a_mainline_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """finalize's *allow* path, with HEAD genuinely resolved and on the mainline.
+
+    The pre-existing finalize tests init a repo with no commit, so HEAD is unborn
+    and the guard is inert there — they pass without ever reaching this path.
+    """
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["add", "my-plan", "--defer"]).exit_code == 0
+
+    result = runner.invoke(app, ["finalize"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".planners" / "plans" / "000-my-plan" / "plan.md").exists()
+    log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "plan [add]: 000 - my-plan" in log
+
+
+def test_finalize_allow_branch_overrides_the_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The override is threaded through finalize's call site, not just add's."""
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["add", "my-plan", "--defer"]).exit_code == 0
+    _branch(tmp_path, "feature/x")
+
+    result = runner.invoke(app, ["finalize", "--allow-branch"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".planners" / "plans" / "000-my-plan" / "plan.md").exists()
