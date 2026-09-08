@@ -1,8 +1,8 @@
 ---
 id: 6
 slug: commit-path-git-dir-safety
-status: draft
-branch:
+status: active
+branch: feature/commit-path-git-dir-safety
 created: 2026-09-08T15:37:36-07:00
 concluded:
 pr:
