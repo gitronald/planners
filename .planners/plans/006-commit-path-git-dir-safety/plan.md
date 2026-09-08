@@ -5,7 +5,7 @@ status: active
 branch: feature/commit-path-git-dir-safety
 created: 2026-09-08T15:37:36-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/13
 ---
 
 # Make the commit path independent of ambient git location vars
@@ -83,3 +83,85 @@ precisely the observed bug. Worth stating explicitly rather than assuming.
 - The bug predates 003 — `_git` has always inherited the environment. 003 made it
   visible by adding a guard whose correctness depends on which repo git answers
   about.
+
+## Log
+
+### 2026-09-08 — implemented on `feature/commit-path-git-dir-safety` (PR #13)
+
+All five steps landed in one commit; the shared helper made them a single change
+rather than five parallel edits.
+
+**Step 1 — new module `planners/proc.py`.** `utils.py` was not a candidate: its
+docstring promises "nothing here touches the filesystem, git, or the clock", and
+this is the git-invocation primitive. So a third module both `base` and `cli`
+import, exposing `LOCATION_ENV`, `pinned_env()`, and
+`run(root, argv, *, capture_output=False)`. `run` deliberately keeps neither
+`check=True` nor `shell=True`: every caller already has its own idiom for a
+non-zero exit (absence for detection, a typer error for the commit path, `False`
+for the best-effort hook helpers), and for the `rev-parse --verify -q` forms a
+non-zero exit just means "no such ref".
+
+`LOCATION_ENV` is the same five variables 003 stripped. `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_SYSTEM`, and `GIT_CEILING_DIRECTORIES` are pointedly *not* in it —
+they change what git reads, not which repository it acts on, and the suite's
+`_isolate_git_env` fixture depends on them surviving. Stripping them would have
+silently un-insulated every test, so `test_proc.py` asserts they pass through.
+
+**Steps 2-3 — `cli._git(root, args)` and `_git_status_porcelain`.** `_git` gained
+the `root` parameter the plan predicted; all four call sites (two in `add`, two in
+`finalize`) already had `root` in scope. Both runners now go through `proc.run`.
+One behavioral consequence worth naming: `_git` no longer passes `check=True`, so
+it inspects `returncode` instead of catching `CalledProcessError`. Same message,
+same exit code.
+
+**Step 4 — the regression test.** `tests/test_base.py`, in the *environment
+independence* section next to 003's detection-side test:
+`test_add_commits_into_the_repo_it_ran_in_despite_an_ambient_git_dir`. HEAD is on
+`dev` in both repos so the guard legitimately clears the run — the point is that
+the commit is redirected *after* the guard passes.
+
+A trap found while writing it: the assertions themselves were being redirected.
+`git log` with `cwd=repo` under an exported `GIT_DIR` reports the *other* repo's
+history, so a naive check can pass for the wrong reason (003's existing test reads
+`other`'s log with `GIT_DIR` still pointing at `other`, which happens to be
+correct). Added a `_unredirected()` helper that drops `GIT_DIR` from its own
+environment rather than reusing `proc.run` — an assertion must not depend on the
+code under test — and routed both tests through it.
+
+Verified the test bites by temporarily sabotaging `pinned_env()` to return
+`dict(os.environ)`: `add` reported `[dev f127011] plan [add]: 000 - my-plan` while
+`repo`'s log still held only `init`. That is the reported bug reproduced inside
+the suite.
+
+**Step 5 — `install.py` done in the same pass.** All four shell-outs
+(`_effective_hooks_dir`, `core_hookspath_set`, `_run_precommit_install`,
+`ensure_precommit_dependency`) now use `proc.run`. Two are advisory as the plan
+said, but `_run_precommit_install` is not purely advisory on reflection:
+`pre-commit install` *writes* into git's hooks directory, so it inherits the same
+hazard one level down and would install the hook into the wrong repo. The `uv`
+commands go through the same helper for that reason.
+
+Five tests in `test_install.py` patched `install_mod.subprocess.run`; they now
+patch `install_mod.proc.run`. Same reach — `install_mod.subprocess` *was* the
+stdlib module, so those patches were already global for the test's duration.
+
+**Result.** 329 tests pass (6 new), `ruff format`, `ruff check`, and
+`pyrefly check` clean, `planners validate` clean. `subprocess` is now imported in
+exactly one place in the package.
+
+### Resolved: the open decision
+
+Answered as the plan leaned — **an ambient `GIT_DIR` is never honored**, and the
+reasoning is now stated in `proc.py`'s module docstring rather than left implicit:
+plan files are written relative to the working directory, so honoring `GIT_DIR`
+puts the files in one repo and the commit in another. That is not a capability
+being removed; it is the bug. The target repository is named by `root` and only by
+`root`.
+
+### Incidental finding, not fixed here
+
+This checkout has **no git hooks installed at all** (`.git/hooks/` holds only
+`.sample` files), so the `planners validate` pre-commit gate the rule describes is
+not firing for any commit in this repo. Every check above was run by hand. Out of
+scope for this plan — flagged for a follow-up, since a gate nobody notices is
+absent is the same failure mode this plan is about.
