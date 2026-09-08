@@ -120,6 +120,16 @@ rule actually applies.
 
 ### Notes
 
+- **Two premises above went stale before this plan started.** Written 2026-09-08
+  13:44, ~30 minutes before plan 003 concluded, so it describes docs that 003's
+  review gate then fixed. *The two documented activate paths disagree* is
+  resolved: `update.md`'s activate row no longer says "if on a non-main branch" —
+  it now requires the mainline and points at `base --all`, agreeing with
+  `implement.md`. Step 4 (*settle the commit subject in code*) is also
+  pre-settled: the slug form is now the stated convention in the rule, and the
+  skills' hand-written subjects match it, so step 4 is implementing a decided
+  format rather than choosing one. The `plan [activate]` history quoted above is
+  still the accurate record of the drift that motivated it.
 - Depends on nothing in 004, and shares `_guard_base_branch` with 003. Can land
   independently of both.
 - This does not make hand-editing impossible, the same way `add` does not. It
