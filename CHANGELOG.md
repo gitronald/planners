@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   as part of batching. Steps 1–3 are now contiguous.
 - The `implement` skill's worktree example named a `plan/<NNN>-<slug>` branch
   while the same skill derives `feature/<slug>`.
+- `add` and `finalize` could commit a plan into a **different repository** than
+  the one they ran in. An ambient `GIT_DIR` — which git exports to every hook it
+  runs, so a hook or wrapper inherits it without anyone setting it — outranks the
+  working directory, so the `plan [add]` commit landed in another repo's history
+  while the plan files stayed uncommitted here. Every git shell-out is now pinned
+  to an explicit repo root with the location variables stripped, including the
+  hook-detection helpers and `pre-commit install`.
 
 ## [0.4.0] - 2026-07-09
 
