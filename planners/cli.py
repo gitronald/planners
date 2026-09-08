@@ -1,6 +1,6 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``skill``, ``rule``, ``install``, ``add``, ``index``, ``schema``,
+Commands: ``skill``, ``rule``, ``install``, ``add``, ``base``, ``index``, ``schema``,
 ``validate``. Filesystem and subprocess (git) work is confined to this module,
 ``install``, and the ``add`` helpers; the schema/index/skill/rule transforms stay
 pure.
@@ -17,6 +17,7 @@ from typing import Any
 
 import typer
 
+from planners import base as base_mod
 from planners import install as install_mod
 from planners import permissions as perms_mod
 from planners.index import render_index, render_plans_table
@@ -224,6 +225,30 @@ def _git(args: list[str]) -> None:
             "the plan file was written — commit it manually or use --no-commit."
         )
         raise typer.Exit(1) from None
+
+
+def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
+    """Refuse to commit ``action`` when HEAD is off the repo's mainline.
+
+    The plan-file convention is that ``add``/``activate`` commits land on the
+    mainline *before* a feature branch exists, so the plan is recorded there even
+    if the branch is abandoned. That ordering used to live only in the implement
+    skill's prose, which a session can ignore — and did, leaving both commits
+    reachable only from the branch. This is the enforcement.
+
+    Deliberately quiet in every ambiguous case: :func:`base.guard_message`
+    returns ``None`` for an unresolvable repo, a repo with no commits, or a HEAD
+    already on the mainline, so the guard only speaks when the failure is
+    demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
+    genuinely is not detectable by name.
+    """
+    if allow_branch:
+        return
+    message = base_mod.guard_message(base_mod.detect(root), action)
+    if message is None:
+        return
+    _err(f"error: {message}")
+    raise typer.Exit(1)
 
 
 def _read_settings(path: Path) -> dict[str, Any]:
@@ -768,6 +793,12 @@ def add(
         help="Stage an unnumbered plan under .planners/staging for collision-safe "
         "batch creation; number it later with `planners finalize`.",
     ),
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="Commit the plan even though HEAD is off the repo's mainline "
+        "(dev/default branch), which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
@@ -778,6 +809,13 @@ def add(
         raise typer.Exit(1)
 
     root = Path.cwd()
+
+    # Guard before writing anything, so a refusal leaves no half-scaffolded plan
+    # directory behind — the same ordering the unsafe-slug check above relies on.
+    # Only the committing paths are guarded: --no-commit and --defer write no
+    # commit, so there is nothing for a branch to strand.
+    if not no_commit and not defer:
+        _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
 
     if defer:
         # Deferred creation: write an unnumbered plan into a per-creator staging
@@ -865,6 +903,12 @@ def add(
 
 @app.command()
 def finalize(
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="Commit the batch even though HEAD is off the repo's mainline "
+        "(dev/default branch), which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
         False,
         "--no-commit",
@@ -880,6 +924,12 @@ def finalize(
     self-check. Being the sole writer, it cannot race on numbering or the commit.
     """
     root = Path.cwd()
+
+    # Guard before materializing: a refusal must leave the batch staged and
+    # recoverable, not half-moved out of staging with no commit to show for it.
+    if not no_commit:
+        _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
+
     staging = root / STAGING_DIR
     staged = _collect_staged(staging)
     if not staged:
@@ -988,6 +1038,54 @@ def finalize(
     _git(["commit", "-m", message])
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
+
+
+@app.command()
+def base(
+    repo_path: Path = typer.Argument(Path("."), help="Repo root (a git worktree)."),
+    all_: bool = typer.Option(
+        False,
+        "--all",
+        help="Print every detected mainline branch, one per line, in resolution "
+        "order (default: only the first).",
+    ),
+) -> None:
+    """Print the repo's mainline branch(es) — where plan commits belong.
+
+    One detection implementation, shared by the ``add``/``finalize`` guard and by
+    the lifecycle skills, so the convention is not re-described in prose that can
+    drift from the code. Exits non-zero and prints nothing to stdout when no
+    mainline resolves, so a script can branch on it.
+
+    This reports what git's refs say *now*; it is not a record of where a repo's
+    existing plans were actually committed. See :func:`planners.base.detect`.
+    """
+    mainline = base_mod.detect(repo_path)
+
+    if mainline.unborn:
+        _err(
+            "no commits yet, so no mainline branch exists; the first plan can be "
+            "added on whatever branch this repo starts on."
+        )
+        raise typer.Exit(1)
+    if not mainline.resolved:
+        _err(
+            "could not determine a mainline branch: no 'dev', no "
+            "refs/remotes/origin/HEAD, and no local 'main' or 'master'. Run `git "
+            "remote set-head origin --auto` to record the remote's default "
+            "branch, or pass --allow-branch to planners add."
+        )
+        raise typer.Exit(1)
+
+    for name in mainline.branches if all_ else mainline.branches[:1]:
+        typer.echo(name)
+
+    if mainline.thin:
+        _err(
+            "note: refs/remotes/origin/HEAD is unset, so the default branch was "
+            "guessed by name; `git remote set-head origin --auto` re-derives it "
+            "from the remote."
+        )
 
 
 @app.command()
