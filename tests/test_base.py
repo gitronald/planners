@@ -6,6 +6,7 @@ commands it calls. The ``_isolate_git_env`` autouse fixture keeps the machine's
 global config and any enclosing repo out of the way (see ``conftest.py``).
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -39,6 +40,26 @@ def _commit(path: Path, message: str = "init") -> None:
 def _branch(path: Path, name: str) -> None:
     """Create and switch to ``name``."""
     subprocess.run(["git", "checkout", "-q", "-b", name], cwd=path, check=True)
+
+
+def _unredirected(path: Path, args: list[str]) -> str:
+    """Run a read-only git command against ``path``, immune to an ambient GIT_DIR.
+
+    The environment-independence tests below *export* ``GIT_DIR``, which would
+    redirect the assertions themselves — ``git log`` with ``cwd=repo`` would report
+    the other repo's history and the test could pass for the wrong reason. Dropping
+    the variable here (rather than reusing the package's own sanitizing runner)
+    keeps the check independent of the code under test.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "GIT_DIR"}
+    return subprocess.run(
+        ["git", *args],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout
 
 
 def _set_origin_head(path: Path, branch: str) -> None:
@@ -415,14 +436,43 @@ def test_add_refuses_despite_an_ambient_git_dir(
     assert "not a mainline branch" in result.output
     assert not (repo / ".planners" / "plans").exists()
     # The unrelated repo is untouched — no stray plan commit landed in it.
-    log = subprocess.run(
-        ["git", "log", "--oneline"],
-        cwd=other,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    assert "plan [add]" not in log
+    assert "plan [add]" not in _unredirected(other, ["log", "--oneline"])
+
+
+def test_add_commits_into_the_repo_it_ran_in_despite_an_ambient_git_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The commit follows the working directory, never an inherited GIT_DIR.
+
+    The commit-side counterpart of the detection test above, and the reproduction
+    of the reported bug: HEAD here is on ``dev``, so the guard legitimately clears
+    the repo — and the commit was then still redirected, landing ``plan [add]`` in
+    the *other* repo's history and leaving this one with orphaned, untracked
+    ``.planners`` files. Git exports ``GIT_DIR`` to every hook it runs, so this is
+    a state a wrapper or hook reaches without anyone setting it deliberately.
+    """
+    other = tmp_path / "other"
+    other.mkdir()
+    _init_git(other, branch="dev")
+    _commit(other)
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git(repo, branch="dev")
+    _commit(repo)
+
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.chdir(repo)
+
+    result = runner.invoke(app, ["add", "my-plan"])
+    assert result.exit_code == 0, result.output
+
+    # The plan commit landed here...
+    assert "plan [add]: 000 - my-plan" in _unredirected(repo, ["log", "--oneline"])
+    # ...and only here.
+    assert "plan [add]" not in _unredirected(other, ["log", "--oneline"])
+    # Nothing orphaned: the plan and the index are committed, not left untracked.
+    assert _unredirected(repo, ["status", "--porcelain"]).strip() == ""
 
 
 # --- resolution edge cases ---------------------------------------------------

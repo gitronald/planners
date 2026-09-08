@@ -474,19 +474,19 @@ def test_run_precommit_install_is_best_effort(tmp_path: Path, monkeypatch) -> No
     def missing(*_args, **_kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(install_mod.subprocess, "run", missing)
+    monkeypatch.setattr(install_mod.proc, "run", missing)
     assert install_mod._run_precommit_install(tmp_path) is False
 
     class _Fail:
         returncode = 1
 
-    monkeypatch.setattr(install_mod.subprocess, "run", lambda *_a, **_k: _Fail())
+    monkeypatch.setattr(install_mod.proc, "run", lambda *_a, **_k: _Fail())
     assert install_mod._run_precommit_install(tmp_path) is False
 
     class _Ok:
         returncode = 0
 
-    monkeypatch.setattr(install_mod.subprocess, "run", lambda *_a, **_k: _Ok())
+    monkeypatch.setattr(install_mod.proc, "run", lambda *_a, **_k: _Ok())
     assert install_mod._run_precommit_install(tmp_path) is True
 
 
@@ -496,19 +496,19 @@ def test_ensure_precommit_dependency_is_best_effort(
     def missing(*_args, **_kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(install_mod.subprocess, "run", missing)
+    monkeypatch.setattr(install_mod.proc, "run", missing)
     assert ensure_precommit_dependency(tmp_path) is False
 
     class _Fail:
         returncode = 1
 
-    monkeypatch.setattr(install_mod.subprocess, "run", lambda *_a, **_k: _Fail())
+    monkeypatch.setattr(install_mod.proc, "run", lambda *_a, **_k: _Fail())
     assert ensure_precommit_dependency(tmp_path) is False
 
     class _Ok:
         returncode = 0
 
-    monkeypatch.setattr(install_mod.subprocess, "run", lambda *_a, **_k: _Ok())
+    monkeypatch.setattr(install_mod.proc, "run", lambda *_a, **_k: _Ok())
     assert ensure_precommit_dependency(tmp_path) is True
 
 
@@ -602,7 +602,7 @@ def test_effective_hooks_dir_falls_back_on_nonzero_exit(
         returncode = 128
         stdout = ""
 
-    monkeypatch.setattr(install_mod.subprocess, "run", lambda *_a, **_k: _Fail())
+    monkeypatch.setattr(install_mod.proc, "run", lambda *_a, **_k: _Fail())
     assert install_mod._effective_hooks_dir(tmp_path) == tmp_path / ".git" / "hooks"
 
 
@@ -614,7 +614,7 @@ def test_effective_hooks_dir_falls_back_when_git_missing(
     def missing(*_args, **_kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(install_mod.subprocess, "run", missing)
+    monkeypatch.setattr(install_mod.proc, "run", missing)
     assert install_mod._effective_hooks_dir(tmp_path) == tmp_path / ".git" / "hooks"
 
 
@@ -652,7 +652,7 @@ def test_core_hookspath_set_best_effort_when_git_missing(
     def missing(*_args, **_kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(install_mod.subprocess, "run", missing)
+    monkeypatch.setattr(install_mod.proc, "run", missing)
     assert install_mod.core_hookspath_set(tmp_path) is False
 
 

@@ -3,13 +3,13 @@
 Commands: ``skill``, ``rule``, ``install``, ``add``, ``base``, ``index``, ``schema``,
 ``validate``. Filesystem and subprocess (git) work is confined to this module,
 ``install``, and the ``add`` helpers; the schema/index/skill/rule transforms stay
-pure.
+pure. Every shell-out goes through :mod:`planners.proc`, which pins it to an
+explicit repo root.
 """
 
 import json
 import secrets
 import shutil
-import subprocess
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -20,6 +20,7 @@ import typer
 from planners import base as base_mod
 from planners import install as install_mod
 from planners import permissions as perms_mod
+from planners import proc
 from planners.index import render_index, render_plans_table
 from planners.metadata import (
     PLAN_FILENAME,
@@ -206,25 +207,32 @@ def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
     return metas
 
 
-def _git(args: list[str]) -> None:
-    """Run a git command with arguments passed as a list (never shell=True).
+def _git(root: Path, args: list[str]) -> None:
+    """Run a git command in ``root``, with arguments as a list (never shell=True).
+
+    ``root`` is explicit rather than inherited from the process directory, and
+    :func:`planners.proc.run` strips the git location variables — an ambient
+    ``GIT_DIR`` would otherwise redirect the commit into a *different* repository
+    while the plan files stayed uncommitted here. The guard in
+    :func:`_guard_base_branch` already describes ``root`` and nothing else, so
+    pinning the commit the same way keeps the two talking about one repo.
 
     Converts the usual failure modes — git missing, or a non-zero exit (e.g. not
     a git worktree, or no commit identity configured) — into a clear CLI error
     instead of a traceback.
     """
     try:
-        subprocess.run(["git", *args], check=True)
+        result = proc.run(root, ["git", *args])
     except FileNotFoundError:
         _err("git not found on PATH; install git or re-run with --no-commit.")
         raise typer.Exit(1) from None
-    except subprocess.CalledProcessError as exc:
+    if result.returncode != 0:
         joined = " ".join(args)
         _err(
-            f"`git {joined}` failed (exit {exc.returncode}); "
+            f"`git {joined}` failed (exit {result.returncode}); "
             "the plan file was written — commit it manually or use --no-commit."
         )
-        raise typer.Exit(1) from None
+        raise typer.Exit(1)
 
 
 def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
@@ -357,14 +365,14 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
 
 
 def _git_status_porcelain(root: Path) -> str | None:
-    """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error."""
+    """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error.
+
+    Goes through :func:`planners.proc.run` so the location variables are stripped:
+    the self-check must report on the repo ``finalize`` just committed to, not on
+    whatever an ambient ``GIT_DIR`` points at.
+    """
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-        )
+        result = proc.run(root, ["git", "status", "--porcelain"], capture_output=True)
     except FileNotFoundError:
         return None
     if result.returncode != 0:
@@ -897,8 +905,8 @@ def add(
         return
 
     readme = _refresh_index(root, cols="curated")
-    _git(["add", str(path.relative_to(root)), str(readme.relative_to(root))])
-    _git(["commit", "-m", f"plan [add]: {prefix} - {slug}"])
+    _git(root, ["add", str(path.relative_to(root)), str(readme.relative_to(root))])
+    _git(root, ["commit", "-m", f"plan [add]: {prefix} - {slug}"])
 
 
 @app.command()
@@ -1028,14 +1036,14 @@ def finalize(
     # committed" state (the documented `add` trade-off, applied uniformly).
     rels = [str(plan_dir.relative_to(root)) for _, _, plan_dir in finalized]
     rels.append(str(readme.relative_to(root)))
-    _git(["add", *rels])
+    _git(root, ["add", *rels])
     first, last = finalized[0][0], finalized[-1][0]
     message = (
         f"plan [add]: {first:03d} - {finalized[0][1]}"
         if len(finalized) == 1
         else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
     )
-    _git(["commit", "-m", message])
+    _git(root, ["commit", "-m", message])
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
 

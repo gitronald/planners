@@ -17,10 +17,10 @@ resolved yields :data:`UNRESOLVED`, which leaves the guard inert: this module
 never blocks a repo it cannot reason about.
 """
 
-import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from planners import proc
 
 __all__ = [
     "Mainline",
@@ -28,19 +28,6 @@ __all__ = [
     "detect",
     "guard_message",
 ]
-
-# Environment variables that relocate git's idea of "the repository". Left in
-# place they outrank ``cwd``, so every command below would answer about a
-# *different* repo than ``root`` — and the guard would clear a branch it never
-# looked at. A guard that fails open is worse than no guard, so they are stripped
-# for the duration of detection.
-_GIT_LOCATION_ENV = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_COMMON_DIR",
-    "GIT_OBJECT_DIRECTORY",
-)
 
 # Checked in order when ``origin/HEAD`` gives us nothing. These are conventional
 # names, so they are a fallback rather than the primary signal — a repo using
@@ -107,21 +94,14 @@ def _git_out(root: Path, args: list[str]) -> str | None:
     never as an error to surface, because detection degrades to
     :data:`UNRESOLVED` rather than failing a command.
 
-    ``cwd=root`` alone does **not** pin the repository: ``GIT_DIR`` and friends
-    outrank it, so an inherited one silently answers about another repo entirely
-    and the guard clears a branch it never inspected. :data:`_GIT_LOCATION_ENV`
-    is stripped so detection describes ``root`` and nothing else.
+    ``cwd=root`` alone does **not** pin the repository, so this goes through
+    :func:`planners.proc.run`, which strips the git location variables — otherwise
+    an inherited ``GIT_DIR`` silently answers about another repo entirely and the
+    guard clears a branch it never inspected.
     """
-    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
     try:
-        result = subprocess.run(
-            ["git", *args],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-    except (FileNotFoundError, OSError):
+        result = proc.run(root, ["git", *args], capture_output=True)
+    except OSError:
         return None
     if result.returncode != 0:
         return None
