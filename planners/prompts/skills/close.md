@@ -78,10 +78,10 @@ changed, key decisions, and what would help next time. Insight, not a summary.
 ### 6. Commit, merge, clean up
 
 ```bash
-git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - {title lowercase}"
+git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
 git push
 gh pr merge --merge
-git checkout dev && git pull                     # run cleanup from the main checkout
+git checkout "$({cli} base)" && git pull         # back to the mainline, in the main checkout
 git worktree remove .worktrees/<branch-suffix>   # if the work ran on a worktree
 git push origin --delete <branch>
 git branch -d <branch>
@@ -97,5 +97,6 @@ grep -q '\.worktrees/' .git/hooks/pre-commit 2>/dev/null \
   && uv sync && uv run pre-commit install
 ```
 
-Never delete `dev` or `main`. Report: review run, plan closed, PR merged, branch
+Never delete a mainline branch (`{cli} base --all` prints them) — only the
+feature branch just merged. Report: review run, plan closed, PR merged, branch
 and worktree cleaned up (hook re-pointed if needed).

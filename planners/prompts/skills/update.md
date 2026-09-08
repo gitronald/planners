@@ -34,7 +34,7 @@ branch or worktree exists — `{cli} base --all` prints the branches that qualif
 The activation commit is a hand-written `git commit`, so no CLI guard covers it;
 if `git branch --show-current` is not in that set, switch before committing or
 the plan is recorded only on a branch that may never merge. Commit
-`plan [activate]: {NNN} - {title lowercase}`.
+`plan [activate]: {NNN} - <slug>`.
 
 **Log** — append under `## Log` (create it before `## Retrospective` or at the
 end if absent), using a real timestamp from `date -Iseconds`:
@@ -50,7 +50,7 @@ Commit `plan [log]: {NNN} - {brief summary}`.
 **Retire** — set `status: retired`. Fill `concluded` with the ISO timestamp of
 the deciding commit (`git log --format="%aI" -1`). Use explicit `null` for a
 genuinely-absent `branch`/`pr`; never the string `none`. Commit
-`plan [retire]: {NNN} - {title lowercase}`.
+`plan [retire]: {NNN} - <slug>`.
 
 **Close** — defer to `/planners close`, which runs the review gate and merge.
 

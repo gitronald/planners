@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The convention rule and the `add`/`implement` skills now state that plan
   commits land on the mainline before the branch or worktree is created, and
   point at `base --all` instead of assuming `dev`.
+- Plan commit subjects are documented as naming the **slug**, not the title, so
+  the hand-written `activate`/`close`/`retire` subjects match what `add` and
+  `finalize` write. The convention is stated once in the rule.
+- `close` returns to the mainline via `base` rather than a hardcoded `git
+  checkout dev`, and its cleanup warning covers every mainline branch.
+- The convention rule documents the subplan-only `sub:` key and its position in
+  the frontmatter (directly after `slug`).
+
+### Fixed
+
+- The `add` skill's own title placeholders were Title Case while the same file
+  required sentence case; its `## Umbrella + subplans` and `## Batch / deferred
+  creation` sections also sat between steps 1 and 2, so the remaining steps read
+  as part of batching. Steps 1–3 are now contiguous.
+- The `implement` skill's worktree example named a `plan/<NNN>-<slug>` branch
+  while the same skill derives `feature/<slug>`.
 
 ## [0.4.0] - 2026-07-09
 

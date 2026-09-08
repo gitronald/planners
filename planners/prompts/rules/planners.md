@@ -53,6 +53,11 @@ Every `plan.md` starts with YAML frontmatter (field order:
     pr:
     ---
 
+A **subplan** carries one extra key, `sub:` (its letter), rendered directly after
+`slug` — `id, slug, sub, status, …`. Ordinary and umbrella plans omit the line
+entirely rather than writing it empty, so their frontmatter stays exactly the seven
+keys above. `{cli} schema PlanMetadata` is the authority on both.
+
 > **Field name.** The terminal-timestamp field is **`concluded`** — renamed from `completed`,
 > shipped in planners 004 (>= 0.2.0) as a hard cutover with **no read-alias**. A legacy plan
 > still keyed `completed:` fails `validate` (its `concluded` parses empty) until the key is
@@ -182,6 +187,14 @@ unset or stale; `git remote set-head origin --auto` re-derives it.
 
 The activation commit is hand-written `git commit`, so no CLI guard covers it —
 check `git branch --show-current` against `{cli} base --all` before making it.
+
+### Plan commit subjects name the slug
+
+`plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`
+and `{cli} finalize` write, so the hand-written subjects (`activate`, `log`,
+`close`, `retire`) match them. A slug is fixed by the directory name; a title can
+be reworded, so a title-derived subject drifts from the plan it names. (`log` is
+the exception: its subject is a brief summary of the entry.)
 
 ## No Separate Summaries
 

@@ -47,7 +47,8 @@ These tools can be used manually via CLI commands, but they are largely intended
 ## Usage
 
 ```bash
-planners add <slug> --title "<Title>"    # scaffold a new plan
+planners add <slug> --title "<Title>"    # scaffold a new plan (--defer: stage it unnumbered)
+planners finalize                        # number and commit the deferred batch, in one commit
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
 planners validate .planners/plans        # validate plan frontmatter

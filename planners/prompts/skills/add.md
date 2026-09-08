@@ -21,7 +21,7 @@ state lives entirely in frontmatter, and the index is regenerated from it.
 Derive a kebab-case `<slug>` from the request, then run:
 
 ```bash
-{cli} add <slug> --title "<Descriptive Title>"
+{cli} add <slug> --title "<Descriptive title>"
 ```
 
 - Add `--branch <name>` to record an intended implementation branch (a record
@@ -44,13 +44,33 @@ Derive a kebab-case `<slug>` from the request, then run:
 Do not compute the next number, run `date`, or edit the index yourself; the CLI
 handles all of it.
 
+### 2. Fill in the plan body
+
+Edit the scaffolded file:
+
+- **Title** — a descriptive goal in **sentence case**, not Title Case (capitalize
+  only the first word and proper nouns/identifiers); no "Plan:" prefix, no number.
+  Bad: "Update", "Migrate Pandas To Polars". Good: "Migrate pandas to polars".
+- **`## Plan`** — the implementation spec: scope, approach, key decisions, and
+  an implementation order. Write enough that someone picking this up later
+  understands it.
+
+### 3. Commit the body (only if you used `--no-commit`)
+
+```bash
+{cli} index .
+git add .planners/plans/NNN-<slug>/plan.md .planners/README.md && git commit -m "plan [add]: NNN - <slug>"
+```
+
+If you let `add` commit in step 1, edit-then-commit the body as a normal follow-up.
+
 ## Umbrella + subplans
 
 When a plan is really one effort done in **steps in order** (or it would cross
 ~500 lines), keep the parent as an *umbrella* and split the steps into subplans:
 
 ```bash
-{cli} add <step-slug> --parent <N> --title "<Step Title>"
+{cli} add <step-slug> --parent <N> --title "<Step title>"
 ```
 
 This writes a sibling directory `.planners/plans/{NNN}<letter>-<step-slug>/`
@@ -97,23 +117,3 @@ Use deferred numbering instead:
   leaves the batch staged and recoverable, nothing half-materialized.
 - Two creators may pick the same slug; finalize keeps them distinct by number and
   notes the duplicate. `--defer` is for top-level plans only (not `--parent`).
-
-### 2. Fill in the plan body
-
-Edit the scaffolded file:
-
-- **Title** — a descriptive goal in **sentence case**, not Title Case (capitalize
-  only the first word and proper nouns/identifiers); no "Plan:" prefix, no number.
-  Bad: "Update", "Migrate Pandas To Polars". Good: "Migrate pandas to polars".
-- **`## Plan`** — the implementation spec: scope, approach, key decisions, and
-  an implementation order. Write enough that someone picking this up later
-  understands it.
-
-### 3. Commit the body (only if you used `--no-commit`)
-
-```bash
-{cli} index .
-git add .planners/plans/NNN-<slug>/plan.md .planners/README.md && git commit -m "plan [add]: NNN - <slug>"
-```
-
-If you let `add` commit in step 1, edit-then-commit the body as a normal follow-up.

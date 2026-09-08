@@ -67,7 +67,7 @@ recorded on the mainline regardless of whether the feature branch ever lands.
 - Commit the plan file and index on the base, then push:
   ```bash
   git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md
-  git commit -m "plan [activate]: {NNN} - {title lowercase}"
+  git commit -m "plan [activate]: {NNN} - <slug>"
   git push
   ```
 
@@ -94,8 +94,8 @@ cd .worktrees/<branch-suffix>
 git push -u origin <branch>
 ```
 
-`<branch-suffix>` is the branch's final path component (e.g. `003-<slug>` for
-`plan/003-<slug>`); `<base>` is the branch chosen in step 2. **Run the remaining
+`<branch-suffix>` is the branch's final path component (e.g. `<slug>` for
+`feature/<slug>`); `<base>` is the branch chosen in step 2. **Run the remaining
 steps from inside the worktree.** To work in the main checkout instead, use
 `git checkout -b <branch>` here and skip the worktree.
 
