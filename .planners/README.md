@@ -2,6 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
+| 005 | [Give activate a CLI command](plans/005-activate-cli-command/plan.md) | draft | — | — |
 | 004 | [Own the generated plan index's merge semantics in install](plans/004-index-merge-semantics/plan.md) | draft | — | — |
 | 002 | [Support a no-PR close path in the close skill](plans/002-close-no-pr-path/plan.md) | draft | — | — |
 | 003 | [Guard add/activate against running on a non-base branch](plans/003-base-branch-guard/plan.md) | done | 2026-09-08 14:11 PT | [#12](https://github.com/gitronald/planners/pull/12) |
