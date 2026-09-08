@@ -112,3 +112,57 @@ answer from its own history), and it costs a history walk on every `add`.
 The design absorbs the weakness rather than denying it: an accepted set rather
 than one branch, `--allow-branch` as the escape hatch, and inert-when-unresolvable
 so the guard never blocks a repo it cannot reason about.
+
+## Log
+
+**2026-09-08** — Implemented on `feature/base-branch-guard` (PR #12).
+
+- `planners/base.py` (new): `detect()` resolves the mainline set from git's refs
+  and `guard_message()` renders the refusal. Read-only and best-effort — every
+  git failure collapses to "absent", so detection degrades to `UNRESOLVED` rather
+  than turning a missing binary or an odd repo into a command failure.
+- `add` and `finalize` call the guard **before writing anything**. A refused
+  `add` leaves no half-scaffolded plan directory (the ordering the unsafe-slug
+  check already relied on), and a refused `finalize` leaves the batch staged and
+  recoverable rather than half-moved out of staging.
+- Only the committing paths are guarded. `--no-commit` and `--defer` write no
+  commit, so no branch can strand one; guarding them would refuse work that is
+  not at risk.
+- `planners base` prints the mainline (`--all` for the set), exits non-zero when
+  nothing resolves, and appends the `git remote set-head origin --auto` remedy to
+  stderr when detection fell back past `origin/HEAD`. stdout stays clean so a
+  script can consume it.
+- Prose updated at the source rather than restated: the convention rule gained a
+  *Plan commits belong on the mainline* section, and `add.md`/`implement.md` now
+  run `base --all` instead of asserting "usually `dev`". `implement.md` step 2
+  also says outright not to create the branch first, and flags that the
+  activation commit is hand-written `git commit` with no CLI guard behind it —
+  that check is the only thing protecting it.
+
+### Verification
+
+19 tests in `tests/test_base.py`, all against real git repos — the module's whole
+job is reporting what git's refs say, so a mocked `subprocess` would only assert
+that the code calls the commands it calls. Full suite 312 passed; ruff and
+pyrefly clean.
+
+Reproduced the failure this plan was written about in a scratch repo: branch
+created first, then `add` — now refused, with the plan committed to `dev` on the
+correct ordering. Confirmed detection resolves the shared refs correctly from
+inside a linked worktree, which is the position the original failure happened in.
+
+### Notes
+
+- The guard caught itself during development: running `planners add` from this
+  plan's own worktree was refused, which is the exact scenario in *Observed
+  failure* above.
+- `git init` leaves an unborn HEAD, so the first `add` in a fresh repo has no
+  mainline to be off of. That case is inert by construction, not a refusal — and
+  it is what keeps the pre-existing `add` tests (which `git init` and immediately
+  add) green without an `--allow-branch`.
+- Tripped the repo's `test_no_abandoned_anywhere_in_package_source` convention
+  while writing docstrings. The word is banned because `retired` deliberately
+  carries no failure connotation; rephrased to "never merged".
+- Deliberately out of scope, per the resolved design: no `validate` reachability
+  check and no configuration knob. The activation commit remains unguarded by
+  code — prose is the only lever, since `activate` has no CLI command.
