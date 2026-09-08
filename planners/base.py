@@ -17,6 +17,7 @@ resolved yields :data:`UNRESOLVED`, which leaves the guard inert: this module
 never blocks a repo it cannot reason about.
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,19 @@ __all__ = [
     "guard_message",
 ]
 
+# Environment variables that relocate git's idea of "the repository". Left in
+# place they outrank ``cwd``, so every command below would answer about a
+# *different* repo than ``root`` — and the guard would clear a branch it never
+# looked at. A guard that fails open is worse than no guard, so they are stripped
+# for the duration of detection.
+_GIT_LOCATION_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+)
+
 # Checked in order when ``origin/HEAD`` gives us nothing. These are conventional
 # names, so they are a fallback rather than the primary signal — a repo using
 # neither is resolved by ``origin/HEAD`` above, or falls through to UNRESOLVED.
@@ -38,6 +52,14 @@ _FALLBACK_DEFAULTS = ("main", "master")
 # plan added on `main` in a repo that also has `dev` would block a commit that is
 # not in fact lost.
 _DEV = "dev"
+
+# Said wherever a thin resolution is reported, so the refusal and the `base`
+# command cannot drift into describing the same condition two different ways.
+THIN_NOTE = (
+    "refs/remotes/origin/HEAD is unset or dangling, so the default branch was "
+    "guessed by name; `git remote set-head origin --auto` re-derives it from "
+    "the remote."
+)
 
 
 @dataclass(frozen=True)
@@ -68,9 +90,11 @@ class Mainline:
 
 
 # A repo we cannot reason about: not a git worktree, git missing, or no branches
-# resolved. The guard treats this as "do not block".
+# resolved. The guard treats this as "do not block". `thin` is False because
+# nothing was resolved at all — there is no guessed-by-name answer to qualify, and
+# every consumer checks `resolved` before ever reading it.
 UNRESOLVED = Mainline(
-    branches=(), current=None, detached=False, unborn=False, thin=True
+    branches=(), current=None, detached=False, unborn=False, thin=False
 )
 
 
@@ -82,13 +106,20 @@ def _git_out(root: Path, args: list[str]) -> str | None:
     here simply means "that ref does not exist"). Callers treat it as absence,
     never as an error to surface, because detection degrades to
     :data:`UNRESOLVED` rather than failing a command.
+
+    ``cwd=root`` alone does **not** pin the repository: ``GIT_DIR`` and friends
+    outrank it, so an inherited one silently answers about another repo entirely
+    and the guard clears a branch it never inspected. :data:`_GIT_LOCATION_ENV`
+    is stripped so detection describes ``root`` and nothing else.
     """
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
     try:
         result = subprocess.run(
             ["git", *args],
             cwd=root,
             capture_output=True,
             text=True,
+            env=env,
         )
     except (FileNotFoundError, OSError):
         return None
@@ -115,15 +146,37 @@ def _default_branch(root: Path) -> str | None:
 
     This is a *local* ref written at clone time (and by ``git remote set-head``);
     ``git fetch`` does not refresh it. So it is absent in clones made by tooling
-    that skips it, and stale if the remote renamed its default branch afterwards
-    — the known weakness of this detection, surfaced as :attr:`Mainline.thin`.
+    that skips it — the known weakness of this detection, reported as
+    :attr:`Mainline.thin`.
+
+    ``symbolic-ref`` happily reports a **dangling** target, so the name it gives
+    is verified to exist before being trusted. Without that check a pruned or
+    renamed-away default resolves to a branch nobody can check out, and the guard
+    refuses while telling the user to switch to a ref that is not there.
+
+    One case stays invisible on purpose: an ``origin/HEAD`` that still points at a
+    real ref the remote has since demoted. Nothing local distinguishes that from a
+    current answer, so it reports ``thin=False``. Only a fetch of the remote's
+    HEAD (``git remote set-head origin --auto``) can settle it.
     """
     ref = _git_out(root, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"])
     if not ref:
         return None
     # `refs/remotes/origin/HEAD` resolves to `origin/<branch>`; we want the branch.
     prefix = "origin/"
-    return ref[len(prefix) :] if ref.startswith(prefix) else ref
+    name = ref[len(prefix) :] if ref.startswith(prefix) else ref
+    if not name:
+        return None
+    # Trust the name only if the remote-tracking ref behind it is really there.
+    # `git checkout <name>` then works even with no local branch yet, because git
+    # creates a tracking branch from `origin/<name>` — so a present remote ref is
+    # enough to make the refusal's advice actionable.
+    if (
+        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}"])
+        is None
+    ):
+        return None
+    return name
 
 
 def detect(root: Path) -> Mainline:
@@ -184,9 +237,11 @@ def detect(root: Path) -> Mainline:
     else:
         # No origin/HEAD to trust: fall back to the conventional names, taking
         # only those that actually exist so we never name a branch the user
-        # cannot switch to.
+        # cannot switch to. `_has_branch` is the whole filter — the candidates
+        # are `main`/`master` and the list holds at most `dev`, so they cannot
+        # collide.
         for name in _FALLBACK_DEFAULTS:
-            if name not in branches and _has_branch(root, name):
+            if _has_branch(root, name):
                 branches.append(name)
                 break
 
@@ -236,8 +291,5 @@ def guard_message(mainline: Mainline, action: str) -> str | None:
         "commit here anyway.",
     ]
     if mainline.thin:
-        lines.append(
-            "  note: refs/remotes/origin/HEAD is unset, so the default branch was "
-            "guessed by name; `git remote set-head origin --auto` re-derives it."
-        )
+        lines.append(f"  note: {THIN_NOTE}")
     return "\n".join(lines)

@@ -1081,11 +1081,7 @@ def base(
         typer.echo(name)
 
     if mainline.thin:
-        _err(
-            "note: refs/remotes/origin/HEAD is unset, so the default branch was "
-            "guessed by name; `git remote set-head origin --auto` re-derives it "
-            "from the remote."
-        )
+        _err(f"note: {base_mod.THIN_NOTE}")
 
 
 @app.command()
