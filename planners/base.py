@@ -5,7 +5,7 @@ mainline *before* the feature branch exists, so the plan is recorded there
 regardless of whether the branch ever merges. Nothing enforced that: ``add``
 committed on whatever HEAD pointed at, and the ordering lived only in the
 implement skill's prose — which a session can and did ignore, leaving both
-commits reachable only from an abandoned branch.
+commits reachable only from a branch that never merged.
 
 This module answers the one question the guard needs: *is HEAD somewhere a plan
 commit will survive?* It reports what git's refs currently say the mainline
@@ -104,7 +104,10 @@ def _is_repo(root: Path) -> bool:
 
 def _has_branch(root: Path, name: str) -> bool:
     """True when a local branch ``name`` exists."""
-    return _git_out(root, ["rev-parse", "--verify", "-q", f"refs/heads/{name}"]) is not None
+    return (
+        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/heads/{name}"])
+        is not None
+    )
 
 
 def _default_branch(root: Path) -> str | None:

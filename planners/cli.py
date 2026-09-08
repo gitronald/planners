@@ -232,7 +232,7 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
 
     The plan-file convention is that ``add``/``activate`` commits land on the
     mainline *before* a feature branch exists, so the plan is recorded there even
-    if the branch is abandoned. That ordering used to live only in the implement
+    if the branch never merges. That ordering used to live only in the implement
     skill's prose, which a session can ignore — and did, leaving both commits
     reachable only from the branch. This is the enforcement.
 

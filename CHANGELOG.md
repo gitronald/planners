@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `base` command printing the repo's mainline branch — the branches a plan commit
+  belongs on. `--all` lists every one in resolution order; it exits non-zero when
+  no mainline resolves, so a script can branch on it.
+- `add` and `finalize` now refuse to commit when `HEAD` is off the mainline,
+  so a plan is recorded there even if the feature branch never merges. The
+  accepted set is `dev` (when that branch exists) plus the repo's default branch.
+  `--allow-branch` overrides the refusal for a repo whose mainline is not
+  detectable by name.
+
+### Changed
+
+- The convention rule and the `add`/`implement` skills now state that plan
+  commits land on the mainline before the branch or worktree is created, and
+  point at `base --all` instead of assuming `dev`.
+
 ## [0.4.0] - 2026-07-09
 
 ### Added

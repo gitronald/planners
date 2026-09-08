@@ -161,6 +161,28 @@ what was planned; the Log records what actually happened. Both are valuable.
 
 Commit changes in logical chunks during implementation, not one large commit at the end.
 
+### Plan commits belong on the mainline
+
+The `plan [add]` and `plan [activate]` commits land on the **mainline before the
+feature branch or worktree exists**, so the plan is recorded there even if the
+branch never merges. Creating the branch first and running add/activate inside it
+puts both commits only on that branch — a plan the mainline has no trace of.
+
+`{cli} add` and `{cli} finalize` enforce this: they refuse when HEAD is off the
+mainline. The accepted set is `dev` (when that branch exists) plus the repo's
+default branch, so a plan added on either is fine; `{cli} base --all` prints it.
+`--allow-branch` overrides the refusal, and is for a repo whose mainline is
+genuinely not detectable by name — not a way past the check.
+
+Detection is a heuristic over git's current refs, not a record of where plans
+were committed. It reads `dev`, then `refs/remotes/origin/HEAD`, then a local
+`main`/`master`, and goes **inert** (never blocks) when none resolve or the repo
+has no commits yet. `git fetch` does not refresh `origin/HEAD`, so it can be
+unset or stale; `git remote set-head origin --auto` re-derives it.
+
+The activation commit is hand-written `git commit`, so no CLI guard covers it —
+check `git branch --show-current` against `{cli} base --all` before making it.
+
 ## No Separate Summaries
 
 Do not create a summaries directory. Session summaries belong in the plan's Log or
