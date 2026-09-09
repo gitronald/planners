@@ -1,8 +1,8 @@
 ---
 id: 4
 slug: index-merge-semantics
-status: draft
-branch:
+status: active
+branch: feature/index-merge-semantics
 created: 2026-09-08T10:57:28-07:00
 concluded:
 pr:
