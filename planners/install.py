@@ -642,8 +642,14 @@ def wire_precommit(root: Path, mode: Mode = "local", *, resync: bool = True) -> 
 def _index_attr_line(text: str) -> tuple[int, str] | None:
     """Find the ``.gitattributes`` line governing the plan index.
 
-    Returns ``(line number, whitespace-normalized line)`` for the first line whose
-    *pattern* field is the index path, or ``None`` when no line names it.
+    Returns ``(line number, whitespace-normalized line)`` for the **last** line
+    whose *pattern* field is the index path, or ``None`` when no line names it.
+    Last, not first, because that is the one git obeys: attributes are resolved
+    by the last matching line, so a file carrying both ``merge=union`` and a
+    later ``merge=ours`` is a repo running ``ours``. Reading the first match
+    would report such a repo ``ok`` while its merges silently dropped rows —
+    exactly the failure the attribute exists to prevent.
+
     Normalizing the whitespace is what keeps a padded but equivalent line from
     reading as drift. Blank and ``#`` comment lines are skipped for the format's
     sake, not for correctness — a comment's first field always starts with ``#``,
@@ -651,17 +657,18 @@ def _index_attr_line(text: str) -> tuple[int, str] | None:
 
     Patterns are compared as written, so a quoted or differently-spelled pattern
     for the same file reads as absent — the safe direction: ``install`` then
-    appends its own line, and git applies the **last** matching line, so the
-    appended one wins.
+    appends its own line, and git applies the last matching line, so the appended
+    one wins.
     """
+    found: tuple[int, str] | None = None
     for number, line in enumerate(text.splitlines()):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         fields = stripped.split()
         if fields[0] == INDEX_ATTR_PATTERN:
-            return number, " ".join(fields)
-    return None
+            found = (number, " ".join(fields))
+    return found
 
 
 def installed_index_attr(root: Path) -> str | None:
@@ -713,7 +720,11 @@ def wire_gitattributes(root: Path, *, force: bool = False) -> bool:
     ``merge=ours`` arrangement.
     """
     config = root / GITATTRIBUTES_REL
-    if not config.exists():
+    # ``is_file`` rather than ``exists``, matching :func:`check_gitattributes`:
+    # a path that is not a regular file has no attribute line to read, and the
+    # two must agree about that or ``--check`` and the write path describe the
+    # same repo differently.
+    if not config.is_file():
         config.write_text(INDEX_ATTR_LINE + "\n", encoding="utf-8")
         return True
     text = config.read_text(encoding="utf-8")
@@ -905,12 +916,28 @@ def report_hook(root: Path) -> HookReport:
     hook that fires and finds nothing wrong. Reporting it turns that silence into
     a line. ``config_missing`` is called out separately because the remedy differs
     (write the config, rather than register a hook for config that isn't there).
+
+    The config is checked **before** the registration, because
+    :func:`_precommit_hook_registered` answers "is pre-commit itself wired into
+    this clone", not "will ``planners-validate`` run". A repo that uses
+    pre-commit for other hooks satisfies it with no planners entry at all, so
+    testing registration first reported ``active`` for a hook that cannot fire —
+    the very silence this function was added to break. Reading the config is
+    guarded like every other check-path read in this module: an unreadable or
+    non-UTF-8 config is a config that does not name the hook, not a traceback out
+    of ``--check``.
     """
+    config = root / PRECOMMIT_REL
+    try:
+        entry_present = config.is_file() and HOOK_ID in config.read_text(
+            encoding="utf-8"
+        )
+    except (OSError, UnicodeDecodeError):
+        entry_present = False
+    if not entry_present:
+        return "config_missing"
     if _precommit_hook_registered(root):
         return "active"
-    config = root / PRECOMMIT_REL
-    if not config.is_file() or HOOK_ID not in config.read_text(encoding="utf-8"):
-        return "config_missing"
     if not is_git_repo(root):
         return "no_git_repo"
     if core_hookspath_set(root):

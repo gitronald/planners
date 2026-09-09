@@ -1068,3 +1068,48 @@ def test_report_hook_blames_hookspath_when_it_blocks_registration(
 def test_report_hook_no_git_repo(tmp_path: Path) -> None:
     wire_precommit(tmp_path)
     assert report_hook(tmp_path) == "no_git_repo"
+
+
+def test_report_hook_does_not_call_a_foreign_precommit_hook_ours(
+    tmp_path: Path,
+) -> None:
+    # A repo that already used pre-commit for its own hooks (ruff, say) has the
+    # git hook registered while `planners-validate` is nowhere in the config.
+    # Testing registration first reported "active" for a hook that cannot fire —
+    # the exact silence report_hook exists to break — because
+    # _precommit_hook_registered answers "is pre-commit wired in", not "will our
+    # hook run".
+    _git_init(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: ruff\n", encoding="utf-8"
+    )
+    (tmp_path / ".git" / "hooks" / "pre-commit").write_text(
+        _PRECOMMIT_HOOK, encoding="utf-8"
+    )
+    assert HOOK_ID not in (tmp_path / ".pre-commit-config.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert report_hook(tmp_path) == "config_missing"
+
+
+def test_report_hook_survives_an_unreadable_config(tmp_path: Path) -> None:
+    # --check must degrade to a reported status, never a traceback: a config that
+    # is not valid UTF-8 is a config that does not name the hook.
+    _git_init(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_bytes(b"repos: \xff\xfe not utf-8\n")
+    assert report_hook(tmp_path) == "config_missing"
+
+
+def test_index_attr_matching_obeys_the_last_line_like_git(tmp_path: Path) -> None:
+    # git resolves attributes by the LAST matching line, so a file that grants
+    # union and then ours is a repo running `ours` — which silently drops the
+    # incoming branch's rows. Reading the first match would report it `ok`.
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"{INDEX_ATTR_LINE}\n{INDEX_ATTR_PATTERN} merge=ours\n", encoding="utf-8"
+    )
+    assert installed_index_attr(tmp_path) == f"{INDEX_ATTR_PATTERN} merge=ours"
+    assert check_gitattributes(tmp_path) == "drifted"
+
+    # and --force rewrites the line git actually obeys, restoring `ok`
+    assert wire_gitattributes(tmp_path, force=True) is True
+    assert check_gitattributes(tmp_path) == "ok"
