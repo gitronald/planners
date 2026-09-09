@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `activate` command — `planners activate 005` flips a plan to `active`, fills
+  `branch:` (`feature/<slug>` by default, `--branch` to choose), refreshes the
+  index, and commits `plan [activate]: 005 - <slug>`. Activation was the last
+  lifecycle mutation still done by hand-editing frontmatter, which is why the
+  mainline guard shipped in 0.5.0 could not cover it; it now carries the same
+  guard and the same `--allow-branch` escape hatch as `add`. Closed plans
+  (`done`/`retired`) are refused; a parked `inactive` plan may be reactivated.
+
 ## [0.5.1] - 2026-09-08
 
 ### Fixed

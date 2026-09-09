@@ -5,7 +5,7 @@ status: active
 branch: feature/activate-cli-command
 created: 2026-09-08T13:44:58-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/16
 ---
 
 # Give activate a CLI command
@@ -136,3 +136,81 @@ rule actually applies.
   closes the normal path, which is proportionate: the failure 003 documented was
   a session following the documented flow in the wrong order, not one
   deliberately bypassing the tool.
+
+## Log
+
+### 2026-09-08 — implemented on `feature/activate-cli-command` (PR #16)
+
+All six steps landed in two commits: the command plus tests, then the prose that
+pointed at the hand-edit it replaces.
+
+**Steps 1–3.** `planners activate <NNN>` resolves a plan by number through a new
+`_resolve_plan` helper, matching on the parsed `(number, letter)` pair rather than a
+string prefix — so `5` and `005` are the same plan and `5` never matches `050-`.
+Subplan letters (`005a`) resolve to their own directory, distinct from the umbrella.
+The mutation is `PlanMetadata.from_file` -> mutate -> `render_frontmatter()` + the
+original body via `split_frontmatter`, the shape `finalize` already uses, so the plan
+text is preserved verbatim. `_guard_base_branch` and `--allow-branch` are shared with
+`add` unchanged; only the committing path is guarded, matching `add`'s treatment of
+`--no-commit`. A `prefix` property was added to `PlanMetadata` rather than
+duplicating `add`'s inline `f"{id:03d}{sub}"`.
+
+**Step 4 settled as the slug form**, owned by a format string, as the plan's own
+Notes had already pre-settled.
+
+**Step 5 — transitions.** `draft -> active` and `inactive -> active` are allowed;
+`done`/`retired` refuse with a message naming the reopen path. `active -> active`
+resolved as an **idempotent no-op**, not an error: re-activating destroys nothing
+(unlike `add`, which refuses in order to protect a body), and the no-op keeps the
+command safe inside a pipeline that retries. It also avoids attempting an empty
+commit, which git would reject with a confusing message. When `branch:` is empty on
+an already-active plan, it is still filled — the no-op fires only when nothing
+would change.
+
+### Resolved: both open decisions
+
+- **Activate does not create the branch.** Kept as the plan leaned. The guard
+  already enforces the ordering that matters, and worktree policy stays out of the
+  CLI.
+- **No dirty-tree refusal.** Confirmed rather than inherited as folklore: the commit
+  stages the plan file and the index by explicit path, so unrelated uncommitted
+  changes are untouched. A test asserts `git status --porcelain` is empty after a
+  clean-repo activation.
+
+### Verification
+
+20 new tests (16 in `test_cli.py`, 4 in `test_base.py`); 348 pass, up from 328.
+`ruff check`, `ruff format --check`, and `pyrefly check` clean.
+
+Both guard-adjacent tests were **mutation-checked**, per plan 003's retrospective —
+coverage reported its guard tests as exercising the code while they asserted nothing
+about it:
+
+- Neutering `_guard_base_branch` to return immediately fails
+  `test_activate_refuses_on_a_feature_branch`. The mutated run prints
+  `[feature/my-thing f47d103] plan [activate]: 005 - my-thing` — the activation
+  commit landing on the feature branch, which is the exact failure this plan exists
+  to prevent.
+- Swapping the commit subject to the title form fails
+  `test_activate_commits_by_default_with_slug_subject`, printing
+  `plan [activate]: 005 - my thing` — the drift the plan documents in this repo's
+  own history.
+
+Both guard tests build a repo with a **born** HEAD before branching, so the
+unborn-HEAD carve-out cannot short-circuit the guard the way it silently did for the
+`finalize` tests 003 found.
+
+### Step 6 — prose collapsed at every altitude
+
+`implement.md` step 3 is now the command plus a `git push` instead of a four-bullet
+hand-edit recipe. `update.md`'s activate entry was rewritten in **both** places it
+appears: the prose section and the one-line action table at the top — 003's
+retrospective noted that a doc restating itself at two altitudes has two sources, and
+that a missed summary line left a generated file contradicting itself.
+
+Three passages in the rule went stale the moment the command existed and were fixed:
+the enforcement list (now names `activate`), the subject convention (`activate` is no
+longer hand-written), and most importantly *"The activation commit is hand-written
+`git commit`, so no CLI guard covers it"* — the sentence this plan's premise was built
+on. `implement.md` step 2 carried the same claim and now reads as a convenience check
+rather than the only protection.
