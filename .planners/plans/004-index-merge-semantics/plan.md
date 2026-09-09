@@ -1,10 +1,10 @@
 ---
 id: 4
 slug: index-merge-semantics
-status: active
+status: done
 branch: feature/index-merge-semantics
 created: 2026-09-08T10:57:28-07:00
-concluded:
+concluded: 2026-09-08T22:41:21-07:00
 pr: https://github.com/gitronald/planners/pull/18
 ---
 
@@ -265,3 +265,83 @@ closing a plan while the base adds one — the merge that used to conflict now r
 `Auto-merging` and succeeds with **no `git config` ever run**; `validate` then reports the
 index stale, and one `planners index .` repairs it. The planners repo itself now carries
 the attribute.
+
+### 2026-09-08 — docs scoped to local merges; review follow-up
+
+Finding 4 landed after the first docs pass, so a fourth commit narrowed every claim the
+docs made: `install`'s summary, the README, the convention rule, and the `index` skill all
+now say a **local** merge stops conflicting, and each points a PR-side conflict at merging
+the base in locally rather than hand-editing the generated file. The plan 002 note records
+the same thing from that plan's side — its no-PR path is the one place the fix works
+end to end, since nothing there goes through GitHub.
+
+**Review follow-up.** `/code-review` at level `medium` on PR #18: seven findings, all
+verified against the code and all introduced by this branch (none pre-existing on `dev`).
+Posted as a PR comment. Two were real defects in the feature's own contract:
+
+- **`validate` compared only the curated rendering.** `index --cols all` is a first-class
+  option this PR's own skill body teaches, so a repo that committed a wide index was
+  reported stale on *every* commit by the new hook, with no edit able to fix it — a gate
+  firing on correct input. Fixed by comparing against every column set `index` can write;
+  `INDEX_COLS` is now spelled once and drives both the `--cols` validation and the
+  comparison, so a future column set cannot break the gate.
+- **`report_hook` claimed `active` for a hook that could not fire.** It tested
+  registration before the config entry, but `_precommit_hook_registered` answers "is
+  pre-commit wired into this clone", not "will `planners-validate` run" — so a repo using
+  pre-commit for its own hooks got `hook: active` with no planners entry at all. That is
+  precisely the silence step 3 added the line to break, and it made the `config_missing`
+  branch unreachable whenever pre-commit was registered. Fixed by checking the config
+  first, which is what the function's own test name already asserted was the intent.
+
+Three more were narrower but real: `_index_attr_line` returned the *first* matching
+`.gitattributes` line while git obeys the **last**, so a file granting `union` and then
+`ours` reported `gitattr: ok` while merges ran `ours` — the silent row-dropping this plan
+exists to prevent, and a contradiction of the function's own docstring; the stale check
+ran once per plan *file* rather than per repo root, making `validate .` quadratic in the
+plan count (1640 parses at 40 plans) and printing `_collect_metas`'s skip-warning once per
+file, so one malformed plan read as four; and `report_hook`'s config read was unguarded
+where every other check-path read in the module is, turning a non-UTF-8 config into a
+traceback out of `--check`. A stale-index-only failure also exited 1 with no summary line;
+it now reports `N stale index file(s)`.
+
+One **conscious no-op**: `wire_gitattributes` used `exists()` where the check path uses
+`is_file()`. Switched for consistency, but the residual stays — for a path that is not a
+regular file the *write* still raises `OSError`, exactly as `wire_precommit` has always
+done. Guarding writes is not this module's pattern (reads are guarded, writes are not),
+and a directory named `.gitattributes` is not a state worth an API change.
+
+Two commits (`ced0b9b`, `b474195`), six regression tests, 382 passing (up from 376).
+`ruff`, `ruff format --check`, and `pyrefly` clean. The dedup fix was mutation-checked —
+reverting it fails its test with four warnings instead of one; the other five tests assert
+behavior that did not exist before the fix (a `--cols all` index passing, `config_missing`
+where a probe had measured `active`, `drifted` on a last-line `merge=ours`, a summary
+string that was never printed, and a UTF-8 error that was previously raised).
+
+## Retrospective
+
+- **Step 1 paid for itself by killing most of the plan.** The prototype was scheduled to
+  choose between two hook stages; it instead found that no stage can reach the merge
+  commit *and* that a built-in driver removes the need for one. Three parts became one,
+  and the per-clone drift detector the plan called "the feature" became unnecessary
+  because there is no longer per-clone state to detect. Prototyping a mechanism before
+  designing around it is what let the design shrink rather than ship.
+- **The plan's own reasoning was the best review input.** The plan rejected a regenerating
+  merge driver because it "looks like success" while dropping rows. Two of the seven
+  review findings were that same failure re-entering through the back door — a
+  `gitattr: ok` on a file git reads as `merge=ours`, and a `hook: active` for a hook that
+  cannot fire. Worth checking new *reporting* code against the failure mode the plan was
+  written to avoid, since a status line that lies is the same bug as a driver that lies.
+- **A gate that fires on correct input is worse than no gate.** The `--cols all` finding
+  was the most serious of the seven and the least exotic: a documented option, taught in
+  the skill body shipped by this very PR, that the new pre-commit gate would have blocked
+  outright. New validation needs to be tested against every state the tool itself can
+  produce, not just the default one.
+- **Measuring GitHub rather than assuming it changed the deliverable's scope, not its
+  value.** Finding 4 cost two throwaway PRs and narrowed every doc claim from "merges" to
+  "local merges". Better to ship a fix with an honest boundary than one whose README
+  overstates its reach. The default-branch hypothesis is recorded with a free re-test
+  attached rather than left as an open question.
+- **Next time: run the review before writing the implementation log.** The steps-2-4 log
+  entry described the work as verified and mutation-checked, which it was — and the review
+  still found seven real defects in it. Self-verification and adversarial review catch
+  different things; the log now has to be amended rather than written once.
