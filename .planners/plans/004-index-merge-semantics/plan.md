@@ -92,6 +92,29 @@ thing to give up.
 
 Settle this before step 2 — it decides whether any of the rest gets built.
 
+**Resolved 2026-09-08: keep tracking it.** The host-rendered table is the point of a
+committed index, and dropping it to avoid a merge conflict trades a visible feature for
+an invisible one. All four steps stay in scope.
+
+### Post-005 updates (2026-09-08)
+
+Written ~8 hours before plan 005 concluded; four things moved under it.
+
+- **This plan now gates two deferred follow-ups.** 005 parked its pre-commit
+  staged-diff check on activation behind it ("it follows plan 004, not this"), and 006's
+  post-close log routed its incidental finding — the `planners validate` hook silently
+  absent in a fresh clone — to step 3 rather than a new plan. Step 3 is the home for
+  both; neither is separately tracked.
+- **Step 4 is reuse, not invention.** `_finalize_self_check` already compares the tracked
+  index against a fresh render (`planners/cli.py:488-492`, "index is stale"). Making
+  `validate` fail on a stale index is lifting that comparison, not writing one.
+- **Step 3 has helpers now.** 005 added `_git_status_porcelain(root, pathspec)` and
+  `_is_unmodified(root, path)`, which is the per-path cleanliness query a drift check for
+  the index wants.
+- **`activate` is a third index-committing site** (`planners/cli.py:1209`), alongside
+  `add` and `finalize` — all three on the mainline, the side `merge=ours` keeps. It
+  raises index churn on the base without changing the conflict shape the survey measured.
+
 ### Notes
 
 - Found in a consumer repo whose two long-lived branches collided on the index twice.
