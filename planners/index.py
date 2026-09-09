@@ -159,13 +159,8 @@ def _pr_cell(pr: str | None) -> str:
     return f"[{label}]({pr})"
 
 
-def _num(meta: PlanMetadata) -> str:
-    """The plan's ``#`` label: zero-padded number plus any subplan letter."""
-    return f"{meta.id:03d}{meta.sub}"
-
-
 def _plan_cell(meta: PlanMetadata) -> str:
-    dirname = meta.dirname or f"{_num(meta)}-{meta.slug}"
+    dirname = meta.dirname or f"{meta.prefix}-{meta.slug}"
     # Link is relative to .planners/README.md; plan dirs live under plans/, so
     # the target is plans/{NNN}[x]-{slug}/plan.md.
     return f"[{_escape(meta.title or meta.slug)}](plans/{dirname}/plan.md)"
@@ -180,7 +175,7 @@ def render_plans_table(metas: list[PlanMetadata], cols: str = "curated") -> str:
         "|" + "|".join(["---"] * len(header)) + "|",
     ]
     for meta in sort_plans(metas):
-        cells = [_num(meta), _plan_cell(meta), meta.status.value]
+        cells = [meta.prefix, _plan_cell(meta), meta.status.value]
         if wide:
             cells += [_cell(meta.branch), _format_instant(meta.created)]
         cells += [_format_instant(meta.concluded), _pr_cell(meta.pr)]

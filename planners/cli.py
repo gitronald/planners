@@ -1,13 +1,14 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``skill``, ``rule``, ``install``, ``add``, ``base``, ``index``, ``schema``,
-``validate``. Filesystem and subprocess (git) work is confined to this module,
-``install``, and the ``add`` helpers; the schema/index/skill/rule transforms stay
-pure. Every shell-out goes through :mod:`planners.proc`, which pins it to an
-explicit repo root.
+Commands: ``skill``, ``rule``, ``install``, ``add``, ``finalize``, ``activate``,
+``base``, ``index``, ``schema``, ``validate``. Filesystem and subprocess (git) work
+is confined to this module, ``install``, and the ``add`` helpers; the
+schema/index/skill/rule transforms stay pure. Every shell-out goes through
+:mod:`planners.proc`, which pins it to an explicit repo root.
 """
 
 import json
+import re
 import secrets
 import shutil
 import sys
@@ -23,6 +24,8 @@ from planners import permissions as perms_mod
 from planners import proc
 from planners.index import render_index, render_plans_table
 from planners.metadata import (
+    CLOSED_STATUSES,
+    DIRNAME_RE,
     PLAN_FILENAME,
     PlanError,
     PlanMetadata,
@@ -192,6 +195,34 @@ def _resolve_dir_plans(directory: Path) -> list[Path]:
     if nested.is_dir():
         return _plan_files(nested)
     return _plan_files(directory)
+
+
+def _resolve_plan(plans_dir: Path, ref: str) -> Path:
+    """Resolve a plan reference (``5``, ``005``, ``005a``) to its ``plan.md``.
+
+    The reference names a number and an optional subplan letter; the slug is not
+    part of it, so a retitled or re-slugged plan stays addressable by the number
+    that identifies it. Matching is on the parsed ``(number, letter)`` pair rather
+    than a string prefix, so ``5`` and ``005`` are the same plan while ``5`` never
+    matches ``050-...``.
+
+    Exits with a CLI error when the reference is malformed or matches no plan.
+    """
+    match = re.fullmatch(r"(\d+)([a-z]?)", ref.strip())
+    if match is None:
+        _err(f"not a plan reference: {ref!r}; use a number like 005 (or 005a).")
+        raise typer.Exit(1)
+    want_id, want_sub = int(match.group(1)), match.group(2)
+
+    for plan in _plan_files(plans_dir):
+        parts = DIRNAME_RE.match(plan.parent.name)
+        if parts is None:  # unreachable: _plan_files filters on the same pattern
+            continue
+        if int(parts.group(1)) == want_id and parts.group(2) == want_sub:
+            return plan
+
+    _err(f"no plan {want_id:03d}{want_sub} found under {plans_dir}.")
+    raise typer.Exit(1)
 
 
 def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
@@ -376,20 +407,41 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
     return staged
 
 
-def _git_status_porcelain(root: Path) -> str | None:
+def _git_status_porcelain(root: Path, *paths: Path) -> str | None:
     """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error.
 
     Goes through :func:`planners.proc.run` so the location variables are stripped:
     the self-check must report on the repo ``finalize`` just committed to, not on
     whatever an ambient ``GIT_DIR`` points at.
+
+    ``paths`` narrows the report to those pathspecs, which is what lets a caller ask
+    whether *one* file is committed without caring about the rest of the tree.
     """
+    args = ["git", "status", "--porcelain"]
+    if paths:
+        args += ["--", *(str(p) for p in paths)]
     try:
-        result = proc.run(root, ["git", "status", "--porcelain"], capture_output=True)
+        result = proc.run(root, args, capture_output=True)
     except FileNotFoundError:
         return None
     if result.returncode != 0:
         return None
     return result.stdout.strip()
+
+
+def _is_unmodified(root: Path, path: Path) -> bool:
+    """True when ``path`` has no staged or unstaged changes against ``HEAD``.
+
+    Distinguishes "already done and committed" from "written by an earlier run that
+    then failed to commit" — the two states that frontmatter alone cannot tell apart.
+    An unreadable git state (no repo, no git binary) reports unmodified: the caller's
+    next step surfaces that failure with a better message than this check could.
+    """
+    try:
+        spec = path.relative_to(root)
+    except ValueError:
+        spec = path
+    return not _git_status_porcelain(root, spec)
 
 
 def _finalize_self_check(
@@ -1058,6 +1110,109 @@ def finalize(
     _git(root, ["commit", "-m", message])
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
+
+
+@app.command()
+def activate(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005a for a subplan)."
+    ),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        help="Branch name to record; defaults to feature/<slug>. An already-filled "
+        "branch: field is left alone.",
+    ),
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="Commit the activation even though HEAD is off the repo's mainline "
+        "(dev/default branch), which normally refuses.",
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Flip a plan to active, fill its branch, refresh the index, and commit.
+
+    The activation commit belongs on the mainline, *before* the feature branch
+    exists, so the plan is recorded there even if the branch never lands. That
+    ordering was previously prose in two skills instructing a hand-edit of the
+    frontmatter — which is why the ``plan [activate]`` subjects in this repo's own
+    history disagree with each other, and why no guard could cover the step. Both
+    problems are the same problem: there was no code to put them in.
+    """
+    root = Path.cwd()
+
+    # Resolve and validate before the branch guard, the ordering `add` uses for its
+    # slug check. A closed plan is closed on every branch, so leading with the branch
+    # would send the user to switch branches and only then learn the real blocker.
+    path = _resolve_plan(root / PLANS_DIR, ref)
+    try:
+        meta = PlanMetadata.from_file(path)
+    except PlanError as exc:
+        _err(f"cannot read {_shown(path, root)}: {exc}")
+        raise typer.Exit(1) from None
+
+    if meta.status in CLOSED_STATUSES:
+        _err(
+            f"plan {meta.prefix} is {meta.status}; it is closed. Reopen it by setting "
+            "status: draft (or inactive) if the work is genuinely resuming."
+        )
+        raise typer.Exit(1)
+
+    # An empty branch: is pending, so fill it; a populated one is the user's answer
+    # and is never overwritten (--branch on an already-filled plan is a no-op).
+    new_branch = meta.branch or branch or f"feature/{meta.slug}"
+    unchanged = meta.status == Status.active and new_branch == meta.branch
+
+    # Idempotent rather than an error: re-running activate destroys nothing (unlike
+    # `add`, which refuses in order to protect a body), and a no-op keeps the command
+    # safe inside a pipeline that may retry it. But *already active* is not the same
+    # as *already committed* — an earlier run can have written and staged the plan and
+    # then failed at the commit (a rejecting hook, no commit identity). Deciding from
+    # the frontmatter alone would report that failure as success and strand the
+    # activation staged forever, so the file must also be unmodified against HEAD.
+    # This runs before the guard: a genuine no-op commits nothing, so there is nothing
+    # for a feature branch to strand and nothing for the guard to protect.
+    if unchanged and (no_commit or _is_unmodified(root, path)):
+        typer.echo(
+            f"plan {meta.prefix} is already active on {meta.branch}; nothing to do."
+        )
+        return
+
+    # Guard before writing, so a refusal leaves the plan exactly as it was — the
+    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
+    # no commit, so there is nothing for a branch to strand.
+    if not no_commit:
+        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
+
+    if unchanged:
+        # Reached only via the staged-but-uncommitted path above: the frontmatter is
+        # already right, so there is nothing to rewrite — just the commit to finish.
+        typer.echo(
+            f"plan {meta.prefix} is already active on {meta.branch}; "
+            "committing the pending activation."
+        )
+    else:
+        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        meta.status = Status.active
+        meta.branch = new_branch
+        # Re-render only the frontmatter and keep the body verbatim — the same
+        # mutate-preserving-body shape `finalize` uses. The plan text is the record.
+        path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"activated {_shown(path, root)} on {meta.branch}")
+
+    if no_commit:
+        return
+
+    readme = _refresh_index(root, cols="curated")
+    _git(root, ["add", str(path.relative_to(root)), str(readme.relative_to(root))])
+    # The subject names the slug, not the title: a slug is fixed by the directory
+    # name, while a title can be reworded until the subject no longer names the plan
+    # it belongs to. Matches what `add` writes, and a format string owns it, so it
+    # cannot drift the way the hand-written subjects did.
+    _git(root, ["commit", "-m", f"plan [activate]: {meta.prefix} - {meta.slug}"])
 
 
 @app.command()

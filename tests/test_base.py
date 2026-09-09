@@ -597,3 +597,165 @@ def test_finalize_allow_branch_overrides_the_guard(
     result = runner.invoke(app, ["finalize", "--allow-branch"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / ".planners" / "plans" / "000-my-plan" / "plan.md").exists()
+
+
+# --- the activate guard -------------------------------------------------------
+
+_DRAFT_PLAN = (
+    "---\nid: 5\nslug: my-thing\nstatus: draft\nbranch:\n"
+    "created: 2026-06-07T12:00:00-07:00\nconcluded:\npr:\n---\n\n# My thing\n"
+)
+
+
+def _seed_plan(path: Path) -> Path:
+    """A draft plan 005 committed on the current branch, ready to activate."""
+    plan_dir = path / ".planners" / "plans" / "005-my-thing"
+    plan_dir.mkdir(parents=True)
+    plan = plan_dir / "plan.md"
+    plan.write_text(_DRAFT_PLAN, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "plan [add]: 005 - my-thing"], cwd=path, check=True
+    )
+    return plan
+
+
+def test_activate_refuses_on_a_feature_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The activation commit belongs on the mainline, before the branch exists."""
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    original = plan.read_text(encoding="utf-8")
+    _branch(tmp_path, "feature/my-thing")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 1
+    assert "not a mainline branch" in result.output
+    # Refused before writing: the plan is left exactly as it was.
+    assert plan.read_text(encoding="utf-8") == original
+
+
+def test_activate_allow_branch_overrides_the_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    _branch(tmp_path, "feature/my-thing")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005", "--allow-branch"])
+    assert result.exit_code == 0, result.output
+    assert "status: active" in plan.read_text(encoding="utf-8")
+
+
+def test_activate_allows_a_mainline_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    _seed_plan(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    log = _unredirected(tmp_path, ["log", "--oneline"])
+    assert "plan [activate]: 005 - my-thing" in log
+
+
+def test_activate_no_commit_is_unguarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--no-commit makes no commit, so no branch can strand one."""
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    _branch(tmp_path, "feature/my-thing")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "status: active" in plan.read_text(encoding="utf-8")
+    # The point of the test: it wrote, and it did *not* commit. Asserting only the
+    # write would stay green if --no-commit started committing.
+    assert "plan [activate]" not in _unredirected(tmp_path, ["log", "--oneline"])
+
+
+def test_activate_closed_plan_reports_closed_not_the_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A closed plan is closed on every branch, so that is the error to report.
+
+    Leading with the mainline guard would send the user to switch branches and only
+    then discover the real blocker. `add` puts its cheap slug check first for the
+    same reason.
+    """
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    plan.write_text(
+        _DRAFT_PLAN.replace("status: draft", "status: done"), encoding="utf-8"
+    )
+    _branch(tmp_path, "feature/my-thing")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 1
+    assert "it is closed" in result.output
+    assert "not a mainline branch" not in result.output
+
+
+def test_activate_noop_on_a_feature_branch_is_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A true no-op commits nothing, so the guard has nothing to protect.
+
+    Refusing here would contradict the idempotence the no-op exists to provide: a
+    retried pipeline step runs from the feature branch, which is where the work is.
+    """
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["activate", "005"]).exit_code == 0
+    _branch(tmp_path, "feature/my-thing")
+    original = plan.read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" in result.output
+    assert plan.read_text(encoding="utf-8") == original
+
+
+def test_activate_retries_a_commit_that_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An activation written but not committed must not be reported as done.
+
+    The first run writes and stages the plan, then the hook rejects the commit. If
+    the retry decided from the frontmatter alone it would say "nothing to do" and
+    leave the activation staged forever — a failure reported as success.
+    """
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+
+    failed = runner.invoke(app, ["activate", "005"])
+    assert failed.exit_code == 1
+    assert "status: active" in plan.read_text(encoding="utf-8")
+
+    hook.unlink()
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "committing the pending activation" in result.output
+    assert "plan [activate]: 005 - my-thing" in _unredirected(
+        tmp_path, ["log", "--oneline"]
+    )
+    assert _unredirected(tmp_path, ["status", "--porcelain"]).strip() == ""
