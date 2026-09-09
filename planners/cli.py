@@ -217,14 +217,26 @@ def _git(root: Path, args: list[str]) -> None:
     :func:`_guard_base_branch` already describes ``root`` and nothing else, so
     pinning the commit the same way keeps the two talking about one repo.
 
-    Converts the usual failure modes — git missing, or a non-zero exit (e.g. not
-    a git worktree, or no commit identity configured) — into a clear CLI error
-    instead of a traceback.
+    Converts the usual failure modes — git missing, an unusable ``root``, or a
+    non-zero exit (e.g. not a git worktree, or no commit identity configured) —
+    into a clear CLI error instead of a traceback.
+
+    Pinning to ``root`` is what makes that last case possible: ``cwd=root`` fails
+    in its own right if the directory has gone away or become unreadable, and a
+    missing directory raises the *same* ``FileNotFoundError`` as a missing git
+    binary. ``root.is_dir()`` separates the two, so the message names the real
+    cause instead of sending the user to install a git they already have.
     """
     try:
         result = proc.run(root, ["git", *args])
     except FileNotFoundError:
-        _err("git not found on PATH; install git or re-run with --no-commit.")
+        if root.is_dir():
+            _err("git not found on PATH; install git or re-run with --no-commit.")
+        else:
+            _err(f"cannot run git: {root} is no longer a directory.")
+        raise typer.Exit(1) from None
+    except OSError as exc:
+        _err(f"cannot run git in {root}: {exc}")
         raise typer.Exit(1) from None
     if result.returncode != 0:
         joined = " ".join(args)
