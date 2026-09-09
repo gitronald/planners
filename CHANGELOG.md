@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-08
+
+### Added
+
+- `base` command printing the repo's mainline branch — the branches a plan commit
+  belongs on. `--all` lists every one in resolution order; it exits non-zero when
+  no mainline resolves, so a script can branch on it.
+- `add` and `finalize` now refuse to commit when `HEAD` is off the mainline,
+  so a plan is recorded there even if the feature branch never merges. The
+  accepted set is `dev` (when that branch exists) plus the repo's default branch.
+  `--allow-branch` overrides the refusal for a repo whose mainline is not
+  detectable by name.
+
+### Changed
+
+- The convention rule and the `add`/`implement` skills now state that plan
+  commits land on the mainline before the branch or worktree is created, and
+  point at `base --all` instead of assuming `dev`.
+- Plan commit subjects are documented as naming the **slug**, not the title, so
+  the hand-written `activate`/`close`/`retire` subjects match what `add` and
+  `finalize` write. The convention is stated once in the rule.
+- `close` returns to the mainline via `base` rather than a hardcoded `git
+  checkout dev`, and its cleanup warning covers every mainline branch.
+- The convention rule documents the subplan-only `sub:` key and its position in
+  the frontmatter (directly after `slug`).
+
+### Fixed
+
+- The `add` skill's own title placeholders were Title Case while the same file
+  required sentence case; its `## Umbrella + subplans` and `## Batch / deferred
+  creation` sections also sat between steps 1 and 2, so the remaining steps read
+  as part of batching. Steps 1–3 are now contiguous.
+- The `implement` skill's worktree example named a `plan/<NNN>-<slug>` branch
+  while the same skill derives `feature/<slug>`.
+- `add` and `finalize` could commit a plan into a **different repository** than
+  the one they ran in. An ambient `GIT_DIR` — which git exports to every hook it
+  runs, so a hook or wrapper inherits it without anyone setting it — outranks the
+  working directory, so the `plan [add]` commit landed in another repo's history
+  while the plan files stayed uncommitted here. Every git shell-out is now pinned
+  to an explicit repo root with the location variables stripped, including the
+  hook-detection helpers and `pre-commit install`.
+
 ## [0.4.0] - 2026-07-09
 
 ### Added

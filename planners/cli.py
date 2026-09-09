@@ -1,15 +1,15 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``skill``, ``rule``, ``install``, ``add``, ``index``, ``schema``,
+Commands: ``skill``, ``rule``, ``install``, ``add``, ``base``, ``index``, ``schema``,
 ``validate``. Filesystem and subprocess (git) work is confined to this module,
 ``install``, and the ``add`` helpers; the schema/index/skill/rule transforms stay
-pure.
+pure. Every shell-out goes through :mod:`planners.proc`, which pins it to an
+explicit repo root.
 """
 
 import json
 import secrets
 import shutil
-import subprocess
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -17,8 +17,10 @@ from typing import Any
 
 import typer
 
+from planners import base as base_mod
 from planners import install as install_mod
 from planners import permissions as perms_mod
+from planners import proc
 from planners.index import render_index, render_plans_table
 from planners.metadata import (
     PLAN_FILENAME,
@@ -205,25 +207,68 @@ def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
     return metas
 
 
-def _git(args: list[str]) -> None:
-    """Run a git command with arguments passed as a list (never shell=True).
+def _git(root: Path, args: list[str]) -> None:
+    """Run a git command in ``root``, with arguments as a list (never shell=True).
 
-    Converts the usual failure modes — git missing, or a non-zero exit (e.g. not
-    a git worktree, or no commit identity configured) — into a clear CLI error
-    instead of a traceback.
+    ``root`` is explicit rather than inherited from the process directory, and
+    :func:`planners.proc.run` strips the git location variables — an ambient
+    ``GIT_DIR`` would otherwise redirect the commit into a *different* repository
+    while the plan files stayed uncommitted here. The guard in
+    :func:`_guard_base_branch` already describes ``root`` and nothing else, so
+    pinning the commit the same way keeps the two talking about one repo.
+
+    Converts the usual failure modes — git missing, an unusable ``root``, or a
+    non-zero exit (e.g. not a git worktree, or no commit identity configured) —
+    into a clear CLI error instead of a traceback.
+
+    Pinning to ``root`` is what makes that last case possible: ``cwd=root`` fails
+    in its own right if the directory has gone away or become unreadable, and a
+    missing directory raises the *same* ``FileNotFoundError`` as a missing git
+    binary. ``root.is_dir()`` separates the two, so the message names the real
+    cause instead of sending the user to install a git they already have.
     """
     try:
-        subprocess.run(["git", *args], check=True)
+        result = proc.run(root, ["git", *args])
     except FileNotFoundError:
-        _err("git not found on PATH; install git or re-run with --no-commit.")
+        if root.is_dir():
+            _err("git not found on PATH; install git or re-run with --no-commit.")
+        else:
+            _err(f"cannot run git: {root} is no longer a directory.")
         raise typer.Exit(1) from None
-    except subprocess.CalledProcessError as exc:
+    except OSError as exc:
+        _err(f"cannot run git in {root}: {exc}")
+        raise typer.Exit(1) from None
+    if result.returncode != 0:
         joined = " ".join(args)
         _err(
-            f"`git {joined}` failed (exit {exc.returncode}); "
+            f"`git {joined}` failed (exit {result.returncode}); "
             "the plan file was written — commit it manually or use --no-commit."
         )
-        raise typer.Exit(1) from None
+        raise typer.Exit(1)
+
+
+def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
+    """Refuse to commit ``action`` when HEAD is off the repo's mainline.
+
+    The plan-file convention is that ``add``/``activate`` commits land on the
+    mainline *before* a feature branch exists, so the plan is recorded there even
+    if the branch never merges. That ordering used to live only in the implement
+    skill's prose, which a session can ignore — and did, leaving both commits
+    reachable only from the branch. This is the enforcement.
+
+    Deliberately quiet in every ambiguous case: :func:`base.guard_message`
+    returns ``None`` for an unresolvable repo, a repo with no commits, or a HEAD
+    already on the mainline, so the guard only speaks when the failure is
+    demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
+    genuinely is not detectable by name.
+    """
+    if allow_branch:
+        return
+    message = base_mod.guard_message(base_mod.detect(root), action)
+    if message is None:
+        return
+    _err(f"error: {message}")
+    raise typer.Exit(1)
 
 
 def _read_settings(path: Path) -> dict[str, Any]:
@@ -332,14 +377,14 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
 
 
 def _git_status_porcelain(root: Path) -> str | None:
-    """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error."""
+    """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error.
+
+    Goes through :func:`planners.proc.run` so the location variables are stripped:
+    the self-check must report on the repo ``finalize`` just committed to, not on
+    whatever an ambient ``GIT_DIR`` points at.
+    """
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-        )
+        result = proc.run(root, ["git", "status", "--porcelain"], capture_output=True)
     except FileNotFoundError:
         return None
     if result.returncode != 0:
@@ -768,6 +813,12 @@ def add(
         help="Stage an unnumbered plan under .planners/staging for collision-safe "
         "batch creation; number it later with `planners finalize`.",
     ),
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="Commit the plan even though HEAD is off the repo's mainline "
+        "(dev/default branch), which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
@@ -778,6 +829,13 @@ def add(
         raise typer.Exit(1)
 
     root = Path.cwd()
+
+    # Guard before writing anything, so a refusal leaves no half-scaffolded plan
+    # directory behind — the same ordering the unsafe-slug check above relies on.
+    # Only the committing paths are guarded: --no-commit and --defer write no
+    # commit, so there is nothing for a branch to strand.
+    if not no_commit and not defer:
+        _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
 
     if defer:
         # Deferred creation: write an unnumbered plan into a per-creator staging
@@ -859,12 +917,18 @@ def add(
         return
 
     readme = _refresh_index(root, cols="curated")
-    _git(["add", str(path.relative_to(root)), str(readme.relative_to(root))])
-    _git(["commit", "-m", f"plan [add]: {prefix} - {slug}"])
+    _git(root, ["add", str(path.relative_to(root)), str(readme.relative_to(root))])
+    _git(root, ["commit", "-m", f"plan [add]: {prefix} - {slug}"])
 
 
 @app.command()
 def finalize(
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="Commit the batch even though HEAD is off the repo's mainline "
+        "(dev/default branch), which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
         False,
         "--no-commit",
@@ -880,6 +944,12 @@ def finalize(
     self-check. Being the sole writer, it cannot race on numbering or the commit.
     """
     root = Path.cwd()
+
+    # Guard before materializing: a refusal must leave the batch staged and
+    # recoverable, not half-moved out of staging with no commit to show for it.
+    if not no_commit:
+        _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
+
     staging = root / STAGING_DIR
     staged = _collect_staged(staging)
     if not staged:
@@ -978,16 +1048,60 @@ def finalize(
     # committed" state (the documented `add` trade-off, applied uniformly).
     rels = [str(plan_dir.relative_to(root)) for _, _, plan_dir in finalized]
     rels.append(str(readme.relative_to(root)))
-    _git(["add", *rels])
+    _git(root, ["add", *rels])
     first, last = finalized[0][0], finalized[-1][0]
     message = (
         f"plan [add]: {first:03d} - {finalized[0][1]}"
         if len(finalized) == 1
         else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
     )
-    _git(["commit", "-m", message])
+    _git(root, ["commit", "-m", message])
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
+
+
+@app.command()
+def base(
+    repo_path: Path = typer.Argument(Path("."), help="Repo root (a git worktree)."),
+    all_: bool = typer.Option(
+        False,
+        "--all",
+        help="Print every detected mainline branch, one per line, in resolution "
+        "order (default: only the first).",
+    ),
+) -> None:
+    """Print the repo's mainline branch(es) — where plan commits belong.
+
+    One detection implementation, shared by the ``add``/``finalize`` guard and by
+    the lifecycle skills, so the convention is not re-described in prose that can
+    drift from the code. Exits non-zero and prints nothing to stdout when no
+    mainline resolves, so a script can branch on it.
+
+    This reports what git's refs say *now*; it is not a record of where a repo's
+    existing plans were actually committed. See :func:`planners.base.detect`.
+    """
+    mainline = base_mod.detect(repo_path)
+
+    if mainline.unborn:
+        _err(
+            "no commits yet, so no mainline branch exists; the first plan can be "
+            "added on whatever branch this repo starts on."
+        )
+        raise typer.Exit(1)
+    if not mainline.resolved:
+        _err(
+            "could not determine a mainline branch: no 'dev', no "
+            "refs/remotes/origin/HEAD, and no local 'main' or 'master'. Run `git "
+            "remote set-head origin --auto` to record the remote's default "
+            "branch, or pass --allow-branch to planners add."
+        )
+        raise typer.Exit(1)
+
+    for name in mainline.branches if all_ else mainline.branches[:1]:
+        typer.echo(name)
+
+    if mainline.thin:
+        _err(f"note: {base_mod.THIN_NOTE}")
 
 
 @app.command()

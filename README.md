@@ -47,7 +47,9 @@ These tools can be used manually via CLI commands, but they are largely intended
 ## Usage
 
 ```bash
-planners add <slug> --title "<Title>"    # scaffold a new plan
+planners add <slug> --title "<Title>"    # scaffold a new plan (--defer: stage it unnumbered)
+planners finalize                        # number and commit the deferred batch, in one commit
+planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
 planners validate .planners/plans        # validate plan frontmatter
 planners schema                          # show the plan metadata schema
@@ -56,6 +58,12 @@ planners rule <name>                     # print a bundled convention rule body
 planners install                         # install global holder + rule + repo hook (--local: per-repo)
 planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
 ```
+
+> **Plan commits land on the mainline.** `add` and `finalize` refuse to commit when `HEAD` is off it,
+> so a plan is recorded on the mainline even if the feature branch never merges. The accepted set is
+> `dev` (when that branch exists) plus the repo's default branch — `planners base --all` prints it.
+> Detection reads git's current refs and goes inert rather than blocking a repo it can't resolve;
+> `--allow-branch` overrides the refusal where the mainline isn't detectable by name.
 
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
 > it with `uv add --dev planners` and run everything as `uv run planners …`; then `planners install --local`

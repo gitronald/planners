@@ -6,8 +6,10 @@ from importlib import metadata
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
+from planners import cli as cli_mod
 from planners import install as install_mod
 from planners.cli import app
 from planners.metadata import PlanMetadata
@@ -1049,6 +1051,65 @@ def test_install_check_no_rule_skips_the_rule_check(
     assert skipped.exit_code == 0
     assert "holder: ok" in skipped.output
     assert "rule:   skipped" in skipped.output
+
+
+# --- _git: an unusable root is not reported as a missing git ------------------
+
+
+def test_git_reports_a_vanished_root_rather_than_blaming_git(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing ``root`` must not masquerade as a missing git binary.
+
+    Pinning the commit to ``root`` means ``cwd=root`` can fail on its own, and a
+    directory that is not there raises the *same* ``FileNotFoundError`` as a git
+    that is not installed. Without the ``is_dir`` split the user is told to
+    install a git they already have.
+    """
+    with pytest.raises(typer.Exit) as exc_info:
+        cli_mod._git(tmp_path / "gone", ["status"])
+
+    assert exc_info.value.exit_code == 1
+    err = capsys.readouterr().err
+    assert "no longer a directory" in err
+    assert "git not found on PATH" not in err
+
+
+def test_git_turns_an_unreadable_root_into_a_cli_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-``FileNotFoundError`` OSError on ``root`` is an error, not a traceback.
+
+    ``chmod 000`` makes ``cwd=root`` raise ``PermissionError``; the docstring
+    promises a clear CLI error in every failure mode, so it must not escape.
+    """
+    unreadable = tmp_path / "unreadable"
+    unreadable.mkdir()
+    unreadable.chmod(0o000)
+    try:
+        with pytest.raises(typer.Exit) as exc_info:
+            cli_mod._git(unreadable, ["status"])
+    finally:
+        unreadable.chmod(0o755)
+
+    assert exc_info.value.exit_code == 1
+    assert "cannot run git in" in capsys.readouterr().err
+
+
+def test_git_still_blames_git_when_the_binary_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The original message survives for the case it was written for."""
+
+    def missing(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(cli_mod.proc, "run", missing)
+    with pytest.raises(typer.Exit) as exc_info:
+        cli_mod._git(tmp_path, ["status"])
+
+    assert exc_info.value.exit_code == 1
+    assert "git not found on PATH" in capsys.readouterr().err
 
 
 # --- add --defer + finalize: collision-safe batch creation --------------------
