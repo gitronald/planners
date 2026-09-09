@@ -29,6 +29,18 @@ These tools can be used manually via CLI commands, but they are largely intended
    - (Re)generate the global `~/.claude/skills/planners/SKILL.md` holder and
      `~/.claude/rules/planners.md` convention rule, which can change as the package version advances.
    - Wire the `planners-validate` pre-commit hook into the project folder/repo's `.pre-commit-config.yaml` (registering it when `pre-commit` is available).
+   - Give the generated index its merge semantics: a `.planners/README.md merge=union`
+     line in the repo's `.gitattributes`, so a **local** merge whose two sides both
+     added or closed plans stops conflicting on it. `union` is built into git, so the
+     one committed line is the whole fix — nothing to configure per clone. GitHub's
+     server-side merge does not apply it, so a PR can still report a conflict on the
+     index; merging the base in locally then resolves it without hand-editing a
+     generated file.
+
+   `planners install --check` reports each part (`holder`, `rule`, `gitattr`) and
+   exits non-zero if any has drifted, plus a `hook` line saying whether the git hook
+   is actually registered **in this clone** — registration is per-clone state that a
+   fresh clone silently lacks, so it is reported rather than assumed.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 
@@ -52,11 +64,11 @@ planners finalize                        # number and commit the deferred batch,
 planners activate <NNN>                  # flip a plan to active, fill branch:, and commit
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
-planners validate .planners/plans        # validate plan frontmatter
+planners validate .planners/plans        # validate plan frontmatter (and that the index agrees)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
 planners rule <name>                     # print a bundled convention rule body
-planners install                         # install global holder + rule + repo hook (--local: per-repo)
+planners install                         # install holder + rule + repo hook + merge attr (--local: per-repo)
 planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
 ```
 

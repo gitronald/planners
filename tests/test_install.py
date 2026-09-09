@@ -8,9 +8,13 @@ import pytest
 
 from planners import install as install_mod
 from planners.install import (
+    GITATTRIBUTES_REL,
     HOLDER,
     HOLDER_REL,
     HOOK_ID,
+    INDEX_ATTR_LINE,
+    INDEX_ATTR_PATTERN,
+    INDEX_MERGE_ATTR,
     RULE,
     RULE_REL,
     RuleCheck,
@@ -23,10 +27,12 @@ from planners.install import (
     both_holders_present,
     check,
     check_artifact,
+    check_gitattributes,
     check_holder,
     check_rule,
     ensure_precommit_dependency,
     holder_path,
+    installed_index_attr,
     invocation,
     is_generated_artifact,
     is_generated_holder,
@@ -34,10 +40,12 @@ from planners.install import (
     remove_stale_holder,
     render_holder,
     render_rule,
+    report_hook,
     resolve_installed,
     resolve_installed_holder,
     resolve_mode,
     superseded_legacy_rule,
+    wire_gitattributes,
     wire_precommit,
     write_artifact,
     write_holder,
@@ -921,3 +929,187 @@ def test_check_rule_local_install_rule_is_not_stale(
     write_holder(repo, "1.0.0", "local")
     write_artifact(repo, "1.0.0", "local", RULE)
     assert check_rule(repo, "1.0.0") == RuleCheck("ok", {"local": "ok"})
+
+
+# --- .gitattributes: the index's merge semantics ------------------------------
+
+
+def _attrs(root: Path) -> str:
+    return (root / GITATTRIBUTES_REL).read_text(encoding="utf-8")
+
+
+def test_wire_gitattributes_creates_file_when_absent(tmp_path: Path) -> None:
+    assert wire_gitattributes(tmp_path) is True
+    assert _attrs(tmp_path) == INDEX_ATTR_LINE + "\n"
+    # second run is a no-op that changes nothing
+    assert wire_gitattributes(tmp_path) is False
+    assert _attrs(tmp_path) == INDEX_ATTR_LINE + "\n"
+
+
+def test_wire_gitattributes_appends_and_preserves_other_attributes(
+    tmp_path: Path,
+) -> None:
+    # The file is repo content: an unrelated attribute a repo already set must
+    # survive, the way wire_precommit preserves entries already in the config.
+    existing = "*.png binary\n*.md text\n"
+    (tmp_path / GITATTRIBUTES_REL).write_text(existing, encoding="utf-8")
+    assert wire_gitattributes(tmp_path) is True
+    assert _attrs(tmp_path) == existing + INDEX_ATTR_LINE + "\n"
+    assert wire_gitattributes(tmp_path) is False
+
+
+def test_wire_gitattributes_adds_missing_trailing_newline(tmp_path: Path) -> None:
+    # Without this the appended line would be glued onto the last attribute,
+    # silently rewriting *that* pattern's attributes.
+    (tmp_path / GITATTRIBUTES_REL).write_text("*.png binary", encoding="utf-8")
+    assert wire_gitattributes(tmp_path) is True
+    assert _attrs(tmp_path) == "*.png binary\n" + INDEX_ATTR_LINE + "\n"
+
+
+def test_wire_gitattributes_leaves_a_different_attribute_alone(tmp_path: Path) -> None:
+    # A line naming the index but granting something else (e.g. the hand-rolled
+    # merge=ours stopgap) is deliberate repo content: report it, don't clobber it.
+    stopgap = f"{INDEX_ATTR_PATTERN} merge=ours\n"
+    (tmp_path / GITATTRIBUTES_REL).write_text(stopgap, encoding="utf-8")
+    assert wire_gitattributes(tmp_path) is False
+    assert _attrs(tmp_path) == stopgap
+    assert check_gitattributes(tmp_path) == "drifted"
+
+
+def test_wire_gitattributes_force_rewrites_only_that_line(tmp_path: Path) -> None:
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"*.png binary\n{INDEX_ATTR_PATTERN} merge=ours\n*.md text\n", encoding="utf-8"
+    )
+    assert wire_gitattributes(tmp_path, force=True) is True
+    assert _attrs(tmp_path) == f"*.png binary\n{INDEX_ATTR_LINE}\n*.md text\n"
+    assert check_gitattributes(tmp_path) == "ok"
+
+
+def test_check_gitattributes_missing_ok_drifted(tmp_path: Path) -> None:
+    assert check_gitattributes(tmp_path) == "missing"  # no file at all
+    (tmp_path / GITATTRIBUTES_REL).write_text("*.png binary\n", encoding="utf-8")
+    assert check_gitattributes(tmp_path) == "missing"  # file, but not our pattern
+    wire_gitattributes(tmp_path)
+    assert check_gitattributes(tmp_path) == "ok"
+
+
+def test_index_attr_matching_ignores_comments_and_extra_whitespace(
+    tmp_path: Path,
+) -> None:
+    # A commented-out line must not read as present (that would leave the repo
+    # with no attribute and install reporting success); a real line with padded
+    # whitespace is the same line to git, so it must not read as drift.
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"# {INDEX_ATTR_LINE}\n", encoding="utf-8"
+    )
+    assert check_gitattributes(tmp_path) == "missing"
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"  {INDEX_ATTR_PATTERN}   {INDEX_MERGE_ATTR}  \n", encoding="utf-8"
+    )
+    assert check_gitattributes(tmp_path) == "ok"
+    assert wire_gitattributes(tmp_path) is False
+
+
+def test_index_attr_is_a_builtin_driver_needing_no_per_clone_config() -> None:
+    # The whole reason this is one committed line and not three parts: `union` is
+    # built into git, so a fresh clone that never ran `install` still merges the
+    # index cleanly. A driver that needs `git config merge.<name>.driver` would be
+    # inert until someone ran that command by hand — the invisible failure plan
+    # 004 rejected. Pin the value so a future edit has to face that.
+    assert INDEX_MERGE_ATTR == "merge=union"
+
+
+def test_installed_index_attr_reports_what_is_there(tmp_path: Path) -> None:
+    assert installed_index_attr(tmp_path) is None
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"{INDEX_ATTR_PATTERN}  merge=ours\n", encoding="utf-8"
+    )
+    assert installed_index_attr(tmp_path) == f"{INDEX_ATTR_PATTERN} merge=ours"
+
+
+# --- report_hook: the per-clone registration --check can see -----------------
+
+
+def test_report_hook_names_a_missing_config_before_a_missing_hook(
+    tmp_path: Path,
+) -> None:
+    _git_init(tmp_path)
+    assert report_hook(tmp_path) == "config_missing"
+
+
+def test_report_hook_not_registered_when_config_present_but_hook_absent(
+    tmp_path: Path,
+) -> None:
+    # The fresh-clone case: the config is committed and travels, the registration
+    # does not — so validation silently never fires.
+    _git_init(tmp_path)
+    wire_precommit(tmp_path)
+    assert report_hook(tmp_path) == "not_registered"
+
+
+def test_report_hook_active_when_the_hook_is_registered(tmp_path: Path) -> None:
+    _git_init(tmp_path)
+    wire_precommit(tmp_path)
+    (tmp_path / ".git" / "hooks" / "pre-commit").write_text(
+        _PRECOMMIT_HOOK, encoding="utf-8"
+    )
+    assert report_hook(tmp_path) == "active"
+
+
+def test_report_hook_blames_hookspath_when_it_blocks_registration(
+    tmp_path: Path,
+) -> None:
+    _git_init(tmp_path)
+    wire_precommit(tmp_path)
+    _set_hookspath(tmp_path, "myhooks")
+    assert report_hook(tmp_path) == "hookspath_blocked"
+
+
+def test_report_hook_no_git_repo(tmp_path: Path) -> None:
+    wire_precommit(tmp_path)
+    assert report_hook(tmp_path) == "no_git_repo"
+
+
+def test_report_hook_does_not_call_a_foreign_precommit_hook_ours(
+    tmp_path: Path,
+) -> None:
+    # A repo that already used pre-commit for its own hooks (ruff, say) has the
+    # git hook registered while `planners-validate` is nowhere in the config.
+    # Testing registration first reported "active" for a hook that cannot fire —
+    # the exact silence report_hook exists to break — because
+    # _precommit_hook_registered answers "is pre-commit wired in", not "will our
+    # hook run".
+    _git_init(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: ruff\n", encoding="utf-8"
+    )
+    (tmp_path / ".git" / "hooks" / "pre-commit").write_text(
+        _PRECOMMIT_HOOK, encoding="utf-8"
+    )
+    assert HOOK_ID not in (tmp_path / ".pre-commit-config.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert report_hook(tmp_path) == "config_missing"
+
+
+def test_report_hook_survives_an_unreadable_config(tmp_path: Path) -> None:
+    # --check must degrade to a reported status, never a traceback: a config that
+    # is not valid UTF-8 is a config that does not name the hook.
+    _git_init(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_bytes(b"repos: \xff\xfe not utf-8\n")
+    assert report_hook(tmp_path) == "config_missing"
+
+
+def test_index_attr_matching_obeys_the_last_line_like_git(tmp_path: Path) -> None:
+    # git resolves attributes by the LAST matching line, so a file that grants
+    # union and then ours is a repo running `ours` — which silently drops the
+    # incoming branch's rows. Reading the first match would report it `ok`.
+    (tmp_path / GITATTRIBUTES_REL).write_text(
+        f"{INDEX_ATTR_LINE}\n{INDEX_ATTR_PATTERN} merge=ours\n", encoding="utf-8"
+    )
+    assert installed_index_attr(tmp_path) == f"{INDEX_ATTR_PATTERN} merge=ours"
+    assert check_gitattributes(tmp_path) == "drifted"
+
+    # and --force rewrites the line git actually obeys, restoring `ok`
+    assert wire_gitattributes(tmp_path, force=True) is True
+    assert check_gitattributes(tmp_path) == "ok"

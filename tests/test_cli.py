@@ -632,8 +632,8 @@ def test_install_check_recovers_global_mode(
     # it reports the holder and the rule per artifact.
     checked = runner.invoke(app, ["install", "--check"])
     assert checked.exit_code == 0
-    assert "holder: ok" in checked.output
-    assert "rule:   ok" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    ok" in checked.output
 
 
 def test_install_global_idempotent(
@@ -972,8 +972,8 @@ def test_install_check_reports_rule_drift(
     checked = runner.invoke(app, ["install", "--check"])
     # a drifted rule gates the whole check just like a drifted holder
     assert checked.exit_code == 1
-    assert "holder: ok" in checked.output
-    assert "rule:   drifted" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    drifted" in checked.output
 
 
 def test_install_check_flags_stale_per_repo_rule_after_global_switch(
@@ -1001,8 +1001,8 @@ def test_install_check_flags_stale_per_repo_rule_after_global_switch(
 
     checked = runner.invoke(app, ["install", "--check"])
     assert checked.exit_code == 1
-    assert "holder: ok" in checked.output
-    assert "rule:   drifted" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    drifted" in checked.output
     # the note names the stale local rule path so the drift is actionable
     local_rule = repo / ".claude" / "rules" / "planners.md"
     assert str(local_rule) in checked.output
@@ -1026,8 +1026,8 @@ def test_install_check_finds_local_only_rule_without_holder(
     install_mod.write_artifact(repo, version, "local", install_mod.RULE)
 
     checked = runner.invoke(app, ["install", "--check"])
-    assert "holder: missing" in checked.output
-    assert "rule:   ok" in checked.output
+    assert "holder:  missing" in checked.output
+    assert "rule:    ok" in checked.output
     # the holder is genuinely absent, so the overall check still gates
     assert checked.exit_code == 1
 
@@ -1044,13 +1044,13 @@ def test_install_check_no_rule_skips_the_rule_check(
     # plain --check fails: the rule is genuinely missing
     plain = runner.invoke(app, ["install", "--check"])
     assert plain.exit_code == 1
-    assert "rule:   missing" in plain.output
+    assert "rule:    missing" in plain.output
 
     # --check --no-rule skips the rule and passes on the holder alone
     skipped = runner.invoke(app, ["install", "--check", "--no-rule"])
     assert skipped.exit_code == 0
-    assert "holder: ok" in skipped.output
-    assert "rule:   skipped" in skipped.output
+    assert "holder:  ok" in skipped.output
+    assert "rule:    skipped" in skipped.output
 
 
 # --- _git: an unusable root is not reported as a missing git ------------------
@@ -1746,3 +1746,210 @@ def test_activate_commits_an_explicit_branch(
     assert "active" in (tmp_path / ".planners" / "README.md").read_text(
         encoding="utf-8"
     )
+
+
+# --- install: the index's merge attribute ------------------------------------
+
+
+def test_install_writes_the_index_merge_attribute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _isolate_home(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["install"])
+    assert result.exit_code == 0, result.output
+    assert (repo / ".gitattributes").read_text(
+        encoding="utf-8"
+    ) == install_mod.INDEX_ATTR_LINE + "\n"
+    # re-running says so rather than writing again
+    again = runner.invoke(app, ["install"])
+    assert "index merge attribute already present" in again.output
+
+
+def test_install_check_gates_on_a_missing_index_attribute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The attribute is committed repo content, so it travels with a clone — but a
+    # repo that has not re-installed since it shipped has no merge semantics for
+    # its index at all, which is the state this plan exists to end.
+    repo = _isolate_home(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["install"]).exit_code == 0
+    (repo / ".gitattributes").unlink()
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 1
+    assert "gitattr: missing" in checked.output
+
+
+def test_install_leaves_a_drifted_attribute_alone_until_forced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The migration path for a repo carrying the hand-rolled merge=ours stopgap:
+    # reported, not clobbered, until --force says so.
+    repo = _isolate_home(tmp_path, monkeypatch)
+    attrs = repo / ".gitattributes"
+    stopgap = f"{install_mod.INDEX_ATTR_PATTERN} merge=ours\n"
+    attrs.write_text(stopgap, encoding="utf-8")
+
+    plain = runner.invoke(app, ["install"])
+    assert plain.exit_code == 0, plain.output
+    assert attrs.read_text(encoding="utf-8") == stopgap
+    assert "merge=ours" in plain.output
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 1
+    assert "gitattr: drifted" in checked.output
+
+    forced = runner.invoke(app, ["install", "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert attrs.read_text(encoding="utf-8") == install_mod.INDEX_ATTR_LINE + "\n"
+
+
+def test_install_check_reports_an_unregistered_hook_without_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 006's finding: hook registration is per-clone and silently absent in a
+    # fresh clone, so --check must SAY so. It must not gate on it — a consumer
+    # without pre-commit is correctly installed, just unguarded.
+    _isolate_home(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["install", "--no-activate"]).exit_code == 0
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 0, checked.output
+    assert "hook:" in checked.output
+    assert "not registered" in checked.output
+
+
+# --- validate: the index must agree with the frontmatter it is generated from --
+
+
+def test_validate_flags_an_index_that_disagrees_with_the_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    # the index is fresh, so validate passes
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+    # now the index says something the frontmatter does not — the state a merge
+    # leaves behind (merge=union can duplicate a row), and the state a plan edited
+    # without reindexing leaves behind.
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text(index.read_text(encoding="utf-8") + "| 099 | stray |\n", "utf-8")
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert "stale" in result.output
+    assert "planners index ." in result.output
+
+
+def test_validate_checks_the_index_when_handed_a_single_plan_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # How the pre-commit hook calls it: pre-commit passes the matched *filenames*,
+    # never a repo root, so a check that only fired for a directory argument would
+    # never fire where it matters most.
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", str(plan)])
+    assert result.exit_code == 1
+    assert "stale" in result.output
+
+
+def test_validate_does_not_invent_a_missing_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Absence is `install`/`add`'s business, not validate's: a checkout that has
+    # never generated an index must not be failed for it.
+    _write_plan(tmp_path / ".planners" / "plans", "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert not (tmp_path / ".planners" / "README.md").exists()
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+
+def test_validate_ignores_a_legacy_layout_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A repo mid-migration: plans still under docs/plans/, and a .planners index
+    # that describes the (empty) new tree. A legacy plan must not be attributed to
+    # that index — matching on `plans` alone would do exactly that, and report a
+    # stale index for a plan the index was never generated from.
+    plan = _write_plan(tmp_path / "docs" / "plans", "001-thing", _VALID_PLAN)
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    (tmp_path / ".planners" / "README.md").write_text(
+        "# Plans\n\n| 001 | a row the new tree does not have |\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", str(plan)])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_survives_a_plan_file_with_no_room_for_a_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A path too shallow to hold the .planners/plans/<dir>/ shape must read as
+    # "not our layout", not index past the end of its parents.
+    (tmp_path / "plan.md").write_text(_VALID_PLAN, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", "plan.md"])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_accepts_an_index_generated_with_cols_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `index --cols all` is a first-class documented option, so a wide index is a
+    # legitimate tracked state. Comparing only against the curated rendering
+    # reported such a repo stale on every commit, with no edit able to fix it —
+    # the pre-commit hook would have blocked the repo outright.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", ".", "--cols", "all"]).exit_code == 0
+    index = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
+    assert "Branch" in index  # the wide header, not the curated one
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_warns_once_per_bad_plan_not_once_per_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stale check re-parses every plan in the repo, so testing it once per
+    # matched FILE (dedup after the filter) both made `validate .` quadratic in
+    # the plan count and repeated _collect_metas's skip-warning per file — one
+    # malformed plan read as many.
+    plans = tmp_path / ".planners" / "plans"
+    for name in ("001-thing", "002-thing", "003-thing"):
+        _write_plan(plans, name, _VALID_PLAN.replace("id: 1", f"id: {name[2]}"))
+    _write_plan(plans, "004-bad", "not a plan at all\n")
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["index", "."])
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert result.output.count("warning: skipping") == 1
+
+
+def test_validate_summarizes_a_stale_index_only_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every other failure path ends in a summary line; a stale-index-only run
+    # exited 1 with none, leaving the exit code as the only signal.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text(index.read_text(encoding="utf-8") + "| 099 | stray |\n", "utf-8")
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert "1 stale index file(s)" in result.output

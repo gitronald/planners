@@ -9,9 +9,16 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from planners.metadata import PlanMetadata, Status
+
+# The index's own location, relative to the repo root. It lives here rather than
+# in the CLI because two unrelated modules need it — the CLI writes the file, and
+# ``install`` writes the ``.gitattributes`` line naming it — and a path spelled in
+# two places is the drift hazard this package keeps warning about.
+INDEX_PATH = Path(".planners/README.md")
 
 EM_DASH = "—"
 
