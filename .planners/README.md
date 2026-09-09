@@ -11,3 +11,4 @@
 | 000 | [Handle blocked PR-comment posting in the close review gate](plans/000-close-gate-pr-comment-permission/plan.md) | done | 2026-07-09 01:16 PT | [#6](https://github.com/gitronald/planners/pull/6) |
 
 <!-- probe marker -->
+HEAD-ROW
