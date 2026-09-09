@@ -1489,3 +1489,218 @@ def test_permissions_apply_noop_leaves_existing_file_untouched(
     assert "no new rules to add" in result.output
     # Byte-for-byte unchanged: a no-op apply never reformats the user's file.
     assert settings.read_text(encoding="utf-8") == original
+
+
+# --- activate -----------------------------------------------------------------
+
+_DRAFT_PLAN = (
+    "---\nid: 5\nslug: my-thing\nstatus: draft\nbranch:\n"
+    "created: 2026-06-07T12:00:00-07:00\nconcluded:\npr:\n---\n\n"
+    "# My thing\n\n## Plan\n\nBody text that must survive verbatim.\n"
+)
+
+
+def _commit_all(path: Path, message: str) -> None:
+    """Stage everything and commit, so HEAD is born and the guard is reachable."""
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", message], cwd=path, check=True)
+
+
+def _git_log(path: Path) -> str:
+    return subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def test_activate_no_commit_flips_status_and_derives_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 0, result.output
+
+    text = (tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+    assert "status: active" in text
+    assert "branch: feature/my-thing" in text
+    # The body is preserved verbatim — only the frontmatter is re-rendered.
+    assert "Body text that must survive verbatim." in text
+    assert "# My thing" in text
+    # --no-commit refreshes nothing and commits nothing.
+    assert not (tmp_path / ".planners" / "README.md").exists()
+
+
+def test_activate_accepts_bare_and_padded_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["activate", "5", "--no-commit"]).exit_code == 0
+
+
+def test_activate_number_does_not_match_by_string_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `5` must not resolve to 050; matching is on the parsed number, not a prefix.
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "050-my-thing",
+        _DRAFT_PLAN.replace("id: 5\n", "id: 50\n"),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "5", "--no-commit"])
+    assert result.exit_code == 1
+    assert "no plan 005 found" in result.output
+
+
+def test_activate_resolves_subplan_letter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "005-umbrella", _DRAFT_PLAN.replace("my-thing", "umbrella"))
+    _write_plan(
+        plans,
+        "005a-step-one",
+        _DRAFT_PLAN.replace("slug: my-thing", "slug: step-one\nsub: a"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert runner.invoke(app, ["activate", "005a", "--no-commit"]).exit_code == 0
+    # The umbrella is untouched: 005a and 005 are different plans.
+    assert "status: draft" in (plans / "005-umbrella" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+    assert "status: active" in (plans / "005a-step-one" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_activate_rejects_malformed_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "my-thing", "--no-commit"])
+    assert result.exit_code == 1
+    assert "not a plan reference" in result.output
+
+
+def test_activate_explicit_branch_overrides_derived_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["activate", "005", "--branch", "spike/other", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    text = (tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+    assert "branch: spike/other" in text
+
+
+def test_activate_leaves_populated_branch_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("branch:\n", "branch: feature/already-chosen\n"),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["activate", "005", "--branch", "feature/ignored", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    text = (tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+    assert "branch: feature/already-chosen" in text
+    assert "feature/ignored" not in text
+
+
+def test_activate_reactivates_an_inactive_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A parked plan may be revisited; the convention says so explicitly.
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: inactive"),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "status: active" in (
+        tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md"
+    ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("closed", ["done", "retired"])
+def test_activate_refuses_a_closed_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, closed: str
+) -> None:
+    original = _DRAFT_PLAN.replace("status: draft", f"status: {closed}").replace(
+        "concluded:\n", "concluded: 2026-06-08T12:00:00-07:00\n"
+    )
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 1
+    assert "it is closed" in result.output
+    # A refusal leaves the plan byte-for-byte untouched.
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_activate_on_already_active_plan_is_a_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = _DRAFT_PLAN.replace("status: draft", "status: active").replace(
+        "branch:\n", "branch: feature/my-thing\n"
+    )
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "already active" in result.output
+    # Nothing rewritten and — crucially — no empty commit attempted.
+    assert path.read_text(encoding="utf-8") == original
+    assert "plan [activate]" not in _git_log(tmp_path)
+
+
+def test_activate_commits_by_default_with_slug_subject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    # The subject names the slug, not the title ("My thing").
+    assert "plan [activate]: 005 - my-thing" in _git_log(tmp_path)
+    # The index was refreshed and committed alongside the plan.
+    readme = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
+    assert "active" in readme
+    assert (
+        subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        == ""
+    )
