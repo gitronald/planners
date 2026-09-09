@@ -166,6 +166,14 @@ not firing for any commit in this repo. Every check above was run by hand. Out o
 scope for this plan — flagged for a follow-up, since a gate nobody notices is
 absent is the same failure mode this plan is about.
 
+**Update (2026-09-08, post-close).** No longer true of this checkout: a
+`pre-commit` hook is installed and its `INSTALL_PYTHON` resolves to a live
+interpreter, so the gate does fire here now. The general case does not need its own
+plan either — hook registration is per-clone and silently absent in a fresh clone,
+which is exactly what **plan 004** step 3 covers ("teach `install --check` to report
+each part as drift — including the per-clone config and the hook registration, which
+are the parts a fresh clone silently lacks"). Tracked there, not separately.
+
 ### Review follow-up (close gate, 2026-09-08)
 
 Two finders at level `medium` produced six candidates; four survived dedup, three
@@ -232,4 +240,6 @@ Review posted to PR #13.
 - **Next time:** the incidental finding above (no git hooks installed in this
   checkout, so the `planners validate` pre-commit gate never fires) is still open and
   deserves its own plan. Every check in this plan passed because they were run by
-  hand; nothing would have caught it if they hadn't been.
+  hand; nothing would have caught it if they hadn't been. (Since superseded — see the
+  post-close update under *Incidental finding*: the hook is installed here now, and
+  the fresh-clone case belongs to plan 004's drift check rather than a new plan.)
