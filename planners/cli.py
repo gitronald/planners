@@ -321,14 +321,58 @@ def _read_settings(path: Path) -> dict[str, Any]:
     return data
 
 
+def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
+    """The index document ``repo_root``'s plan frontmatter currently renders to.
+
+    The one place that answer is computed. Three callers need it and would
+    otherwise each re-assemble the same three calls: :func:`_refresh_index`
+    writes it, :func:`_finalize_self_check` asserts the batch landed it, and
+    ``validate`` compares the tracked file against it.
+    """
+    metas = _collect_metas(repo_root / PLANS_DIR, strict=False)
+    return render_index(INDEX_TITLE, render_plans_table(metas, cols=cols))
+
+
+def _index_is_stale(repo_root: Path) -> bool:
+    """True when the tracked index disagrees with a fresh render (or is absent).
+
+    What "stale" catches, in order of how often it happens: a plan edited without
+    reindexing, and a merge — the index carries ``merge=union`` (see
+    ``install.INDEX_MERGE_ATTR``), which never conflicts and never loses a row but
+    can leave a row duplicated when both sides rewrote the same one. Union's
+    repair is a regeneration, and this is what notices one is due.
+    """
+    index = repo_root / INDEX_PATH
+    if not index.is_file():
+        return True
+    try:
+        return index.read_text(encoding="utf-8") != _rendered_index(repo_root)
+    except (OSError, UnicodeDecodeError):
+        return True
+
+
+def _repo_root_of(plan: Path) -> Path | None:
+    """The repo root owning ``plan``, from its ``.planners/plans/<dir>/plan.md`` shape.
+
+    Lets ``validate`` check the index even when it is handed individual plan
+    files — which is exactly how the pre-commit hook calls it (``files:`` matches
+    plan paths, and pre-commit passes the matched filenames, never a root).
+    Returns ``None`` for anything not in that layout, so a legacy
+    ``docs/plans/`` repo is left alone rather than reported stale.
+    """
+    parents = plan.parents
+    if len(parents) < 4:
+        return None
+    if parents[1].name == PLANS_DIR.name and parents[2].name == PLANS_DIR.parent.name:
+        return parents[3]
+    return None
+
+
 def _refresh_index(repo_root: Path, cols: str) -> Path:
     """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter."""
-    plans_dir = repo_root / PLANS_DIR
     index = repo_root / INDEX_PATH
-    metas = _collect_metas(plans_dir, strict=False)
-    table = render_plans_table(metas, cols=cols)
     index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text(render_index(INDEX_TITLE, table), encoding="utf-8")
+    index.write_text(_rendered_index(repo_root, cols), encoding="utf-8")
     return index
 
 
@@ -484,10 +528,7 @@ def _finalize_self_check(
     if leftover:
         problems.append(f"staging not drained: {sorted(leftover)}")
 
-    index = root / INDEX_PATH
-    metas = _collect_metas(root / PLANS_DIR, strict=False)
-    fresh = render_index(INDEX_TITLE, render_plans_table(metas, cols="curated"))
-    if not index.is_file() or index.read_text(encoding="utf-8") != fresh:
+    if _index_is_stale(root):
         problems.append("index is stale (does not match a fresh render)")
 
     if committed:
@@ -1412,8 +1453,35 @@ def validate(
             _err(f"{path}: {error}")
         failures += len(errors)
 
-    if failures:
-        _err(f"{failures} violation(s) across {len(files)} file(s)")
+    # The index is generated from exactly the frontmatter just validated, so a
+    # disagreement between them is a violation of the same contract — and this is
+    # the only gate that sees it. `finalize` self-checks its own batch, and the
+    # lifecycle commands refresh the index in the commit that changes a plan; what
+    # is left uncovered is a hand-edited plan and a merge, which is most of the
+    # ways an index actually goes stale.
+    # An *absent* index is deliberately not a violation here, though it is one for
+    # `finalize` (which just wrote it, so absence means the write failed).
+    # ``validate`` checks that two artifacts agree; whether a repo has an index at
+    # all is `install`'s and `add`'s business, and failing on its absence would
+    # break a checkout that simply has not generated one yet.
+    stale = sorted(
+        {
+            root
+            for root in (_repo_root_of(path) for path in files)
+            if root is not None
+            and (root / INDEX_PATH).is_file()
+            and _index_is_stale(root)
+        }
+    )
+    for root in stale:
+        _err(
+            f"{root / INDEX_PATH}: stale — it does not match a fresh render of "
+            "the plan frontmatter; run `planners index .` to regenerate it."
+        )
+
+    if failures or stale:
+        if failures:
+            _err(f"{failures} violation(s) across {len(files)} file(s)")
         raise typer.Exit(1)
     typer.echo(f"ok: {len(files)} file(s) valid")
 

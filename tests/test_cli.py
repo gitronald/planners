@@ -1817,3 +1817,85 @@ def test_install_check_reports_an_unregistered_hook_without_failing(
     assert checked.exit_code == 0, checked.output
     assert "hook:" in checked.output
     assert "not registered" in checked.output
+
+
+# --- validate: the index must agree with the frontmatter it is generated from --
+
+
+def test_validate_flags_an_index_that_disagrees_with_the_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    # the index is fresh, so validate passes
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+    # now the index says something the frontmatter does not — the state a merge
+    # leaves behind (merge=union can duplicate a row), and the state a plan edited
+    # without reindexing leaves behind.
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text(index.read_text(encoding="utf-8") + "| 099 | stray |\n", "utf-8")
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert "stale" in result.output
+    assert "planners index ." in result.output
+
+
+def test_validate_checks_the_index_when_handed_a_single_plan_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # How the pre-commit hook calls it: pre-commit passes the matched *filenames*,
+    # never a repo root, so a check that only fired for a directory argument would
+    # never fire where it matters most.
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", str(plan)])
+    assert result.exit_code == 1
+    assert "stale" in result.output
+
+
+def test_validate_does_not_invent_a_missing_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Absence is `install`/`add`'s business, not validate's: a checkout that has
+    # never generated an index must not be failed for it.
+    _write_plan(tmp_path / ".planners" / "plans", "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert not (tmp_path / ".planners" / "README.md").exists()
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+
+def test_validate_ignores_a_legacy_layout_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A repo mid-migration: plans still under docs/plans/, and a .planners index
+    # that describes the (empty) new tree. A legacy plan must not be attributed to
+    # that index — matching on `plans` alone would do exactly that, and report a
+    # stale index for a plan the index was never generated from.
+    plan = _write_plan(tmp_path / "docs" / "plans", "001-thing", _VALID_PLAN)
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    (tmp_path / ".planners" / "README.md").write_text(
+        "# Plans\n\n| 001 | a row the new tree does not have |\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", str(plan)])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_survives_a_plan_file_with_no_room_for_a_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A path too shallow to hold the .planners/plans/<dir>/ shape must read as
+    # "not our layout", not index past the end of its parents.
+    (tmp_path / "plan.md").write_text(_VALID_PLAN, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", "plan.md"])
+    assert result.exit_code == 0, result.output
