@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The publish workflow rejected the release wheel and never uploaded `0.5.0` to
+  PyPI. `hatchling` is unpinned and now emits `Metadata-Version: 2.5`, which the
+  twine bundled in `pypa/gh-action-pypi-publish` v1.14.0 (twine 6.1.0, packaging
+  25.0) refuses. The action is pinned to v1.14.2 (twine 7.0.0, packaging 26.2),
+  which accepts it. The break was latent since the backend started emitting 2.5 —
+  it would have hit whichever tag came next, not something 0.5.0 introduced.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added
