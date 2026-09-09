@@ -146,6 +146,11 @@ class PlanMetadata(_Serializable):
         metadata={"description": "source plan directory name", "frontmatter": False},
     )
 
+    @property
+    def prefix(self) -> str:
+        """The ``NNN[x]`` identity prefix — the plan's directory name minus the slug."""
+        return f"{self.id:03d}{self.sub}"
+
     @classmethod
     def from_text(cls, text: str, dirname: str | None = None) -> PlanMetadata:
         """Parse frontmatter + title from full plan-file text.

@@ -222,6 +222,14 @@ repository. That is pre-existing on `dev` and outside this plan's scope. The
 detection fix makes the *guard* accurate; it does not make the *commit*
 location-safe. Worth its own plan.
 
+**Resolved by plan 006** (PR #13, 2026-09-08). The env-stripping was promoted out
+of `base._git_out` into a shared `planners/proc.py`, `cli._git` now takes an
+explicit `root` and runs through it, and the fix reached further than this section
+anticipated: `_git_status_porcelain` and `install.py`'s four shell-outs were pinned
+in the same pass — `_run_precommit_install` because `pre-commit install` *writes*
+into git's hooks directory and would otherwise install the hook into the wrong
+repo.
+
 ## Retrospective
 
 - The design survived review; the implementation did not. Every confirmed defect
