@@ -187,3 +187,63 @@ fresh-clone hook-registration finding were routed here because `install --check`
 detector for per-clone state. Union removes the per-clone state *this* plan introduced;
 it does not remove the pre-commit hook registration those two are about, so step 3 still
 has that job.
+
+### 2026-09-08 — steps 2-4 implemented on `feature/index-merge-semantics` (PR #18)
+
+Three commits: the attribute in `install`, the stale-index gate in `validate`, then the
+docs.
+
+**Step 2 — `install` writes one line.** `wire_gitattributes` appends
+`.planners/README.md merge=union`, preserving any other attributes the repo already has,
+the way `wire_precommit` appends its hook block rather than parsing the file. A line that
+*names* the index but grants something else — the `merge=ours` stopgap the Notes describe
+— is reported and left alone; `install --force` rewrites that one line in place, which is
+the migration path. `INDEX_PATH` moved from `cli.py` to `index.py` so the CLI (which
+writes the file) and `install` (which names it in an attribute) share one spelling.
+
+**Step 3 — `--check` grew two lines.** `gitattr:` reports the attribute and gates, like
+`holder:` and `rule:`. `hook:` reports whether the validate git hook is registered *in
+this clone* and deliberately does **not** gate: a consumer without `pre-commit` is
+correctly installed, just unguarded, and failing them would be wrong. This is 006's
+finding closed — the silence is now a printed line, and the holder stub tells every
+`/planners` invocation to run `install --check` first, so it is seen. `report_hook` is a
+read-only sibling of `activate_precommit`, which answers the same question by trying to
+fix it; the two keep separate vocabularies rather than one overloaded status.
+
+**Step 4 — decided yes, `validate` fails on a stale index.** With the merge hook dropped
+this is the only thing that notices union's duplicate row, so it moved from optional to
+load-bearing. It resolves a repo root from a plan file's `.planners/plans/<dir>/plan.md`
+shape, which matters because pre-commit passes *filenames*, never a root — a check that
+only fired for a directory argument would never fire where it counts. Two deliberate
+narrowings: an **absent** index is not a violation (that is `install`/`add`'s business,
+and failing on it would break a checkout that has not generated one yet — though it stays
+a violation for `finalize`, which just wrote it), and a legacy `docs/plans/` layout is
+left alone.
+
+The fresh-render computation existed in two places already and now exists in one
+(`_rendered_index`), used by `_refresh_index`, `_finalize_self_check`, and the new gate —
+005's retrospective lesson (grep for what already does the job *before* writing the
+helper) applied on the way in rather than after a review.
+
+**Verification.** 23 new tests (376 total, up from 353); `ruff`, `ruff format`, and
+`pyrefly` clean. Ten tests were **mutation-checked**, each failing only its own test:
+union-vs-ours as the driver, whitespace normalization, the no-clobber rule, the
+trailing-newline fix, `--check` gating on the attribute, `--check` *not* gating on the
+hook, the stale-index gate, root-resolution from a single file, absence not counting as
+stale, and the legacy-layout exclusion.
+
+Two mutations were rejected and replaced rather than reported as passes. The `#`-comment
+skip in `_index_attr_line` turned out to be **unreachable for correctness** — a comment's
+first field always starts with `#`, so it can never equal the pattern — so breaking it
+failed nothing; the guard stays (it is how you parse this format) but is now documented as
+defensive, and the whitespace-normalization mutation took its place. The first
+legacy-layout test was likewise not load-bearing: `docs/plans/` was excluded by the
+missing-index filter, not by the path check, so the test was rebuilt as a repo
+mid-migration — legacy plans *and* a `.planners` index — where only the path check saves
+it.
+
+**End to end, through the real `install`.** A fresh repo, `planners install`, one branch
+closing a plan while the base adds one — the merge that used to conflict now reports
+`Auto-merging` and succeeds with **no `git config` ever run**; `validate` then reports the
+index stale, and one `planners index .` repairs it. The planners repo itself now carries
+the attribute.
