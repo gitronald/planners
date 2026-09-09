@@ -49,6 +49,11 @@ PLANS_DIR = Path(".planners/plans")
 # serialized writer that numbers, materializes, and commits them.
 STAGING_DIR = Path(".planners/staging")
 INDEX_TITLE = "Plans"
+# Every column set `index` can write, and therefore every rendering a tracked
+# index may legitimately be in. Spelled once so the `--cols` validation and the
+# staleness comparison can never drift apart — a set the check did not know
+# about would make `validate` fail a correctly generated index.
+INDEX_COLS = ("curated", "all")
 
 
 def _version() -> str:
@@ -321,6 +326,16 @@ def _read_settings(path: Path) -> dict[str, Any]:
     return data
 
 
+def _index_document(metas: list[PlanMetadata], cols: str = "curated") -> str:
+    """Assemble the index document from already-parsed plan metadata.
+
+    The one place that assembly happens. Split from :func:`_rendered_index` so a
+    caller that needs *both* column sets (:func:`_index_is_stale`) pays for
+    parsing the plans once rather than once per rendering.
+    """
+    return render_index(INDEX_TITLE, render_plans_table(metas, cols=cols))
+
+
 def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
     """The index document ``repo_root``'s plan frontmatter currently renders to.
 
@@ -329,8 +344,7 @@ def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
     writes it, :func:`_finalize_self_check` asserts the batch landed it, and
     ``validate`` compares the tracked file against it.
     """
-    metas = _collect_metas(repo_root / PLANS_DIR, strict=False)
-    return render_index(INDEX_TITLE, render_plans_table(metas, cols=cols))
+    return _index_document(_collect_metas(repo_root / PLANS_DIR, strict=False), cols)
 
 
 def _index_is_stale(repo_root: Path) -> bool:
@@ -342,14 +356,22 @@ def _index_is_stale(repo_root: Path) -> bool:
     never loses a row, but can leave a row duplicated when both sides rewrote the
     same one. Union's repair is a regeneration, and this is what notices one is
     due.
+
+    Compared against **every** column set ``index`` can write, not just the
+    default: ``--cols all`` is a first-class option, so a wide index is a
+    legitimate tracked state. Checking only the curated rendering would report
+    such a repo stale on every commit, with no edit able to fix it — a gate that
+    fires on correct input is worse than no gate.
     """
     index = repo_root / INDEX_PATH
     if not index.is_file():
         return True
     try:
-        return index.read_text(encoding="utf-8") != _rendered_index(repo_root)
+        current = index.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return True
+    metas = _collect_metas(repo_root / PLANS_DIR, strict=False)
+    return all(current != _index_document(metas, cols) for cols in INDEX_COLS)
 
 
 def _repo_root_of(plan: Path) -> Path | None:
@@ -1373,7 +1395,7 @@ def index(
     cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter."""
-    if cols not in ("curated", "all"):
+    if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
     readme = _refresh_index(repo_path, cols=cols)
@@ -1471,14 +1493,16 @@ def validate(
     # ``validate`` checks that two artifacts agree; whether a repo has an index at
     # all is `install`'s and `add`'s business, and failing on its absence would
     # break a checkout that simply has not generated one yet.
+    # Roots are deduplicated *before* the staleness test, not after: every file in
+    # a batch resolves to the same root, and each `_index_is_stale` call re-parses
+    # every plan in the repo. Filtering first made a single `validate .` quadratic
+    # in the plan count and repeated `_collect_metas`'s skip-warnings once per
+    # file, so one malformed plan read as many.
+    roots = {root for root in map(_repo_root_of, files) if root is not None}
     stale = sorted(
-        {
-            root
-            for root in (_repo_root_of(path) for path in files)
-            if root is not None
-            and (root / INDEX_PATH).is_file()
-            and _index_is_stale(root)
-        }
+        root
+        for root in roots
+        if (root / INDEX_PATH).is_file() and _index_is_stale(root)
     )
     for root in stale:
         _err(
@@ -1487,8 +1511,15 @@ def validate(
         )
 
     if failures or stale:
+        # One summary covering both kinds of failure. A stale-index-only run is a
+        # failure like any other and says so; leaving it summary-less made the
+        # exit code the only signal.
+        summary = []
         if failures:
-            _err(f"{failures} violation(s) across {len(files)} file(s)")
+            summary.append(f"{failures} violation(s) across {len(files)} file(s)")
+        if stale:
+            summary.append(f"{len(stale)} stale index file(s)")
+        _err("; ".join(summary))
         raise typer.Exit(1)
     typer.echo(f"ok: {len(files)} file(s) valid")
 

@@ -1899,3 +1899,57 @@ def test_validate_survives_a_plan_file_with_no_room_for_a_root(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["validate", "plan.md"])
     assert result.exit_code == 0, result.output
+
+
+def test_validate_accepts_an_index_generated_with_cols_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `index --cols all` is a first-class documented option, so a wide index is a
+    # legitimate tracked state. Comparing only against the curated rendering
+    # reported such a repo stale on every commit, with no edit able to fix it —
+    # the pre-commit hook would have blocked the repo outright.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", ".", "--cols", "all"]).exit_code == 0
+    index = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
+    assert "Branch" in index  # the wide header, not the curated one
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_warns_once_per_bad_plan_not_once_per_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The stale check re-parses every plan in the repo, so testing it once per
+    # matched FILE (dedup after the filter) both made `validate .` quadratic in
+    # the plan count and repeated _collect_metas's skip-warning per file — one
+    # malformed plan read as many.
+    plans = tmp_path / ".planners" / "plans"
+    for name in ("001-thing", "002-thing", "003-thing"):
+        _write_plan(plans, name, _VALID_PLAN.replace("id: 1", f"id: {name[2]}"))
+    _write_plan(plans, "004-bad", "not a plan at all\n")
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["index", "."])
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert result.output.count("warning: skipping") == 1
+
+
+def test_validate_summarizes_a_stale_index_only_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every other failure path ends in a summary line; a stale-index-only run
+    # exited 1 with none, leaving the exit code as the only signal.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text(index.read_text(encoding="utf-8") + "| 099 | stray |\n", "utf-8")
+
+    result = runner.invoke(app, ["validate", "."])
+    assert result.exit_code == 1
+    assert "1 stale index file(s)" in result.output
