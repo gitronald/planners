@@ -1,8 +1,8 @@
 ---
 id: 5
 slug: activate-cli-command
-status: draft
-branch:
+status: active
+branch: feature/activate-cli-command
 created: 2026-09-08T13:44:58-07:00
 concluded:
 pr:
