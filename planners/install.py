@@ -1,9 +1,10 @@
 """Install the ``/planners`` skillstub holder and wire the pre-commit hook.
 
 The package is the source of truth; ``install`` materializes only thin,
-generated artifacts: one version-stamped dispatcher holder plus a
-``planners-validate`` pre-commit hook. ``SkillStub.render`` is a pure transform;
-the filesystem writes live in the module-level functions.
+generated artifacts: one version-stamped dispatcher holder, a
+``planners-validate`` pre-commit hook, and one ``.gitattributes`` line giving the
+generated plan index its merge semantics. ``SkillStub.render`` is a pure
+transform; the filesystem writes live in the module-level functions.
 
 Two install **modes** are supported, both first-class:
 
@@ -18,8 +19,9 @@ invocation string baked into generated artifacts, and the holder location). The
 invocation prefix derives from one helper so the command string is never
 duplicated; the resolved mode is stamped into the holder so ``install --check``
 recovers it without re-passing the mode flag. What is always per-repo regardless
-of mode: the ``.planners/`` folder and the validate hook in the repo's
-``.pre-commit-config.yaml`` — those are repo content, not tooling.
+of mode: the ``.planners/`` folder, the validate hook in the repo's
+``.pre-commit-config.yaml``, and the index's ``.gitattributes`` line — those are
+repo content, not tooling.
 """
 
 from __future__ import annotations

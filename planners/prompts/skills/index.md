@@ -32,3 +32,12 @@ PR, and plan number (descending); empty cells render as an em-dash.
 
 Show `git diff .planners/README.md` so the change is reviewable, then commit
 `.planners/README.md`.
+
+## After a merge
+
+The index is marked `merge=union` in `.gitattributes` (written by
+`{cli} install`), so a merge whose two branches both touched it never conflicts
+— but when both rewrote the *same* row, union keeps both, leaving that plan
+listed twice. Regenerating is the repair: run the generator above and commit the
+result. `{cli} validate` fails on an index that disagrees with the frontmatter,
+so this surfaces on the next plan commit rather than going unnoticed.

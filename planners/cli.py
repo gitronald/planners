@@ -625,10 +625,16 @@ _HOOK_REPORT: dict[install_mod.HookReport, str] = {
 @app.command()
 def install(
     force: bool = typer.Option(
-        False, "--force", help="Overwrite a drifted holder without prompting."
+        False,
+        "--force",
+        help="Overwrite a drifted holder without prompting, and rewrite a "
+        "differing .gitattributes line for the plan index.",
     ),
     check: bool = typer.Option(
-        False, "--check", help="Report drift (ok|drifted|missing) and exit."
+        False,
+        "--check",
+        help="Report drift (ok|drifted|missing) per artifact, plus whether the "
+        "git hook is registered in this clone, and exit.",
     ),
     local_: bool = typer.Option(
         False,
