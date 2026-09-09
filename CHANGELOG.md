@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-09
+
+### Fixed
+
+- `dependabot.yml` now sets `target-branch: dev` for both ecosystems, so
+  dependency-update PRs open against the active branch instead of `main`. They
+  previously targeted the default branch, so each batch had to be retargeted by
+  hand before it could merge into `dev`, and Dependabot resolved manifests
+  against `main` rather than the tree the updates would merge into. Because
+  Dependabot reads its config from the default branch, this takes effect once
+  the change reaches `main`.
+
+### Added
+
+- `install` now gives the generated plan index its merge semantics: a
+  `.planners/README.md merge=union` line in the repo's `.gitattributes`. A local
+  merge whose two sides both added or closed plans used to conflict on the index
+  and leave every repo to invent its own fix. `union` is a built-in git driver,
+  so the one committed line is the whole fix — nothing to configure per clone,
+  and it works in a fresh clone that has never run `install`. Other attribute
+  lines are preserved; a line that names the index but says something else (such
+  as a hand-rolled `merge=ours` stopgap) is reported rather than clobbered, and
+  `install --force` rewrites it. Note that GitHub's server-side merge does not
+  apply the attribute, so a PR can still report a conflict on the index; merging
+  the base in locally now resolves it without hand-editing a generated file.
+- `install --check` reports the attribute as a `gitattr:` line and gates on it,
+  alongside `holder:` and `rule:`. It also prints a `hook:` line saying whether
+  the `planners-validate` git hook is actually registered **in this clone** —
+  per-clone state a fresh clone silently lacks, so a hook that never fires used
+  to be indistinguishable from one that fires and finds nothing wrong. That line
+  is reported, never gated: a consumer without `pre-commit` is correctly
+  installed, just unguarded.
+- `validate` now fails when the tracked index disagrees with the plan
+  frontmatter it is generated from, naming `planners index .` as the fix. It
+  works when handed individual plan files, which is how the pre-commit hook
+  calls it. This is also the repair signal for the one thing `union` gets wrong:
+  when both branches rewrote the *same* row, it keeps both, listing a plan
+  twice. A repo with no index yet is not failed for its absence, and a legacy
+  `docs/plans/` layout is left alone.
+
 ## [0.5.2] - 2026-09-08
 
 ### Added

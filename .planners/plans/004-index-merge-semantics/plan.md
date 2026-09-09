@@ -1,11 +1,11 @@
 ---
 id: 4
 slug: index-merge-semantics
-status: draft
-branch:
+status: done
+branch: feature/index-merge-semantics
 created: 2026-09-08T10:57:28-07:00
-concluded:
-pr:
+concluded: 2026-09-08T22:41:21-07:00
+pr: https://github.com/gitronald/planners/pull/18
 ---
 
 # Own the generated plan index's merge semantics in install
@@ -92,6 +92,29 @@ thing to give up.
 
 Settle this before step 2 — it decides whether any of the rest gets built.
 
+**Resolved 2026-09-08: keep tracking it.** The host-rendered table is the point of a
+committed index, and dropping it to avoid a merge conflict trades a visible feature for
+an invisible one. All four steps stay in scope.
+
+### Post-005 updates (2026-09-08)
+
+Written ~8 hours before plan 005 concluded; four things moved under it.
+
+- **This plan now gates two deferred follow-ups.** 005 parked its pre-commit
+  staged-diff check on activation behind it ("it follows plan 004, not this"), and 006's
+  post-close log routed its incidental finding — the `planners validate` hook silently
+  absent in a fresh clone — to step 3 rather than a new plan. Step 3 is the home for
+  both; neither is separately tracked.
+- **Step 4 is reuse, not invention.** `_finalize_self_check` already compares the tracked
+  index against a fresh render (`planners/cli.py:488-492`, "index is stale"). Making
+  `validate` fail on a stale index is lifting that comparison, not writing one.
+- **Step 3 has helpers now.** 005 added `_git_status_porcelain(root, pathspec)` and
+  `_is_unmodified(root, path)`, which is the per-path cleanliness query a drift check for
+  the index wants.
+- **`activate` is a third index-committing site** (`planners/cli.py:1209`), alongside
+  `add` and `finalize` — all three on the mainline, the side `merge=ours` keeps. It
+  raises index churn on the base without changing the conflict shape the survey measured.
+
 ### Notes
 
 - Found in a consumer repo whose two long-lived branches collided on the index twice.
@@ -101,3 +124,224 @@ Settle this before step 2 — it decides whether any of the rest gets built.
 - The plan-number race (two branches independently taking the same `NNN` from `planners
   add`) surfaced while testing this, but it is the batch-creation problem the
   `--defer` / `finalize` flow already addresses. Out of scope here.
+
+## Log
+
+### 2026-09-08 — step 1 prototyped; the three-part design is replaced by one part
+
+Step 1 asked which hook stage could put a regenerated index into the merge commit. The
+answer is **none**, and chasing it surfaced a driver the plan never considered that makes
+the hook unnecessary. Scratch repos under a temp dir; two branches that both add plans,
+which is the collision the survey counted.
+
+**Finding 1 — a merge-time hook cannot affect the merge commit.** `pre-merge-commit`
+*does* clear the bar step 1 was unsure about: a hook that regenerates and then
+`git add`s the index reports `Passed`, because pre-commit's "files were modified by this
+hook" check compares the **unstaged** diff, which staging leaves empty. But the merge
+commit still shipped the un-regenerated index — git writes the merge tree from the index
+it already held, so the corrected file was left *staged and uncommitted* after a merge
+that reported success. `prepare-commit-msg` behaves identically. This is git's documented
+"the hook cannot affect the outcome of the merge," now measured rather than assumed. So
+`pre-merge-commit` has no advantage over `post-merge`; both leave a repair to be
+committed afterwards, and the ritual step 1 hoped to avoid is unavoidable at any stage.
+
+**Finding 2 — `merge=union` is built in, so two of the three parts disappear.** The plan
+reached for `merge=ours` and then spent its length on the consequence: git will not take
+a driver *definition* from a repository, so a per-clone `git config merge.ours.driver
+true` is required, is silently absent in a fresh clone, and needs a drift detector to be
+visible at all. `union` is a **low-level built-in** — it needs no definition, so a bare
+`.gitattributes` line is self-sufficient in every clone including a fresh one. Measured
+on the two-branch case: no conflict, clean tree, and a merge commit whose index was
+byte-identical to a fresh render, with no hook and **no `git config` at all**.
+
+**Finding 3 — union's failure mode is visible and non-destructive, unlike `ours`.** With
+the harder collision — the feature branch *closes* a plan (its row is rewritten and
+re-sorts) while the base *adds* one — union keeps both versions of the changed row, so
+plan 001 appears twice, once `draft` and once `done`. That is wrong, but it is
+**stale-and-loud**: no row is lost, the table still renders, and `planners index .`
+repairs it. `merge=ours` fails the opposite way — it silently **drops** the incoming
+branch's rows, which is the same "looks like success" failure the plan already rejects
+for a regenerating merge driver, and it costs a per-clone config to get.
+
+**Revised design.** One committed part, no per-clone git state:
+
+| Part | Kind | Status |
+|---|---|---|
+| `.gitattributes`: `.planners/README.md merge=union` | committed repo content | keep |
+| `git config merge.ours.driver true` | per-clone `.git/config` | **dropped** — union needs none |
+| a merge-stage hook that regenerates the index | committed config + per-clone registration | **dropped** — cannot reach the merge commit (finding 1) |
+
+Steps 2 and 3 shrink accordingly: `install` writes and `install --check` reports one
+line in `.gitattributes`. Step 4 grows in importance — with the hook gone, a stale-index
+check is the only thing that catches union's duplicate row, so it moves from optional to
+the repair mechanism.
+
+**Finding 4 — GitHub's server-side merge does NOT honor `merge=union`.** Measured, not
+assumed: two throwaway PR pairs on this repo with *identical* index edits — both sides
+appending a different row at the same spot — differing only in whether the branches
+carried the attribute. Locally the control conflicted and the attribute pair merged
+cleanly. On GitHub both reported `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`. The
+attribute was present on the head, the base, and their merge base, so this is not a
+question of which commit the attribute was read from; GitHub's merge does not consult it.
+(Probe PRs #19/#20, since closed and their branches deleted.)
+
+One hypothesis is not excluded: that GitHub reads `.gitattributes` from the repository's
+**default branch**, which is `main`, where the attribute does not exist yet. It is a weak
+hypothesis — a merge between two other branches reading attributes from a third would be
+odd, and git's own semantics read them from the merge itself — but it resolves for free
+once this lands on `main`, so **re-check then** before treating the PR path as settled.
+
+**What that means for the fix's reach.** It is narrower than the plan assumed but not
+diminished. `close` merges through `gh pr merge`, so a PR whose two sides both touched the
+index still shows as conflicting on GitHub. What changes is the *resolution*: pulling the
+base and merging locally now resolves the index automatically instead of requiring a
+hand-edit of a generated file, and `validate` then tells you whether the union result
+needs regenerating. Every purely local merge — syncing a long-lived branch, merging
+without a PR (plan 002's path) — is fixed outright. The docs must say local merges, not
+merges.
+
+**Step 3's inherited follow-ups survive the shrink.** 005's staged-diff check and 006's
+fresh-clone hook-registration finding were routed here because `install --check` is the
+detector for per-clone state. Union removes the per-clone state *this* plan introduced;
+it does not remove the pre-commit hook registration those two are about, so step 3 still
+has that job.
+
+### 2026-09-08 — steps 2-4 implemented on `feature/index-merge-semantics` (PR #18)
+
+Three commits: the attribute in `install`, the stale-index gate in `validate`, then the
+docs.
+
+**Step 2 — `install` writes one line.** `wire_gitattributes` appends
+`.planners/README.md merge=union`, preserving any other attributes the repo already has,
+the way `wire_precommit` appends its hook block rather than parsing the file. A line that
+*names* the index but grants something else — the `merge=ours` stopgap the Notes describe
+— is reported and left alone; `install --force` rewrites that one line in place, which is
+the migration path. `INDEX_PATH` moved from `cli.py` to `index.py` so the CLI (which
+writes the file) and `install` (which names it in an attribute) share one spelling.
+
+**Step 3 — `--check` grew two lines.** `gitattr:` reports the attribute and gates, like
+`holder:` and `rule:`. `hook:` reports whether the validate git hook is registered *in
+this clone* and deliberately does **not** gate: a consumer without `pre-commit` is
+correctly installed, just unguarded, and failing them would be wrong. This is 006's
+finding closed — the silence is now a printed line, and the holder stub tells every
+`/planners` invocation to run `install --check` first, so it is seen. `report_hook` is a
+read-only sibling of `activate_precommit`, which answers the same question by trying to
+fix it; the two keep separate vocabularies rather than one overloaded status.
+
+**Step 4 — decided yes, `validate` fails on a stale index.** With the merge hook dropped
+this is the only thing that notices union's duplicate row, so it moved from optional to
+load-bearing. It resolves a repo root from a plan file's `.planners/plans/<dir>/plan.md`
+shape, which matters because pre-commit passes *filenames*, never a root — a check that
+only fired for a directory argument would never fire where it counts. Two deliberate
+narrowings: an **absent** index is not a violation (that is `install`/`add`'s business,
+and failing on it would break a checkout that has not generated one yet — though it stays
+a violation for `finalize`, which just wrote it), and a legacy `docs/plans/` layout is
+left alone.
+
+The fresh-render computation existed in two places already and now exists in one
+(`_rendered_index`), used by `_refresh_index`, `_finalize_self_check`, and the new gate —
+005's retrospective lesson (grep for what already does the job *before* writing the
+helper) applied on the way in rather than after a review.
+
+**Verification.** 23 new tests (376 total, up from 353); `ruff`, `ruff format`, and
+`pyrefly` clean. Ten tests were **mutation-checked**, each failing only its own test:
+union-vs-ours as the driver, whitespace normalization, the no-clobber rule, the
+trailing-newline fix, `--check` gating on the attribute, `--check` *not* gating on the
+hook, the stale-index gate, root-resolution from a single file, absence not counting as
+stale, and the legacy-layout exclusion.
+
+Two mutations were rejected and replaced rather than reported as passes. The `#`-comment
+skip in `_index_attr_line` turned out to be **unreachable for correctness** — a comment's
+first field always starts with `#`, so it can never equal the pattern — so breaking it
+failed nothing; the guard stays (it is how you parse this format) but is now documented as
+defensive, and the whitespace-normalization mutation took its place. The first
+legacy-layout test was likewise not load-bearing: `docs/plans/` was excluded by the
+missing-index filter, not by the path check, so the test was rebuilt as a repo
+mid-migration — legacy plans *and* a `.planners` index — where only the path check saves
+it.
+
+**End to end, through the real `install`.** A fresh repo, `planners install`, one branch
+closing a plan while the base adds one — the merge that used to conflict now reports
+`Auto-merging` and succeeds with **no `git config` ever run**; `validate` then reports the
+index stale, and one `planners index .` repairs it. The planners repo itself now carries
+the attribute.
+
+### 2026-09-08 — docs scoped to local merges; review follow-up
+
+Finding 4 landed after the first docs pass, so a fourth commit narrowed every claim the
+docs made: `install`'s summary, the README, the convention rule, and the `index` skill all
+now say a **local** merge stops conflicting, and each points a PR-side conflict at merging
+the base in locally rather than hand-editing the generated file. The plan 002 note records
+the same thing from that plan's side — its no-PR path is the one place the fix works
+end to end, since nothing there goes through GitHub.
+
+**Review follow-up.** `/code-review` at level `medium` on PR #18: seven findings, all
+verified against the code and all introduced by this branch (none pre-existing on `dev`).
+Posted as a PR comment. Two were real defects in the feature's own contract:
+
+- **`validate` compared only the curated rendering.** `index --cols all` is a first-class
+  option this PR's own skill body teaches, so a repo that committed a wide index was
+  reported stale on *every* commit by the new hook, with no edit able to fix it — a gate
+  firing on correct input. Fixed by comparing against every column set `index` can write;
+  `INDEX_COLS` is now spelled once and drives both the `--cols` validation and the
+  comparison, so a future column set cannot break the gate.
+- **`report_hook` claimed `active` for a hook that could not fire.** It tested
+  registration before the config entry, but `_precommit_hook_registered` answers "is
+  pre-commit wired into this clone", not "will `planners-validate` run" — so a repo using
+  pre-commit for its own hooks got `hook: active` with no planners entry at all. That is
+  precisely the silence step 3 added the line to break, and it made the `config_missing`
+  branch unreachable whenever pre-commit was registered. Fixed by checking the config
+  first, which is what the function's own test name already asserted was the intent.
+
+Three more were narrower but real: `_index_attr_line` returned the *first* matching
+`.gitattributes` line while git obeys the **last**, so a file granting `union` and then
+`ours` reported `gitattr: ok` while merges ran `ours` — the silent row-dropping this plan
+exists to prevent, and a contradiction of the function's own docstring; the stale check
+ran once per plan *file* rather than per repo root, making `validate .` quadratic in the
+plan count (1640 parses at 40 plans) and printing `_collect_metas`'s skip-warning once per
+file, so one malformed plan read as four; and `report_hook`'s config read was unguarded
+where every other check-path read in the module is, turning a non-UTF-8 config into a
+traceback out of `--check`. A stale-index-only failure also exited 1 with no summary line;
+it now reports `N stale index file(s)`.
+
+One **conscious no-op**: `wire_gitattributes` used `exists()` where the check path uses
+`is_file()`. Switched for consistency, but the residual stays — for a path that is not a
+regular file the *write* still raises `OSError`, exactly as `wire_precommit` has always
+done. Guarding writes is not this module's pattern (reads are guarded, writes are not),
+and a directory named `.gitattributes` is not a state worth an API change.
+
+Two commits (`ced0b9b`, `b474195`), six regression tests, 382 passing (up from 376).
+`ruff`, `ruff format --check`, and `pyrefly` clean. The dedup fix was mutation-checked —
+reverting it fails its test with four warnings instead of one; the other five tests assert
+behavior that did not exist before the fix (a `--cols all` index passing, `config_missing`
+where a probe had measured `active`, `drifted` on a last-line `merge=ours`, a summary
+string that was never printed, and a UTF-8 error that was previously raised).
+
+## Retrospective
+
+- **Step 1 paid for itself by killing most of the plan.** The prototype was scheduled to
+  choose between two hook stages; it instead found that no stage can reach the merge
+  commit *and* that a built-in driver removes the need for one. Three parts became one,
+  and the per-clone drift detector the plan called "the feature" became unnecessary
+  because there is no longer per-clone state to detect. Prototyping a mechanism before
+  designing around it is what let the design shrink rather than ship.
+- **The plan's own reasoning was the best review input.** The plan rejected a regenerating
+  merge driver because it "looks like success" while dropping rows. Two of the seven
+  review findings were that same failure re-entering through the back door — a
+  `gitattr: ok` on a file git reads as `merge=ours`, and a `hook: active` for a hook that
+  cannot fire. Worth checking new *reporting* code against the failure mode the plan was
+  written to avoid, since a status line that lies is the same bug as a driver that lies.
+- **A gate that fires on correct input is worse than no gate.** The `--cols all` finding
+  was the most serious of the seven and the least exotic: a documented option, taught in
+  the skill body shipped by this very PR, that the new pre-commit gate would have blocked
+  outright. New validation needs to be tested against every state the tool itself can
+  produce, not just the default one.
+- **Measuring GitHub rather than assuming it changed the deliverable's scope, not its
+  value.** Finding 4 cost two throwaway PRs and narrowed every doc claim from "merges" to
+  "local merges". Better to ship a fix with an honest boundary than one whose README
+  overstates its reach. The default-branch hypothesis is recorded with a free re-test
+  attached rather than left as an open question.
+- **Next time: run the review before writing the implementation log.** The steps-2-4 log
+  entry described the work as verified and mutation-checked, which it was — and the review
+  still found seven real defects in it. Self-verification and adversarial review catch
+  different things; the log now has to be amended rather than written once.

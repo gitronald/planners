@@ -22,7 +22,7 @@ from planners import base as base_mod
 from planners import install as install_mod
 from planners import permissions as perms_mod
 from planners import proc
-from planners.index import render_index, render_plans_table
+from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
     CLOSED_STATUSES,
     DIRNAME_RE,
@@ -48,8 +48,12 @@ PLANS_DIR = Path(".planners/plans")
 # writes unnumbered plans here (no shared state), and `finalize` is the single
 # serialized writer that numbers, materializes, and commits them.
 STAGING_DIR = Path(".planners/staging")
-INDEX_PATH = Path(".planners/README.md")
 INDEX_TITLE = "Plans"
+# Every column set `index` can write, and therefore every rendering a tracked
+# index may legitimately be in. Spelled once so the `--cols` validation and the
+# staleness comparison can never drift apart — a set the check did not know
+# about would make `validate` fail a correctly generated index.
+INDEX_COLS = ("curated", "all")
 
 
 def _version() -> str:
@@ -322,14 +326,76 @@ def _read_settings(path: Path) -> dict[str, Any]:
     return data
 
 
+def _index_document(metas: list[PlanMetadata], cols: str = "curated") -> str:
+    """Assemble the index document from already-parsed plan metadata.
+
+    The one place that assembly happens. Split from :func:`_rendered_index` so a
+    caller that needs *both* column sets (:func:`_index_is_stale`) pays for
+    parsing the plans once rather than once per rendering.
+    """
+    return render_index(INDEX_TITLE, render_plans_table(metas, cols=cols))
+
+
+def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
+    """The index document ``repo_root``'s plan frontmatter currently renders to.
+
+    The one place that answer is computed. Three callers need it and would
+    otherwise each re-assemble the same three calls: :func:`_refresh_index`
+    writes it, :func:`_finalize_self_check` asserts the batch landed it, and
+    ``validate`` compares the tracked file against it.
+    """
+    return _index_document(_collect_metas(repo_root / PLANS_DIR, strict=False), cols)
+
+
+def _index_is_stale(repo_root: Path) -> bool:
+    """True when the tracked index disagrees with a fresh render (or is absent).
+
+    What "stale" catches, in order of how often it happens: a plan edited without
+    reindexing, and a local merge — the index carries ``merge=union`` (see
+    ``install.INDEX_MERGE_ATTR``), which resolves rather than conflicting and
+    never loses a row, but can leave a row duplicated when both sides rewrote the
+    same one. Union's repair is a regeneration, and this is what notices one is
+    due.
+
+    Compared against **every** column set ``index`` can write, not just the
+    default: ``--cols all`` is a first-class option, so a wide index is a
+    legitimate tracked state. Checking only the curated rendering would report
+    such a repo stale on every commit, with no edit able to fix it — a gate that
+    fires on correct input is worse than no gate.
+    """
+    index = repo_root / INDEX_PATH
+    if not index.is_file():
+        return True
+    try:
+        current = index.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return True
+    metas = _collect_metas(repo_root / PLANS_DIR, strict=False)
+    return all(current != _index_document(metas, cols) for cols in INDEX_COLS)
+
+
+def _repo_root_of(plan: Path) -> Path | None:
+    """The repo root owning ``plan``, from its ``.planners/plans/<dir>/plan.md`` shape.
+
+    Lets ``validate`` check the index even when it is handed individual plan
+    files — which is exactly how the pre-commit hook calls it (``files:`` matches
+    plan paths, and pre-commit passes the matched filenames, never a root).
+    Returns ``None`` for anything not in that layout, so a legacy
+    ``docs/plans/`` repo is left alone rather than reported stale.
+    """
+    parents = plan.parents
+    if len(parents) < 4:
+        return None
+    if parents[1].name == PLANS_DIR.name and parents[2].name == PLANS_DIR.parent.name:
+        return parents[3]
+    return None
+
+
 def _refresh_index(repo_root: Path, cols: str) -> Path:
     """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter."""
-    plans_dir = repo_root / PLANS_DIR
     index = repo_root / INDEX_PATH
-    metas = _collect_metas(plans_dir, strict=False)
-    table = render_plans_table(metas, cols=cols)
     index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text(render_index(INDEX_TITLE, table), encoding="utf-8")
+    index.write_text(_rendered_index(repo_root, cols), encoding="utf-8")
     return index
 
 
@@ -485,10 +551,7 @@ def _finalize_self_check(
     if leftover:
         problems.append(f"staging not drained: {sorted(leftover)}")
 
-    index = root / INDEX_PATH
-    metas = _collect_metas(root / PLANS_DIR, strict=False)
-    fresh = render_index(INDEX_TITLE, render_plans_table(metas, cols="curated"))
-    if not index.is_file() or index.read_text(encoding="utf-8") != fresh:
+    if _index_is_stale(root):
         problems.append("index is stale (does not match a fresh render)")
 
     if committed:
@@ -562,13 +625,39 @@ def rule(
         raise typer.Exit(1) from None
 
 
+# What `--check` prints for each hook report, remedy included. The registration
+# is per-clone and absent by default in a fresh clone, so "not registered" is an
+# ordinary state to be told about, not an error — each line says what to run.
+_HOOK_REPORT: dict[install_mod.HookReport, str] = {
+    "active": "active",
+    "config_missing": (
+        "no planners-validate entry in .pre-commit-config.yaml; run `install`"
+    ),
+    "no_git_repo": "not registered (not a git repository)",
+    "hookspath_blocked": (
+        "not registered — git's core.hooksPath is set, so `pre-commit install` "
+        "refuses; unset it with `git config --unset-all core.hooksPath`"
+    ),
+    "not_registered": (
+        "NOT registered in this clone, so plan validation never fires; run "
+        "`uv run pre-commit install`"
+    ),
+}
+
+
 @app.command()
 def install(
     force: bool = typer.Option(
-        False, "--force", help="Overwrite a drifted holder without prompting."
+        False,
+        "--force",
+        help="Overwrite a drifted holder without prompting, and rewrite a "
+        "differing .gitattributes line for the plan index.",
     ),
     check: bool = typer.Option(
-        False, "--check", help="Report drift (ok|drifted|missing) and exit."
+        False,
+        "--check",
+        help="Report drift (ok|drifted|missing) per artifact, plus whether the "
+        "git hook is registered in this clone, and exit.",
     ),
     local_: bool = typer.Option(
         False,
@@ -618,12 +707,12 @@ def install(
                 "note: both a global and a per-repo /planners holder exist; "
                 "--check reports the global one, which takes precedence."
             )
-        typer.echo(f"holder: {holder_status}")
+        typer.echo(f"holder:  {holder_status}")
         if no_rule:
             # Symmetric with how `install --no-rule` skips *writing* the rule: a
             # deliberately rule-less install passes --check by also passing
             # --no-rule, so the rule it never installed is not held against it.
-            typer.echo("rule:   skipped (--no-rule)")
+            typer.echo("rule:    skipped (--no-rule)")
             ok = holder_status == "ok"
         else:
             # The rule auto-loads from ~/.claude/rules/ AND <repo>/.claude/rules/
@@ -631,7 +720,7 @@ def install(
             # switch to global is real drift even when the global rule is ok, and a
             # local-only rule with no holder must not read as missing.
             rule_check = install_mod.check_rule(root, version)
-            typer.echo(f"rule:   {rule_check.status}")
+            typer.echo(f"rule:    {rule_check.status}")
             for loc, loc_status in rule_check.locations.items():
                 if loc_status == "drifted":
                     path = install_mod.artifact_path(root, loc, install_mod.RULE)
@@ -641,6 +730,29 @@ def install(
                         "re-run install to regenerate it."
                     )
             ok = holder_status == "ok" and rule_check.status == "ok"
+
+        # The generated index's merge attribute. Committed repo content, so it
+        # travels with a clone and gates like the other artifacts: a repo that
+        # has not re-installed since it shipped is drifted, and --force migrates
+        # a line that says something else.
+        attr_status = install_mod.check_gitattributes(root)
+        typer.echo(f"gitattr: {attr_status}")
+        if attr_status == "drifted":
+            _err(
+                f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
+                f"`{install_mod.installed_index_attr(root)}`, not "
+                f"`{install_mod.INDEX_ATTR_LINE}`; `install --force` rewrites "
+                "that line."
+            )
+        ok = ok and attr_status == "ok"
+
+        # Reported, never gated. Hook registration is per-clone git state that a
+        # fresh clone lacks and that `core.hooksPath` can block outright, so a
+        # consumer can be correctly installed and still not have it — but a hook
+        # that never fires is indistinguishable from one that finds nothing
+        # wrong, which is why it gets a line of its own.
+        hook = install_mod.report_hook(root)
+        typer.echo(f"hook:    {_HOOK_REPORT[hook]}")
         raise typer.Exit(0 if ok else 1)
 
     mode: install_mod.Mode = "local" if local_ else "global"
@@ -714,6 +826,22 @@ def install(
         if wired
         else "pre-commit hook config already present"
     )
+
+    # The generated index is tracked, so it has merge semantics whether or not
+    # anyone picks them; `merge=union` is the one part of that fix a repository
+    # can carry by itself (see install.INDEX_MERGE_ATTR).
+    attr_before = install_mod.check_gitattributes(root)
+    if install_mod.wire_gitattributes(root, force=force):
+        typer.echo(f"wrote {install_mod.GITATTRIBUTES_REL} index merge attribute")
+    elif attr_before == "drifted":
+        _err(
+            f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
+            f"`{install_mod.installed_index_attr(root)}`, not "
+            f"`{install_mod.INDEX_ATTR_LINE}`; left alone as deliberate repo "
+            "content — re-run with --force to rewrite that line."
+        )
+    else:
+        typer.echo("index merge attribute already present")
 
     # --full opts into the one invasive step the default install avoids: putting
     # pre-commit in the consumer's env so the hook can actually run. Best-effort
@@ -1267,7 +1395,7 @@ def index(
     cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter."""
-    if cols not in ("curated", "all"):
+    if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
     readme = _refresh_index(repo_path, cols=cols)
@@ -1354,8 +1482,44 @@ def validate(
             _err(f"{path}: {error}")
         failures += len(errors)
 
-    if failures:
-        _err(f"{failures} violation(s) across {len(files)} file(s)")
+    # The index is generated from exactly the frontmatter just validated, so a
+    # disagreement between them is a violation of the same contract — and this is
+    # the only gate that sees it. `finalize` self-checks its own batch, and the
+    # lifecycle commands refresh the index in the commit that changes a plan; what
+    # is left uncovered is a hand-edited plan and a merge, which is most of the
+    # ways an index actually goes stale.
+    # An *absent* index is deliberately not a violation here, though it is one for
+    # `finalize` (which just wrote it, so absence means the write failed).
+    # ``validate`` checks that two artifacts agree; whether a repo has an index at
+    # all is `install`'s and `add`'s business, and failing on its absence would
+    # break a checkout that simply has not generated one yet.
+    # Roots are deduplicated *before* the staleness test, not after: every file in
+    # a batch resolves to the same root, and each `_index_is_stale` call re-parses
+    # every plan in the repo. Filtering first made a single `validate .` quadratic
+    # in the plan count and repeated `_collect_metas`'s skip-warnings once per
+    # file, so one malformed plan read as many.
+    roots = {root for root in map(_repo_root_of, files) if root is not None}
+    stale = sorted(
+        root
+        for root in roots
+        if (root / INDEX_PATH).is_file() and _index_is_stale(root)
+    )
+    for root in stale:
+        _err(
+            f"{root / INDEX_PATH}: stale — it does not match a fresh render of "
+            "the plan frontmatter; run `planners index .` to regenerate it."
+        )
+
+    if failures or stale:
+        # One summary covering both kinds of failure. A stale-index-only run is a
+        # failure like any other and says so; leaving it summary-less made the
+        # exit code the only signal.
+        summary = []
+        if failures:
+            summary.append(f"{failures} violation(s) across {len(files)} file(s)")
+        if stale:
+            summary.append(f"{len(stale)} stale index file(s)")
+        _err("; ".join(summary))
         raise typer.Exit(1)
     typer.echo(f"ok: {len(files)} file(s) valid")
 
