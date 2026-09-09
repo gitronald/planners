@@ -39,9 +39,10 @@ git rev-list --left-right --count HEAD...@{upstream}
   branch or on the first mainline branch, then check that branch out.
 - **Do not create the branch or worktree first.** Running add/activate from
   inside a feature branch puts both commits only on that branch, so the mainline
-  never records the plan if the branch does not land. `{cli} add` now refuses
-  outright in that position; the activation commit in step 3 is a hand-written
-  `git commit` with no such guard, so this check is the only thing protecting it.
+  never records the plan if the branch does not land. `{cli} add` and
+  `{cli} activate` both refuse outright in that position, so this check is what
+  keeps you from hitting a refusal in step 3 rather than the only thing
+  protecting it.
 - If `{cli} base` exits non-zero, the repo's mainline could not be detected
   (no `dev`, no `refs/remotes/origin/HEAD`, no `main`/`master`). Ask the user
   which branch is the base rather than guessing — and note that
@@ -57,19 +58,20 @@ git rev-list --left-right --count HEAD...@{upstream}
 Do this **on the base branch, before creating the branch**, so the activation is
 recorded on the mainline regardless of whether the feature branch ever lands.
 
-- Determine the branch name: the plan's `branch:` field if set, otherwise derive
-  `feature/<slug>`.
-- Edit the plan frontmatter: set `status: active` and fill `branch:`.
-- Refresh the index so the row moves draft → active:
-  ```bash
-  {cli} index .
-  ```
-- Commit the plan file and index on the base, then push:
-  ```bash
-  git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md
-  git commit -m "plan [activate]: {NNN} - <slug>"
-  git push
-  ```
+```bash
+{cli} activate {NNN}
+git push
+```
+
+One command sets `status: active`, fills `branch:` (the plan's own field if set,
+otherwise `feature/<slug>`; `--branch <name>` to choose), refreshes the index, and
+commits as `plan [activate]: {NNN} - <slug>`. It carries the same mainline guard as
+`{cli} add` and refuses here if you are already on a feature branch — which is the
+check step 2 exists to pass, now enforced rather than remembered.
+
+Do not edit the frontmatter, run `{cli} index`, or write the commit yourself; the
+CLI handles all of it. `--no-commit` writes the file only, and is unguarded because
+it strands nothing.
 
 ### 4. Create the worktree and branch from the activation commit
 

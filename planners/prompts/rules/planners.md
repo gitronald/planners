@@ -175,11 +175,11 @@ feature branch or worktree exists**, so the plan is recorded there even if the
 branch never merges. Creating the branch first and running add/activate inside it
 puts both commits only on that branch — a plan the mainline has no trace of.
 
-`{cli} add` and `{cli} finalize` enforce this: they refuse when HEAD is off the
-mainline. The accepted set is `dev` (when that branch exists) plus the repo's
-default branch, so a plan added on either is fine; `{cli} base --all` prints it.
-`--allow-branch` overrides the refusal, and is for a repo whose mainline is
-genuinely not detectable by name — not a way past the check.
+`{cli} add`, `{cli} finalize`, and `{cli} activate` enforce this: they refuse when
+HEAD is off the mainline. The accepted set is `dev` (when that branch exists) plus
+the repo's default branch, so a plan added on either is fine; `{cli} base --all`
+prints it. `--allow-branch` overrides the refusal, and is for a repo whose mainline
+is genuinely not detectable by name — not a way past the check.
 
 Detection is a heuristic over git's current refs, not a record of where plans
 were committed. It reads `dev`, then `refs/remotes/origin/HEAD`, then a local
@@ -187,14 +187,16 @@ were committed. It reads `dev`, then `refs/remotes/origin/HEAD`, then a local
 has no commits yet. `git fetch` does not refresh `origin/HEAD`, so it can be
 unset or stale; `git remote set-head origin --auto` re-derives it.
 
-The activation commit is hand-written `git commit`, so no CLI guard covers it —
-check `git branch --show-current` against `{cli} base --all` before making it.
+Activation is `{cli} activate {NNN}`, which carries the same guard — it flips the
+status, fills `branch`, refreshes the index, and commits, so the ordering is
+enforced rather than remembered. `log` and `close` updates are still hand-written
+commits and belong on the feature branch, where the work is.
 
 ### Plan commit subjects name the slug
 
-`plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`
-and `{cli} finalize` write, so the hand-written subjects (`activate`, `log`,
-`close`, `retire`) match them. A slug is fixed by the directory name; a title can
+`plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`,
+`{cli} finalize`, and `{cli} activate` write, so the remaining hand-written subjects
+(`log`, `close`, `retire`) match them. A slug is fixed by the directory name; a title can
 be reworded, so a title-derived subject drifts from the plan it names. (`log` is
 the exception: its subject is a brief summary of the entry.)
 
