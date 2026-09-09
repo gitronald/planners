@@ -294,7 +294,7 @@ wheels = [
 
 [[package]]
 name = "planners"
-version = "0.5.3a0"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "typer" },
