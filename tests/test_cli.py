@@ -1704,3 +1704,45 @@ def test_activate_commits_by_default_with_slug_subject(
         ).stdout
         == ""
     )
+
+
+def test_activate_fills_an_empty_branch_on_an_already_active_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The no-op fires only when nothing would change — an empty branch: changes.
+
+    Narrowing the condition to `already_active` alone would leave such a plan
+    permanently unbranched, which is exactly the field activate exists to fill.
+    """
+    path = _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: active"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" not in result.output
+    assert "branch: feature/my-thing" in path.read_text(encoding="utf-8")
+
+
+def test_activate_commits_an_explicit_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--branch travels the committing path, not just the --no-commit one."""
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+
+    result = runner.invoke(app, ["activate", "005", "--branch", "spike/other"])
+    assert result.exit_code == 0, result.output
+    # The chosen branch is what lands in the file — not the derived feature/<slug>.
+    assert "branch: spike/other" in path.read_text(encoding="utf-8")
+    assert "feature/my-thing" not in path.read_text(encoding="utf-8")
+    # The subject still names the slug, and the index was refreshed alongside it.
+    assert "plan [activate]: 005 - my-thing" in _git_log(tmp_path)
+    assert "active" in (tmp_path / ".planners" / "README.md").read_text(
+        encoding="utf-8"
+    )

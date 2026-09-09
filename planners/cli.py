@@ -24,6 +24,7 @@ from planners import permissions as perms_mod
 from planners import proc
 from planners.index import render_index, render_plans_table
 from planners.metadata import (
+    CLOSED_STATUSES,
     DIRNAME_RE,
     PLAN_FILENAME,
     PlanError,
@@ -406,20 +407,41 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
     return staged
 
 
-def _git_status_porcelain(root: Path) -> str | None:
+def _git_status_porcelain(root: Path, *paths: Path) -> str | None:
     """``git status --porcelain`` for ``root`` (empty = clean), or ``None`` on error.
 
     Goes through :func:`planners.proc.run` so the location variables are stripped:
     the self-check must report on the repo ``finalize`` just committed to, not on
     whatever an ambient ``GIT_DIR`` points at.
+
+    ``paths`` narrows the report to those pathspecs, which is what lets a caller ask
+    whether *one* file is committed without caring about the rest of the tree.
     """
+    args = ["git", "status", "--porcelain"]
+    if paths:
+        args += ["--", *(str(p) for p in paths)]
     try:
-        result = proc.run(root, ["git", "status", "--porcelain"], capture_output=True)
+        result = proc.run(root, args, capture_output=True)
     except FileNotFoundError:
         return None
     if result.returncode != 0:
         return None
     return result.stdout.strip()
+
+
+def _is_unmodified(root: Path, path: Path) -> bool:
+    """True when ``path`` has no staged or unstaged changes against ``HEAD``.
+
+    Distinguishes "already done and committed" from "written by an earlier run that
+    then failed to commit" — the two states that frontmatter alone cannot tell apart.
+    An unreadable git state (no repo, no git binary) reports unmodified: the caller's
+    next step surfaces that failure with a better message than this check could.
+    """
+    try:
+        spec = path.relative_to(root)
+    except ValueError:
+        spec = path
+    return not _git_status_porcelain(root, spec)
 
 
 def _finalize_self_check(
@@ -1090,11 +1112,6 @@ def finalize(
     _finalize_self_check(root, finalized, start_id, committed=True)
 
 
-# draft is the normal path; inactive is a parked plan being revisited, which the
-# convention explicitly allows. The closed statuses are not here: they are terminal.
-ACTIVATABLE = frozenset({Status.draft, Status.inactive})
-
-
 @app.command()
 def activate(
     ref: str = typer.Argument(
@@ -1127,12 +1144,9 @@ def activate(
     """
     root = Path.cwd()
 
-    # Guard before writing, so a refusal leaves the plan exactly as it was — the
-    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit:
-        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
-
+    # Resolve and validate before the branch guard, the ordering `add` uses for its
+    # slug check. A closed plan is closed on every branch, so leading with the branch
+    # would send the user to switch branches and only then learn the real blocker.
     path = _resolve_plan(root / PLANS_DIR, ref)
     try:
         meta = PlanMetadata.from_file(path)
@@ -1140,7 +1154,7 @@ def activate(
         _err(f"cannot read {_shown(path, root)}: {exc}")
         raise typer.Exit(1) from None
 
-    if meta.status not in ACTIVATABLE and meta.status != Status.active:
+    if meta.status in CLOSED_STATUSES:
         _err(
             f"plan {meta.prefix} is {meta.status}; it is closed. Reopen it by setting "
             "status: draft (or inactive) if the work is genuinely resuming."
@@ -1150,24 +1164,44 @@ def activate(
     # An empty branch: is pending, so fill it; a populated one is the user's answer
     # and is never overwritten (--branch on an already-filled plan is a no-op).
     new_branch = meta.branch or branch or f"feature/{meta.slug}"
-    already_active = meta.status == Status.active
+    unchanged = meta.status == Status.active and new_branch == meta.branch
 
-    if already_active and new_branch == meta.branch:
-        # Nothing to change. Idempotent rather than an error: re-running activate
-        # destroys nothing (unlike `add`, which refuses in order to protect a body),
-        # and a no-op keeps the command safe inside a pipeline that may retry it.
+    # Idempotent rather than an error: re-running activate destroys nothing (unlike
+    # `add`, which refuses in order to protect a body), and a no-op keeps the command
+    # safe inside a pipeline that may retry it. But *already active* is not the same
+    # as *already committed* — an earlier run can have written and staged the plan and
+    # then failed at the commit (a rejecting hook, no commit identity). Deciding from
+    # the frontmatter alone would report that failure as success and strand the
+    # activation staged forever, so the file must also be unmodified against HEAD.
+    # This runs before the guard: a genuine no-op commits nothing, so there is nothing
+    # for a feature branch to strand and nothing for the guard to protect.
+    if unchanged and (no_commit or _is_unmodified(root, path)):
         typer.echo(
             f"plan {meta.prefix} is already active on {meta.branch}; nothing to do."
         )
         return
 
-    _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-    meta.status = Status.active
-    meta.branch = new_branch
-    # Re-render only the frontmatter and keep the body verbatim — the same
-    # mutate-preserving-body shape `finalize` uses. The plan text is the record.
-    path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-    typer.echo(f"activated {_shown(path, root)} on {meta.branch}")
+    # Guard before writing, so a refusal leaves the plan exactly as it was — the
+    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
+    # no commit, so there is nothing for a branch to strand.
+    if not no_commit:
+        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
+
+    if unchanged:
+        # Reached only via the staged-but-uncommitted path above: the frontmatter is
+        # already right, so there is nothing to rewrite — just the commit to finish.
+        typer.echo(
+            f"plan {meta.prefix} is already active on {meta.branch}; "
+            "committing the pending activation."
+        )
+    else:
+        _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        meta.status = Status.active
+        meta.branch = new_branch
+        # Re-render only the frontmatter and keep the body verbatim — the same
+        # mutate-preserving-body shape `finalize` uses. The plan text is the record.
+        path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"activated {_shown(path, root)} on {meta.branch}")
 
     if no_commit:
         return
