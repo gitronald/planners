@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   mainline guard shipped in 0.5.0 could not cover it; it now carries the same
   guard and the same `--allow-branch` escape hatch as `add`. Closed plans
   (`done`/`retired`) are refused; a parked `inactive` plan may be reactivated.
+  Takes a subplan reference (`005a`) as well as a plan number, and re-running it
+  is a no-op unless an earlier run wrote the plan but failed to commit.
 
 ## [0.5.1] - 2026-09-08
 
