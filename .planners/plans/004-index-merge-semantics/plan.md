@@ -5,7 +5,7 @@ status: active
 branch: feature/index-merge-semantics
 created: 2026-09-08T10:57:28-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/18
 ---
 
 # Own the generated plan index's merge semantics in install
