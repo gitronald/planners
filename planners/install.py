@@ -71,6 +71,15 @@ HookReport = Literal[
     "active", "config_missing", "no_git_repo", "hookspath_blocked", "not_registered"
 ]
 
+# What ``--check`` can say about the index's merge attribute.
+#   ok         — the file grants exactly INDEX_ATTR_LINE.
+#   drifted    — a line names the index but grants something else.
+#   missing    — no .gitattributes, or none of its lines name the index.
+#   unreadable — the file is there but cannot be read, so neither the check nor
+#                the write path can say what it grants. Distinct from `missing`
+#                because `install` can fix a missing line and cannot fix this.
+GitattrStatus = Literal["ok", "drifted", "missing", "unreadable"]
+
 HOLDER_REL = Path(".claude/skills/planners/SKILL.md")
 # The convention rule installs tool-namespaced as planners.md (not plan-files.md)
 # so drift detection targets it unambiguously and it never clobbers a user's own
@@ -671,25 +680,43 @@ def _index_attr_line(text: str) -> tuple[int, str] | None:
     return found
 
 
+def _read_gitattributes(config: Path) -> str | None:
+    """``config``'s text, or ``None`` when it exists but cannot be read.
+
+    Every caller tests ``is_file()`` first, so ``None`` here means *unreadable*
+    — bad permissions, or bytes that are not UTF-8 — never *absent*. Keeping
+    those two apart is the point: an absent file is safe to create, an
+    unreadable one must not be clobbered, and a reader that answered ``None``
+    for both would let :func:`wire_gitattributes` overwrite a file whose
+    contents it could not see.
+    """
+    try:
+        return config.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def installed_index_attr(root: Path) -> str | None:
     """The index's ``.gitattributes`` line as it stands in ``root``, if any.
 
     Lets the CLI name the line it found when reporting drift, rather than saying
-    only that something differs.
+    only that something differs. ``None`` covers every way there is no line to
+    name — absent file, unreadable file, or a readable file that says nothing
+    about the index — because a caller reporting drift has nothing to print in
+    any of them; :func:`check_gitattributes` is what tells those cases apart.
     """
     config = root / GITATTRIBUTES_REL
     if not config.is_file():
         return None
-    try:
-        text = config.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    text = _read_gitattributes(config)
+    if text is None:
         return None
     found = _index_attr_line(text)
     return None if found is None else found[1]
 
 
-def check_gitattributes(root: Path) -> Literal["ok", "drifted", "missing"]:
-    """Drift for the index's merge attribute: absent, different, or exact.
+def check_gitattributes(root: Path) -> GitattrStatus:
+    """Drift for the index's merge attribute: absent, unreadable, different, or exact.
 
     ``missing`` when no line names the index, ``drifted`` when one does but
     grants different attributes (e.g. a repo still carrying the hand-rolled
@@ -697,11 +724,22 @@ def check_gitattributes(root: Path) -> Literal["ok", "drifted", "missing"]:
     whitespace. Unlike the holder and the rule this is committed repo content, so
     it travels with a clone — the check exists to catch a repo that has not
     re-run ``install`` since the attribute shipped, not per-clone state.
+
+    ``unreadable`` is reported rather than folded into ``missing`` so it is not
+    described as a state ``install`` can fix by writing the line: it cannot, and
+    saying ``missing`` would promise a repair that :func:`wire_gitattributes`
+    correctly refuses to attempt.
     """
-    found = installed_index_attr(root)
+    config = root / GITATTRIBUTES_REL
+    if not config.is_file():
+        return "missing"
+    text = _read_gitattributes(config)
+    if text is None:
+        return "unreadable"
+    found = _index_attr_line(text)
     if found is None:
         return "missing"
-    return "ok" if found == INDEX_ATTR_LINE else "drifted"
+    return "ok" if found[1] == INDEX_ATTR_LINE else "drifted"
 
 
 def wire_gitattributes(root: Path, *, force: bool = False) -> bool:
@@ -718,6 +756,12 @@ def wire_gitattributes(root: Path, *, force: bool = False) -> bool:
     drift instead of clobbering it. ``install --force`` rewrites that one line in
     place, which is also the migration path for a repo carrying the earlier
     ``merge=ours`` arrangement.
+
+    A file that exists but cannot be read is left alone too, ``--force`` or not:
+    every write below either appends to, or edits one line of, text this
+    function has read, so with no text in hand there is no edit to make that
+    would not discard the rest of the file. ``--check`` calls the same repo
+    ``unreadable``.
     """
     config = root / GITATTRIBUTES_REL
     # ``is_file`` rather than ``exists``, matching :func:`check_gitattributes`:
@@ -727,7 +771,9 @@ def wire_gitattributes(root: Path, *, force: bool = False) -> bool:
     if not config.is_file():
         config.write_text(INDEX_ATTR_LINE + "\n", encoding="utf-8")
         return True
-    text = config.read_text(encoding="utf-8")
+    text = _read_gitattributes(config)
+    if text is None:
+        return False
     found = _index_attr_line(text)
     if found is None:
         if not text.endswith("\n"):

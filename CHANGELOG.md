@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-09
+
+### Fixed
+
+- `install` no longer raises on a `.gitattributes` it cannot read. The file was
+  read unguarded on the write path while the matching check guarded the same
+  read, so a repo whose `.gitattributes` was unreadable or not valid UTF-8 got a
+  traceback out of `install` and a misleading `gitattr: missing` out of
+  `install --check`. Both now report `unreadable` as its own status, and the
+  file is left untouched — with or without `--force`, since every write either
+  appends to or edits one line of text that was read, and there is none.
+
 ## [0.6.0] - 2026-09-09
 
 ### Fixed

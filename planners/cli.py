@@ -744,6 +744,15 @@ def install(
                 f"`{install_mod.INDEX_ATTR_LINE}`; `install --force` rewrites "
                 "that line."
             )
+        elif attr_status == "unreadable":
+            # Named separately from `drifted` because `--force` is not the
+            # remedy: `install` refuses to rewrite a file it cannot read, so
+            # pointing at it would send the user in a circle.
+            _err(
+                f"note: {install_mod.GITATTRIBUTES_REL} exists but cannot be "
+                "read as UTF-8; `install` leaves it alone rather than "
+                "overwriting it — fix the file, then re-run install."
+            )
         ok = ok and attr_status == "ok"
 
         # Reported, never gated. Hook registration is per-clone git state that a
@@ -839,6 +848,14 @@ def install(
             f"`{install_mod.installed_index_attr(root)}`, not "
             f"`{install_mod.INDEX_ATTR_LINE}`; left alone as deliberate repo "
             "content — re-run with --force to rewrite that line."
+        )
+    elif attr_before == "unreadable":
+        # Without this branch an unreadable file fell through to "already
+        # present" — the one thing install could not possibly have verified.
+        _err(
+            f"note: {install_mod.GITATTRIBUTES_REL} exists but cannot be read "
+            "as UTF-8, so the plan index has no merge attribute and install "
+            "will not overwrite the file to add one; fix the file, then re-run."
         )
     else:
         typer.echo("index merge attribute already present")
