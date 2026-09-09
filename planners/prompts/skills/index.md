@@ -36,8 +36,15 @@ Show `git diff .planners/README.md` so the change is reviewable, then commit
 ## After a merge
 
 The index is marked `merge=union` in `.gitattributes` (written by
-`{cli} install`), so a merge whose two branches both touched it never conflicts
-— but when both rewrote the *same* row, union keeps both, leaving that plan
-listed twice. Regenerating is the repair: run the generator above and commit the
-result. `{cli} validate` fails on an index that disagrees with the frontmatter,
-so this surfaces on the next plan commit rather than going unnoticed.
+`{cli} install`), so a **local** merge whose two branches both touched it
+resolves instead of conflicting — but when both rewrote the *same* row, union
+keeps both, leaving that plan listed twice. Regenerating is the repair: run the
+generator above and commit the result. `{cli} validate` fails on an index that
+disagrees with the frontmatter, so this surfaces on the next plan commit rather
+than going unnoticed.
+
+GitHub's server-side merge does **not** apply the attribute, so a PR whose two
+sides both touched the index still reports a conflict there. Resolve it by
+merging the base branch in locally — where the attribute does apply — then
+regenerate and push, rather than hand-editing the generated file in the web
+editor.

@@ -30,9 +30,12 @@ These tools can be used manually via CLI commands, but they are largely intended
      `~/.claude/rules/planners.md` convention rule, which can change as the package version advances.
    - Wire the `planners-validate` pre-commit hook into the project folder/repo's `.pre-commit-config.yaml` (registering it when `pre-commit` is available).
    - Give the generated index its merge semantics: a `.planners/README.md merge=union`
-     line in the repo's `.gitattributes`, so a merge whose two sides both added or
-     closed plans stops conflicting on it. `union` is built into git, so the one
-     committed line is the whole fix — nothing to configure per clone.
+     line in the repo's `.gitattributes`, so a **local** merge whose two sides both
+     added or closed plans stops conflicting on it. `union` is built into git, so the
+     one committed line is the whole fix — nothing to configure per clone. GitHub's
+     server-side merge does not apply it, so a PR can still report a conflict on the
+     index; merging the base in locally then resolves it without hand-editing a
+     generated file.
 
    `planners install --check` reports each part (`holder`, `rule`, `gitattr`) and
    exits non-zero if any has drifted, plus a `hook` line saying whether the git hook

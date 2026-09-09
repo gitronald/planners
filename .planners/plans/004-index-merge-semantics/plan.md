@@ -176,11 +176,29 @@ line in `.gitattributes`. Step 4 grows in importance — with the hook gone, a s
 check is the only thing that catches union's duplicate row, so it moves from optional to
 the repair mechanism.
 
-**Still unverified: whether GitHub's server-side merge honors `merge=union`.** It matters
-because `close` merges through `gh pr merge`, not a local `git merge`. Everything above
-was measured locally. If GitHub ignores the attribute the result is today's behavior —
-a conflict surfaced in the PR — so this is a no-regression risk, not a correctness one,
-but the plan should not claim the PR path is fixed until it is seen to be.
+**Finding 4 — GitHub's server-side merge does NOT honor `merge=union`.** Measured, not
+assumed: two throwaway PR pairs on this repo with *identical* index edits — both sides
+appending a different row at the same spot — differing only in whether the branches
+carried the attribute. Locally the control conflicted and the attribute pair merged
+cleanly. On GitHub both reported `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`. The
+attribute was present on the head, the base, and their merge base, so this is not a
+question of which commit the attribute was read from; GitHub's merge does not consult it.
+(Probe PRs #19/#20, since closed and their branches deleted.)
+
+One hypothesis is not excluded: that GitHub reads `.gitattributes` from the repository's
+**default branch**, which is `main`, where the attribute does not exist yet. It is a weak
+hypothesis — a merge between two other branches reading attributes from a third would be
+odd, and git's own semantics read them from the merge itself — but it resolves for free
+once this lands on `main`, so **re-check then** before treating the PR path as settled.
+
+**What that means for the fix's reach.** It is narrower than the plan assumed but not
+diminished. `close` merges through `gh pr merge`, so a PR whose two sides both touched the
+index still shows as conflicting on GitHub. What changes is the *resolution*: pulling the
+base and merging locally now resolves the index automatically instead of requiring a
+hand-edit of a generated file, and `validate` then tells you whether the union result
+needs regenerating. Every purely local merge — syncing a long-lived branch, merging
+without a PR (plan 002's path) — is fixed outright. The docs must say local merges, not
+merges.
 
 **Step 3's inherited follow-ups survive the shrink.** 005's staged-diff check and 006's
 fresh-clone hook-registration finding were routed here because `install --check` is the

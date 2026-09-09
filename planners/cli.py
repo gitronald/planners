@@ -337,10 +337,11 @@ def _index_is_stale(repo_root: Path) -> bool:
     """True when the tracked index disagrees with a fresh render (or is absent).
 
     What "stale" catches, in order of how often it happens: a plan edited without
-    reindexing, and a merge — the index carries ``merge=union`` (see
-    ``install.INDEX_MERGE_ATTR``), which never conflicts and never loses a row but
-    can leave a row duplicated when both sides rewrote the same one. Union's
-    repair is a regeneration, and this is what notices one is due.
+    reindexing, and a local merge — the index carries ``merge=union`` (see
+    ``install.INDEX_MERGE_ATTR``), which resolves rather than conflicting and
+    never loses a row, but can leave a row duplicated when both sides rewrote the
+    same one. Union's repair is a regeneration, and this is what notices one is
+    due.
     """
     index = repo_root / INDEX_PATH
     if not index.is_file():

@@ -26,8 +26,11 @@ edit that changes a plan's title, status, `concluded`, or `pr` must be committed
 with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`) already do
 that; a hand-written `log`/`close`/`retire` edit is the case to remember — run
 `{cli} index .` before committing. The same check catches a merge: `install` marks the
-index `merge=union` in `.gitattributes` so merges never conflict on it, which can leave a
-row duplicated when both branches rewrote the same one. Regenerating repairs it.
+index `merge=union` in `.gitattributes`, so a **local** merge resolves it instead of
+conflicting — at the cost of duplicating a row when both branches rewrote the same one.
+Regenerating repairs it. GitHub does not apply the attribute, so a PR can still report a
+conflict on the index; merge the base in locally and push rather than hand-editing the
+generated file.
 
 > **Migration in progress.** Some repos are still on the legacy `docs/plans/{NNN}-{slug}.md`
 > + `TODO.md` layout. Keep using that layout in a repo until it is migrated to `.planners/`;

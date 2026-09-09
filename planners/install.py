@@ -85,8 +85,8 @@ HOOK_ID = "planners-validate"
 
 GITATTRIBUTES_REL = Path(".gitattributes")
 # The generated index is a tracked file, so it has merge semantics whether or not
-# anyone chooses them: without an attribute, any merge whose two sides both added
-# or closed plans conflicts on it. ``union`` is deliberate, and the choice is
+# anyone chooses them: without an attribute, any *local* merge whose two sides both
+# added or closed plans conflicts on it. ``union`` is deliberate, and the choice is
 # narrower than it looks (see plan 004's Log):
 #
 # * It is a **built-in** low-level driver, so a bare attribute line is
@@ -104,6 +104,12 @@ GITATTRIBUTES_REL = Path(".gitattributes")
 # ``prepare-commit-msg``, a hook that regenerates and stages the index cannot get
 # it into the merge commit — git writes the merge tree from the index it already
 # holds — so the regeneration would land as an uncommitted change either way.
+#
+# Reach: **local merges only**. GitHub's server-side merge does not apply the
+# attribute (measured — see plan 004), so a PR whose two sides both touched the
+# index still reports a conflict there. What changes is the resolution: merging
+# the base in locally resolves the index by itself instead of by hand-editing a
+# generated file.
 INDEX_MERGE_ATTR = "merge=union"
 INDEX_ATTR_PATTERN = INDEX_PATH.as_posix()
 INDEX_ATTR_LINE = f"{INDEX_ATTR_PATTERN} {INDEX_MERGE_ATTR}"

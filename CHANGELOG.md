@@ -10,14 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - `install` now gives the generated plan index its merge semantics: a
-  `.planners/README.md merge=union` line in the repo's `.gitattributes`. A merge
-  whose two sides both added or closed plans used to conflict on the index and
-  leave every repo to invent its own fix. `union` is a built-in git driver, so
-  the one committed line is the whole fix — nothing to configure per clone, and
-  it works in a fresh clone that has never run `install`. Other attribute lines
-  are preserved; a line that names the index but says something else (such as a
-  hand-rolled `merge=ours` stopgap) is reported rather than clobbered, and
-  `install --force` rewrites it.
+  `.planners/README.md merge=union` line in the repo's `.gitattributes`. A local
+  merge whose two sides both added or closed plans used to conflict on the index
+  and leave every repo to invent its own fix. `union` is a built-in git driver,
+  so the one committed line is the whole fix — nothing to configure per clone,
+  and it works in a fresh clone that has never run `install`. Other attribute
+  lines are preserved; a line that names the index but says something else (such
+  as a hand-rolled `merge=ours` stopgap) is reported rather than clobbered, and
+  `install --force` rewrites it. Note that GitHub's server-side merge does not
+  apply the attribute, so a PR can still report a conflict on the index; merging
+  the base in locally now resolves it without hand-editing a generated file.
 - `install --check` reports the attribute as a `gitattr:` line and gates on it,
   alongside `holder:` and `rule:`. It also prints a `hook:` line saying whether
   the `planners-validate` git hook is actually registered **in this clone** —
