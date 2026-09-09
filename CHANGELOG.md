@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-08
+
 ### Added
 
 - `activate` command — `planners activate 005` flips a plan to `active`, fills
