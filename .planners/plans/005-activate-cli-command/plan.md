@@ -1,10 +1,10 @@
 ---
 id: 5
 slug: activate-cli-command
-status: active
+status: done
 branch: feature/activate-cli-command
 created: 2026-09-08T13:44:58-07:00
-concluded:
+concluded: 2026-09-08T18:53:29-07:00
 pr: https://github.com/gitronald/planners/pull/16
 ---
 
@@ -214,3 +214,119 @@ longer hand-written), and most importantly *"The activation commit is hand-writt
 `git commit`, so no CLI guard covers it"* — the sentence this plan's premise was built
 on. `implement.md` step 2 carried the same claim and now reads as a convenience check
 rather than the only protection.
+
+### 2026-09-08 — review follow-up (close gate)
+
+A four-dimension review of PR #16 raised 14 candidates; 11 verified as CONFIRMED, 3 as
+PLAUSIBLE. Six were actioned in three commits, each with a paired regression test; the
+rest are recorded below as conscious no-ops.
+
+**The one real bug — the no-op masked a failed commit.** The idempotent
+`already active; nothing to do` path decided from frontmatter alone, so it could not
+tell *already committed* from *written by an earlier run that then failed to commit*.
+Reproduced with a rejecting `pre-commit` hook: run one writes `status: active`, stages
+the plan and the index, and exits 1; run two matches the no-op, prints `nothing to do`,
+and exits 0 while the activation sits staged forever — a failure reported as success.
+`add` does not have this hole, because it has no status to short-circuit on. The fix
+adds `_is_unmodified(root, path)` and makes the no-op fire only when the file is also
+clean against `HEAD`; when it is not, the command skips the (already correct) write and
+finishes the commit, announcing `committing the pending activation`. Rather than a
+second git query, `_git_status_porcelain` grew an optional pathspec argument — asking
+about one file is what it was already shaped to do.
+
+**Ordering: cheap validation now precedes the guard.** Two findings were the same
+structural complaint. The guard ran first, so (a) re-running `activate` on an
+already-active plan from the feature branch was *refused* — contradicting the
+"safe inside a pipeline that retries" rationale this Log gives for the no-op — and
+(b) activating a closed plan from a feature branch reported the branch, sending the
+user to switch branches before learning the real blocker. Both fixed by resolving,
+reading, and validating before the guard, and guarding immediately before the write.
+`add` already had this shape: its `is_safe_slug` check precedes `_guard_base_branch`.
+Nothing is weakened — a genuine no-op commits nothing for a branch to strand.
+
+**Reuse the review caught that step 1 missed.** `ACTIVATABLE` was a third
+classification of the status enum next to the existing `OPEN_STATUSES` and
+`CLOSED_STATUSES`; the condition collapses exactly to `if meta.status in
+CLOSED_STATUSES`, which is the set `validate()` already uses for this same question,
+and the error message already said "it is closed". Related, and more pointed: this plan
+added `PlanMetadata.prefix` *specifically* to stop duplicating the `f"{id:03d}{sub}"`
+format, then left `index.py`'s `_num` — the one other place computing it on a
+`PlanMetadata` — untouched. `_num` is now deleted.
+
+**Docs.** The README was the altitude this plan forgot. Its Usage command list omitted
+`activate` entirely, and its "Plan commits land on the mainline" blockquote still said
+`add` and `finalize` refuse — the exact sentence updated in the rule file and
+`implement.md`. A reader taking the README as the CLI reference would have concluded the
+command did not exist and hand-edited the frontmatter, which is the whole failure this
+plan exists to end. Both fixed; the changelog entry also now names subplan refs and the
+retry behavior.
+
+**Tests: 5 added (348 -> 353), and one strengthened.**
+`test_activate_no_commit_is_unguarded` asserted only that the write happened, never that
+the commit did not — the test named for the guarantee was the one that would not catch
+its loss. All five new tests were **mutation-checked** against the specific regression
+each exists to catch: reverting the no-op to frontmatter-only, moving the guard ahead of
+the no-op check, moving the closed-status check after the guard, narrowing the no-op to
+`already_active` alone, and moving `activate`'s `if no_commit: return` below the commit.
+Each failed exactly its own test and no other. The last of these caught a *mutation* bug
+first: `add` and `activate` share a byte-identical `if no_commit: return` / refresh tail,
+so the first attempt silently mutated `add` and every activate test passed — a reminder
+that a mutation check needs its own anchor, not just a plausible-looking pattern.
+
+**Conscious no-ops.**
+- *Drifted frontmatter slug drives the branch and commit subject* (CONFIRMED, narrow).
+  A plan whose hand-edited `slug:` disagrees with its directory activates cleanly and
+  commits a subject naming the wrong slug. Reaching it needs the hand-edit this plan's
+  own Notes accept as always possible, `planners validate` flags it, and the shipped
+  hook would usually reject the commit. Calling `validate()` on the `from_file` path is
+  a decision about every command, not this one — it belongs in its own plan.
+- *Extract the shared refresh/add/commit tail* (PLAUSIBLE). Real for `add` and
+  `activate`, but the third site the finder named, `finalize`, genuinely differs
+  (unconditional refresh, a looped path list, singular/plural subjects, a self-check).
+  A helper spanning all three would be a leaky abstraction; a two-site helper is not
+  worth the indirection.
+- *No test pinning update.md's table row to its prose section* (PLAUSIBLE). The two
+  agree today, and `tests/test_conventions.py` shows the repo has precedent for
+  grep-based doc guards — but writing one is its own piece of work, not a fix to this
+  diff.
+- Rejected by verification and not actioned: `_DRAFT_PLAN`/git-helper duplication across
+  the two test modules (the repo already defines per-module helpers by convention, both
+  modules having their own `_init_git` before this PR); the untested `except PlanError`
+  branch (untested repo-wide, not introduced here); `test_cli.py`'s `_init_git` lacking
+  `--initial-branch` (the autouse `_isolate_git_env` fixture makes it deterministically
+  `master`, which `base.py` recognizes, so the guard genuinely passes rather than going
+  inert); the multi-letter-`sub` boundary (`validate()` forbids it and `next_sub` never
+  emits one); and the missing-plans-directory path (`_plan_files` already returns `[]`,
+  covered elsewhere).
+
+## Retrospective
+
+- **The plan's premise held and its scope was right.** All six steps landed as written,
+  both open decisions resolved the way the plan leaned, and nothing forced a redesign.
+  Keeping it to activation — rather than a general `planners status <NNN> <state>` — is
+  what made that possible: `log` and `close` legitimately commit on the feature branch,
+  so a general command would have needed per-transition guard policy and a much larger
+  surface for the same benefit.
+- **Idempotence is a claim about the world, not about a record.** The one real bug came
+  from deciding "nothing to do" from the plan's frontmatter when the thing being
+  asserted was about git. `status: active` proves an earlier run *wrote*; it says
+  nothing about whether that run *committed*. Any future short-circuit in this package
+  should ask the same question: is the state I am reading the state I am promising?
+- **A command replacing prose has to be named everywhere the prose was.** The plan
+  budgeted a whole step for collapsing the docs and still missed the README — including
+  the one sentence there that this PR's rule-file edit was specifically fixing
+  elsewhere. The rule, `implement.md`, and `update.md` were updated because the plan
+  named them; the README was not on the list, so it was not checked. A "collapse the
+  prose" step should start from a grep for the claim, not from a list of files.
+- **Mutation-checking earned its keep twice.** Once as intended — five new tests, five
+  isolated failures — and once by accident: the first attempt at one mutation silently
+  patched `add`'s byte-identical `if no_commit: return` tail instead of `activate`'s,
+  and every activate test passed. A mutation that changes nothing looks exactly like a
+  test suite that caught nothing. Assert the anchor is unique before trusting a green
+  or red result.
+- **Two of the six review fixes were things this plan explicitly set out to do.**
+  Step 1 added `PlanMetadata.prefix` *to avoid duplicating* the id format, then left
+  `index.py`'s `_num` in place; the closed-status check invented a third status set
+  beside two that already existed. Both are the same miss — implementing a step without
+  first grepping for what already does that job. Worth doing before writing the helper,
+  not after the review asks.
