@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from planners import proc
+from planners.index import INDEX_PATH
 from planners.skill import list_skills
 
 # A mode is one resolved value, not a loose set of flags, even though it spans
@@ -56,6 +57,18 @@ Mode = Literal["local", "global"]
 #                       CLI names the real cause, not a phantom "unavailable" message.
 HookStatus = Literal["activated", "already_active", "config_only", "hookspath_blocked"]
 
+# What ``--check`` can say about the validate hook without touching anything.
+# ``activate_precommit`` reports what an *attempt* did; this reports what *is*, so
+# the two are kept as separate vocabularies rather than one overloaded status.
+#   active         — the git hook is registered and will fire.
+#   config_missing — no planners-validate entry in .pre-commit-config.yaml.
+#   no_git_repo    — nowhere to register a hook.
+#   hookspath_blocked — core.hooksPath is set, so `pre-commit install` refuses.
+#   not_registered — config is present and nothing is blocking; just never run.
+HookReport = Literal[
+    "active", "config_missing", "no_git_repo", "hookspath_blocked", "not_registered"
+]
+
 HOLDER_REL = Path(".claude/skills/planners/SKILL.md")
 # The convention rule installs tool-namespaced as planners.md (not plan-files.md)
 # so drift detection targets it unambiguously and it never clobbers a user's own
@@ -67,6 +80,31 @@ RULE_REL = Path(".claude/rules/planners.md")
 LEGACY_RULE_REL = Path(".claude/rules/plan-files.md")
 PRECOMMIT_REL = Path(".pre-commit-config.yaml")
 HOOK_ID = "planners-validate"
+
+GITATTRIBUTES_REL = Path(".gitattributes")
+# The generated index is a tracked file, so it has merge semantics whether or not
+# anyone chooses them: without an attribute, any merge whose two sides both added
+# or closed plans conflicts on it. ``union`` is deliberate, and the choice is
+# narrower than it looks (see plan 004's Log):
+#
+# * It is a **built-in** low-level driver, so a bare attribute line is
+#   self-sufficient — nothing to define, nothing to configure per clone, and it
+#   works in a fresh clone that has never run ``install``. A ``merge=ours``-style
+#   driver would need ``git config merge.ours.driver true`` in every clone, which
+#   is invisible when absent.
+# * Its failure mode is stale-and-loud, not silent: when both sides rewrite the
+#   *same* row (one branch closes a plan while the other adds one) union keeps
+#   both versions, so a row appears twice. Nothing is lost, the table still
+#   renders, and a regeneration repairs it — whereas ``ours`` would silently drop
+#   the incoming branch's rows.
+#
+# No hook accompanies it: measured at ``pre-merge-commit`` and
+# ``prepare-commit-msg``, a hook that regenerates and stages the index cannot get
+# it into the merge commit — git writes the merge tree from the index it already
+# holds — so the regeneration would land as an uncommitted change either way.
+INDEX_MERGE_ATTR = "merge=union"
+INDEX_ATTR_PATTERN = INDEX_PATH.as_posix()
+INDEX_ATTR_LINE = f"{INDEX_ATTR_PATTERN} {INDEX_MERGE_ATTR}"
 
 # The resolved mode is recorded in the holder's generated comment so ``check``
 # can recover it from the file alone.
@@ -586,6 +624,102 @@ def wire_precommit(root: Path, mode: Mode = "local", *, resync: bool = True) -> 
     return True
 
 
+def _index_attr_line(text: str) -> tuple[int, str] | None:
+    """Find the ``.gitattributes`` line governing the plan index.
+
+    Returns ``(line number, whitespace-normalized line)`` for the first line whose
+    *pattern* field is the index path, or ``None`` when no line names it.
+    Normalizing the whitespace is what keeps a padded but equivalent line from
+    reading as drift. Blank and ``#`` comment lines are skipped for the format's
+    sake, not for correctness — a comment's first field always starts with ``#``,
+    so it could never equal the pattern anyway.
+
+    Patterns are compared as written, so a quoted or differently-spelled pattern
+    for the same file reads as absent — the safe direction: ``install`` then
+    appends its own line, and git applies the **last** matching line, so the
+    appended one wins.
+    """
+    for number, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split()
+        if fields[0] == INDEX_ATTR_PATTERN:
+            return number, " ".join(fields)
+    return None
+
+
+def installed_index_attr(root: Path) -> str | None:
+    """The index's ``.gitattributes`` line as it stands in ``root``, if any.
+
+    Lets the CLI name the line it found when reporting drift, rather than saying
+    only that something differs.
+    """
+    config = root / GITATTRIBUTES_REL
+    if not config.is_file():
+        return None
+    try:
+        text = config.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    found = _index_attr_line(text)
+    return None if found is None else found[1]
+
+
+def check_gitattributes(root: Path) -> Literal["ok", "drifted", "missing"]:
+    """Drift for the index's merge attribute: absent, different, or exact.
+
+    ``missing`` when no line names the index, ``drifted`` when one does but
+    grants different attributes (e.g. a repo still carrying the hand-rolled
+    ``merge=ours`` stopgap), ``ok`` when it matches :data:`INDEX_ATTR_LINE` up to
+    whitespace. Unlike the holder and the rule this is committed repo content, so
+    it travels with a clone — the check exists to catch a repo that has not
+    re-run ``install`` since the attribute shipped, not per-clone state.
+    """
+    found = installed_index_attr(root)
+    if found is None:
+        return "missing"
+    return "ok" if found == INDEX_ATTR_LINE else "drifted"
+
+
+def wire_gitattributes(root: Path, *, force: bool = False) -> bool:
+    """Ensure ``.gitattributes`` gives the plan index its merge attribute.
+
+    Returns ``True`` if the file was created or modified, ``False`` if it already
+    said the right thing or was left deliberately alone. Other attribute lines
+    are preserved — the line is appended, never the file rewritten, mirroring how
+    :func:`wire_precommit` appends its hook block rather than parsing YAML.
+
+    A line that names the index but grants *different* attributes is left alone
+    unless ``force`` is passed: like the pre-commit entry, ``.gitattributes`` is
+    repo content a user may have set deliberately, so ``install`` reports it as
+    drift instead of clobbering it. ``install --force`` rewrites that one line in
+    place, which is also the migration path for a repo carrying the earlier
+    ``merge=ours`` arrangement.
+    """
+    config = root / GITATTRIBUTES_REL
+    if not config.exists():
+        config.write_text(INDEX_ATTR_LINE + "\n", encoding="utf-8")
+        return True
+    text = config.read_text(encoding="utf-8")
+    found = _index_attr_line(text)
+    if found is None:
+        if not text.endswith("\n"):
+            text += "\n"
+        config.write_text(text + INDEX_ATTR_LINE + "\n", encoding="utf-8")
+        return True
+    number, normalized = found
+    if normalized == INDEX_ATTR_LINE:
+        return False
+    if not force:
+        return False
+    lines = text.splitlines(keepends=True)
+    ends_with_newline = lines[number].endswith("\n")
+    lines[number] = INDEX_ATTR_LINE + ("\n" if ends_with_newline else "")
+    config.write_text("".join(lines), encoding="utf-8")
+    return True
+
+
 def is_git_repo(root: Path) -> bool:
     """True when ``root`` is a git working tree.
 
@@ -742,6 +876,31 @@ def activate_precommit(root: Path, *, attempt: bool = True) -> HookStatus:
     if core_hookspath_set(root):
         return "hookspath_blocked"
     return "activated" if _run_precommit_install(root) else "config_only"
+
+
+def report_hook(root: Path) -> HookReport:
+    """Read-only: is the validate git hook actually live in *this* clone?
+
+    :func:`activate_precommit` answers the same question by trying to fix it;
+    this only looks, so ``--check`` can report the truth without side effects.
+
+    The distinction it exists to make visible: the hook's *config* is committed
+    and travels with a clone, but its *registration* is per-clone git state that a
+    fresh clone silently lacks — and a hook that never fires looks exactly like a
+    hook that fires and finds nothing wrong. Reporting it turns that silence into
+    a line. ``config_missing`` is called out separately because the remedy differs
+    (write the config, rather than register a hook for config that isn't there).
+    """
+    if _precommit_hook_registered(root):
+        return "active"
+    config = root / PRECOMMIT_REL
+    if not config.is_file() or HOOK_ID not in config.read_text(encoding="utf-8"):
+        return "config_missing"
+    if not is_git_repo(root):
+        return "no_git_repo"
+    if core_hookspath_set(root):
+        return "hookspath_blocked"
+    return "not_registered"
 
 
 def ensure_precommit_dependency(root: Path) -> bool:

@@ -632,8 +632,8 @@ def test_install_check_recovers_global_mode(
     # it reports the holder and the rule per artifact.
     checked = runner.invoke(app, ["install", "--check"])
     assert checked.exit_code == 0
-    assert "holder: ok" in checked.output
-    assert "rule:   ok" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    ok" in checked.output
 
 
 def test_install_global_idempotent(
@@ -972,8 +972,8 @@ def test_install_check_reports_rule_drift(
     checked = runner.invoke(app, ["install", "--check"])
     # a drifted rule gates the whole check just like a drifted holder
     assert checked.exit_code == 1
-    assert "holder: ok" in checked.output
-    assert "rule:   drifted" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    drifted" in checked.output
 
 
 def test_install_check_flags_stale_per_repo_rule_after_global_switch(
@@ -1001,8 +1001,8 @@ def test_install_check_flags_stale_per_repo_rule_after_global_switch(
 
     checked = runner.invoke(app, ["install", "--check"])
     assert checked.exit_code == 1
-    assert "holder: ok" in checked.output
-    assert "rule:   drifted" in checked.output
+    assert "holder:  ok" in checked.output
+    assert "rule:    drifted" in checked.output
     # the note names the stale local rule path so the drift is actionable
     local_rule = repo / ".claude" / "rules" / "planners.md"
     assert str(local_rule) in checked.output
@@ -1026,8 +1026,8 @@ def test_install_check_finds_local_only_rule_without_holder(
     install_mod.write_artifact(repo, version, "local", install_mod.RULE)
 
     checked = runner.invoke(app, ["install", "--check"])
-    assert "holder: missing" in checked.output
-    assert "rule:   ok" in checked.output
+    assert "holder:  missing" in checked.output
+    assert "rule:    ok" in checked.output
     # the holder is genuinely absent, so the overall check still gates
     assert checked.exit_code == 1
 
@@ -1044,13 +1044,13 @@ def test_install_check_no_rule_skips_the_rule_check(
     # plain --check fails: the rule is genuinely missing
     plain = runner.invoke(app, ["install", "--check"])
     assert plain.exit_code == 1
-    assert "rule:   missing" in plain.output
+    assert "rule:    missing" in plain.output
 
     # --check --no-rule skips the rule and passes on the holder alone
     skipped = runner.invoke(app, ["install", "--check", "--no-rule"])
     assert skipped.exit_code == 0
-    assert "holder: ok" in skipped.output
-    assert "rule:   skipped" in skipped.output
+    assert "holder:  ok" in skipped.output
+    assert "rule:    skipped" in skipped.output
 
 
 # --- _git: an unusable root is not reported as a missing git ------------------
@@ -1746,3 +1746,74 @@ def test_activate_commits_an_explicit_branch(
     assert "active" in (tmp_path / ".planners" / "README.md").read_text(
         encoding="utf-8"
     )
+
+
+# --- install: the index's merge attribute ------------------------------------
+
+
+def test_install_writes_the_index_merge_attribute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _isolate_home(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["install"])
+    assert result.exit_code == 0, result.output
+    assert (repo / ".gitattributes").read_text(
+        encoding="utf-8"
+    ) == install_mod.INDEX_ATTR_LINE + "\n"
+    # re-running says so rather than writing again
+    again = runner.invoke(app, ["install"])
+    assert "index merge attribute already present" in again.output
+
+
+def test_install_check_gates_on_a_missing_index_attribute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The attribute is committed repo content, so it travels with a clone — but a
+    # repo that has not re-installed since it shipped has no merge semantics for
+    # its index at all, which is the state this plan exists to end.
+    repo = _isolate_home(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["install"]).exit_code == 0
+    (repo / ".gitattributes").unlink()
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 1
+    assert "gitattr: missing" in checked.output
+
+
+def test_install_leaves_a_drifted_attribute_alone_until_forced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The migration path for a repo carrying the hand-rolled merge=ours stopgap:
+    # reported, not clobbered, until --force says so.
+    repo = _isolate_home(tmp_path, monkeypatch)
+    attrs = repo / ".gitattributes"
+    stopgap = f"{install_mod.INDEX_ATTR_PATTERN} merge=ours\n"
+    attrs.write_text(stopgap, encoding="utf-8")
+
+    plain = runner.invoke(app, ["install"])
+    assert plain.exit_code == 0, plain.output
+    assert attrs.read_text(encoding="utf-8") == stopgap
+    assert "merge=ours" in plain.output
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 1
+    assert "gitattr: drifted" in checked.output
+
+    forced = runner.invoke(app, ["install", "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert attrs.read_text(encoding="utf-8") == install_mod.INDEX_ATTR_LINE + "\n"
+
+
+def test_install_check_reports_an_unregistered_hook_without_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 006's finding: hook registration is per-clone and silently absent in a
+    # fresh clone, so --check must SAY so. It must not gate on it — a consumer
+    # without pre-commit is correctly installed, just unguarded.
+    _isolate_home(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["install", "--no-activate"]).exit_code == 0
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 0, checked.output
+    assert "hook:" in checked.output
+    assert "not registered" in checked.output

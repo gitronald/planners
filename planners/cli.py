@@ -22,7 +22,7 @@ from planners import base as base_mod
 from planners import install as install_mod
 from planners import permissions as perms_mod
 from planners import proc
-from planners.index import render_index, render_plans_table
+from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
     CLOSED_STATUSES,
     DIRNAME_RE,
@@ -48,7 +48,6 @@ PLANS_DIR = Path(".planners/plans")
 # writes unnumbered plans here (no shared state), and `finalize` is the single
 # serialized writer that numbers, materializes, and commits them.
 STAGING_DIR = Path(".planners/staging")
-INDEX_PATH = Path(".planners/README.md")
 INDEX_TITLE = "Plans"
 
 
@@ -562,6 +561,26 @@ def rule(
         raise typer.Exit(1) from None
 
 
+# What `--check` prints for each hook report, remedy included. The registration
+# is per-clone and absent by default in a fresh clone, so "not registered" is an
+# ordinary state to be told about, not an error — each line says what to run.
+_HOOK_REPORT: dict[install_mod.HookReport, str] = {
+    "active": "active",
+    "config_missing": (
+        "no planners-validate entry in .pre-commit-config.yaml; run `install`"
+    ),
+    "no_git_repo": "not registered (not a git repository)",
+    "hookspath_blocked": (
+        "not registered — git's core.hooksPath is set, so `pre-commit install` "
+        "refuses; unset it with `git config --unset-all core.hooksPath`"
+    ),
+    "not_registered": (
+        "NOT registered in this clone, so plan validation never fires; run "
+        "`uv run pre-commit install`"
+    ),
+}
+
+
 @app.command()
 def install(
     force: bool = typer.Option(
@@ -618,12 +637,12 @@ def install(
                 "note: both a global and a per-repo /planners holder exist; "
                 "--check reports the global one, which takes precedence."
             )
-        typer.echo(f"holder: {holder_status}")
+        typer.echo(f"holder:  {holder_status}")
         if no_rule:
             # Symmetric with how `install --no-rule` skips *writing* the rule: a
             # deliberately rule-less install passes --check by also passing
             # --no-rule, so the rule it never installed is not held against it.
-            typer.echo("rule:   skipped (--no-rule)")
+            typer.echo("rule:    skipped (--no-rule)")
             ok = holder_status == "ok"
         else:
             # The rule auto-loads from ~/.claude/rules/ AND <repo>/.claude/rules/
@@ -631,7 +650,7 @@ def install(
             # switch to global is real drift even when the global rule is ok, and a
             # local-only rule with no holder must not read as missing.
             rule_check = install_mod.check_rule(root, version)
-            typer.echo(f"rule:   {rule_check.status}")
+            typer.echo(f"rule:    {rule_check.status}")
             for loc, loc_status in rule_check.locations.items():
                 if loc_status == "drifted":
                     path = install_mod.artifact_path(root, loc, install_mod.RULE)
@@ -641,6 +660,29 @@ def install(
                         "re-run install to regenerate it."
                     )
             ok = holder_status == "ok" and rule_check.status == "ok"
+
+        # The generated index's merge attribute. Committed repo content, so it
+        # travels with a clone and gates like the other artifacts: a repo that
+        # has not re-installed since it shipped is drifted, and --force migrates
+        # a line that says something else.
+        attr_status = install_mod.check_gitattributes(root)
+        typer.echo(f"gitattr: {attr_status}")
+        if attr_status == "drifted":
+            _err(
+                f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
+                f"`{install_mod.installed_index_attr(root)}`, not "
+                f"`{install_mod.INDEX_ATTR_LINE}`; `install --force` rewrites "
+                "that line."
+            )
+        ok = ok and attr_status == "ok"
+
+        # Reported, never gated. Hook registration is per-clone git state that a
+        # fresh clone lacks and that `core.hooksPath` can block outright, so a
+        # consumer can be correctly installed and still not have it — but a hook
+        # that never fires is indistinguishable from one that finds nothing
+        # wrong, which is why it gets a line of its own.
+        hook = install_mod.report_hook(root)
+        typer.echo(f"hook:    {_HOOK_REPORT[hook]}")
         raise typer.Exit(0 if ok else 1)
 
     mode: install_mod.Mode = "local" if local_ else "global"
@@ -714,6 +756,22 @@ def install(
         if wired
         else "pre-commit hook config already present"
     )
+
+    # The generated index is tracked, so it has merge semantics whether or not
+    # anyone picks them; `merge=union` is the one part of that fix a repository
+    # can carry by itself (see install.INDEX_MERGE_ATTR).
+    attr_before = install_mod.check_gitattributes(root)
+    if install_mod.wire_gitattributes(root, force=force):
+        typer.echo(f"wrote {install_mod.GITATTRIBUTES_REL} index merge attribute")
+    elif attr_before == "drifted":
+        _err(
+            f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
+            f"`{install_mod.installed_index_attr(root)}`, not "
+            f"`{install_mod.INDEX_ATTR_LINE}`; left alone as deliberate repo "
+            "content — re-run with --force to rewrite that line."
+        )
+    else:
+        typer.echo("index merge attribute already present")
 
     # --full opts into the one invasive step the default install avoids: putting
     # pre-commit in the consumer's env so the hook can actually run. Best-effort
