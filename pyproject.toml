@@ -41,12 +41,12 @@ only-include = [
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.155.2",
+    "hypothesis>=6.167.1",
     "pre-commit",
-    "pyrefly>=1.0.0",
-    "pytest>=9.1.0",
+    "pyrefly>=1.2.0",
+    "pytest>=9.1.1",
     "pytest-cov",
-    "ruff>=0.15.17",
+    "ruff>=0.16.6",
 ]
 
 [tool.ruff]
@@ -66,6 +66,13 @@ preset = "strict"
 python-version = "3.11"
 project-includes = ["."]
 project-excludes = ["**/__pycache__", "**/.venv"]
+
+# Python has no syntax for annotating a lambda parameter, so this check (added
+# in pyrefly 1.2.0) cannot be satisfied without rewriting every `sort(key=...)`
+# lambda as a named function. The parameter types are contextually inferable
+# from the sequence being sorted, so the check buys no safety here.
+[tool.pyrefly.errors]
+implicit-any-lambda = false
 
 # tests/ stays type-checked (imports, undefined names, type mismatches),
 # but the implicit-any check is relaxed there so unannotated pytest fixture
