@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `dependabot.yml` now sets `target-branch: dev` for both ecosystems, so
+  dependency-update PRs open against the active branch instead of `main`. They
+  previously targeted the default branch, so each batch had to be retargeted by
+  hand before it could merge into `dev`, and Dependabot resolved manifests
+  against `main` rather than the tree the updates would merge into. Because
+  Dependabot reads its config from the default branch, this takes effect once
+  the change reaches `main`.
+
 ### Added
 
 - `install` now gives the generated plan index its merge semantics: a
