@@ -1,10 +1,10 @@
 ---
 id: 6
 slug: commit-path-git-dir-safety
-status: active
+status: done
 branch: feature/commit-path-git-dir-safety
 created: 2026-09-08T15:37:36-07:00
-concluded:
+concluded: 2026-09-08T17:12:58-07:00
 pr: https://github.com/gitronald/planners/pull/13
 ---
 
@@ -165,3 +165,71 @@ This checkout has **no git hooks installed at all** (`.git/hooks/` holds only
 not firing for any commit in this repo. Every check above was run by hand. Out of
 scope for this plan — flagged for a follow-up, since a gate nobody notices is
 absent is the same failure mode this plan is about.
+
+### Review follow-up (close gate, 2026-09-08)
+
+Two finders at level `medium` produced six candidates; four survived dedup, three
+were rejected on verification as **pre-existing on `dev`** rather than introduced
+here — `_git_status_porcelain`'s equally narrow `except`, `install.py`'s triplicated
+best-effort shape, and `test_proc.py`'s local `_init_git` (which is in fact the
+repo's convention: `test_base.py` and `test_cli.py` each keep their own, and theirs
+do more).
+
+**Actioned — `fix: name the real cause when git cannot run in root` (f4a228a).**
+One confirmed finding, and it was this plan's own change that opened it. Pinning
+`_git` to `root` gave the call a failure mode it never had: on `dev`, `_git(args)`
+passed no `cwd` at all, so the only thing that could raise was a missing git binary
+and `except FileNotFoundError` was a complete handler. With `cwd=root`, the
+*directory* can fail too — and a missing one raises the **same exception type** as a
+missing binary, so `add` answered a vanished repo root with "git not found on PATH;
+install git". A `chmod 000` root raised `PermissionError`, which escaped as a
+traceback the docstring explicitly promised not to produce.
+
+`root.is_dir()` separates the two `FileNotFoundError` cases and a second
+`except OSError` catches the rest. Three tests in `tests/test_cli.py`; the two new
+paths fail against the pre-fix handler (verified by stashing the fix and re-running),
+and the third pins the original message for the case it was written for. 332 pass
+(329 + 3), `ruff check`, `ruff format --check`, `pyrefly check`, and `planners
+validate` clean.
+
+**Conscious no-op.** `_git_status_porcelain` keeps its narrow `except` even though
+its docstring promises "``None`` on error". The verifier established it as
+pre-existing — it already passed `cwd=root` on `dev` with the identical handler — so
+fixing it here would widen the PR past the plan's scope. It belongs to whatever plan
+takes up the `install.py` helpers' shared error idiom.
+
+Review posted to PR #13.
+
+## Retrospective
+
+- **The plan's own scope estimate held.** All five steps landed in one commit
+  because step 1 — extracting the shared helper first — made the rest substitutions
+  rather than edits. The plan's instinct that "a third module both `cli` and `base`
+  import is probably cleaner than either importing the other" was right, and
+  `proc.py` ended up being the thing that made the change small.
+- **Deciding what *not* to strip was the load-bearing decision.** `LOCATION_ENV`
+  covers the five variables that relocate the repository and deliberately excludes
+  `GIT_CONFIG_*` / `GIT_CEILING_DIRECTORIES`, which the suite's `_isolate_git_env`
+  fixture depends on. Stripping those would have silently un-insulated every test —
+  a green suite that no longer tested what it claimed. The distinction is "which
+  repo git acts on" vs. "what git reads", and it is now asserted, not just intended.
+- **The trap was in the assertions, not the code.** Under an exported `GIT_DIR` the
+  test's own `git log` is redirected too, so a naive check passes for the wrong
+  reason. `_unredirected()` deliberately re-implements the sanitizing rather than
+  calling `proc.pinned_env()` — an assertion must not depend on the code under test.
+  Worth remembering generally: when the bug is environmental, the verification
+  harness sits inside the blast radius.
+- **Fixing one hazard opened a smaller one.** The review gate's single confirmed
+  finding was caused by this plan: `cwd=root` gave `_git` a failure mode it never
+  had, and a missing directory raises the same exception type as a missing binary,
+  so the old handler produced a confidently wrong message. Pinning a subprocess to a
+  directory means the directory is now a thing that can fail — the error handling has
+  to widen with it, and it is easy to carry the old `except` across unchanged.
+- **Three of four surviving candidates were pre-existing on `dev`.** Asking each
+  verifier explicitly "is this introduced by this PR, or already on the base branch?"
+  — and giving it the `git show dev:<file>` command to check — is what kept the diff
+  from absorbing unrelated cleanup. Worth making a standing question in the gate.
+- **Next time:** the incidental finding above (no git hooks installed in this
+  checkout, so the `planners validate` pre-commit gate never fires) is still open and
+  deserves its own plan. Every check in this plan passed because they were run by
+  hand; nothing would have caught it if they hadn't been.
