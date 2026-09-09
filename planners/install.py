@@ -26,12 +26,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
+from planners import proc
 from planners.skill import list_skills
 
 # A mode is one resolved value, not a loose set of flags, even though it spans
@@ -640,13 +640,15 @@ def _effective_hooks_dir(root: Path) -> Path | None:
     :func:`_git_hooks_dir` parse when git is unavailable or the command fails —
     e.g. a non-repo or a synthetic ``.git`` scaffold (``rev-parse`` exits non-zero
     there) — so detection still works without a usable git binary.
+
+    Runs through :func:`planners.proc.run`, so an ambient ``GIT_DIR`` cannot point
+    the answer at another repo's hooks. The mis-answer here is advisory — a
+    misleading activation message, not a misplaced commit — but it would be
+    reported about ``root`` all the same.
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-path", "hooks"],
-            cwd=root,
-            capture_output=True,
-            text=True,
+        result = proc.run(
+            root, ["git", "rev-parse", "--git-path", "hooks"], capture_output=True
         )
     except FileNotFoundError:
         return _git_hooks_dir(root)
@@ -685,13 +687,14 @@ def _run_precommit_install(root: Path) -> bool:
     or any non-zero exit returns ``False`` rather than raising, so a fresh
     consumer that has not added ``pre-commit`` never sees ``install`` crash. Output
     is captured so the shell-out stays quiet on the happy path.
+
+    ``pre-commit install`` writes into git's hooks directory, so it inherits the
+    location hazard one level down: run through :func:`planners.proc.run` it
+    installs the hook in ``root``, not wherever an ambient ``GIT_DIR`` points.
     """
     try:
-        result = subprocess.run(
-            ["uv", "run", "pre-commit", "install"],
-            cwd=root,
-            capture_output=True,
-            text=True,
+        result = proc.run(
+            root, ["uv", "run", "pre-commit", "install"], capture_output=True
         )
     except FileNotFoundError:
         return False
@@ -709,11 +712,8 @@ def core_hookspath_set(root: Path) -> bool:
     reads as not-set.
     """
     try:
-        result = subprocess.run(
-            ["git", "config", "--get", "core.hooksPath"],
-            cwd=root,
-            capture_output=True,
-            text=True,
+        result = proc.run(
+            root, ["git", "config", "--get", "core.hooksPath"], capture_output=True
         )
     except FileNotFoundError:
         return False
@@ -753,11 +753,8 @@ def ensure_precommit_dependency(root: Path) -> bool:
     raising, so the rest of ``install`` still completes.
     """
     try:
-        result = subprocess.run(
-            ["uv", "add", "--dev", "pre-commit"],
-            cwd=root,
-            capture_output=True,
-            text=True,
+        result = proc.run(
+            root, ["uv", "add", "--dev", "pre-commit"], capture_output=True
         )
     except FileNotFoundError:
         return False
