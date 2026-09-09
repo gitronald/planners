@@ -28,9 +28,19 @@ that; a hand-written `log`/`close`/`retire` edit is the case to remember — run
 `{cli} index .` before committing. The same check catches a merge: `install` marks the
 index `merge=union` in `.gitattributes`, so a **local** merge resolves it instead of
 conflicting — at the cost of duplicating a row when both branches rewrote the same one.
-Regenerating repairs it. GitHub does not apply the attribute, so a PR can still report a
-conflict on the index; merge the base in locally and push rather than hand-editing the
-generated file.
+Regenerating repairs it, and `install` wires a `post-merge` hook (`planners-index`) that
+runs the regeneration for you after a clean merge. It cannot get the result *into* the
+merge commit — git writes the merge tree before `post-merge` runs — so the refreshed
+index lands as an **uncommitted change**; commit it alongside.
+
+Two gaps are worth knowing, because both look like the hook having done its job:
+
+- **A conflicted merge does not run `post-merge`.** Git skips it when the merge stops on
+  conflicts, and finishing by hand with `git commit` runs the *pre-commit* hooks instead.
+  Run `{cli} index .` yourself before committing a merge you resolved.
+- **GitHub does not apply the attribute**, nor run the hook, so a PR can still report a
+  conflict on the index; merge the base in locally and push rather than hand-editing the
+  generated file.
 
 > **Migration in progress.** Some repos are still on the legacy `docs/plans/{NNN}-{slug}.md`
 > + `TODO.md` layout. Keep using that layout in a repo until it is migrated to `.planners/`;

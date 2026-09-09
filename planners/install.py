@@ -91,6 +91,17 @@ RULE_REL = Path(".claude/rules/planners.md")
 LEGACY_RULE_REL = Path(".claude/rules/plan-files.md")
 PRECOMMIT_REL = Path(".pre-commit-config.yaml")
 HOOK_ID = "planners-validate"
+# The post-merge companion to the ``merge=union`` attribute below. Union resolves the
+# index instead of conflicting, but can leave a row duplicated when both sides rewrote
+# it; regenerating from the plan files is the only correct repair, and only *after* the
+# merge are both sides' plan files on disk. Hence a hook, not a merge driver.
+#
+# It is a genuine hook rather than advice because the manual step is the kind that gets
+# skipped: a duplicated row is invisible until ``validate`` fails on some later commit,
+# by which point the merge that caused it is well behind you. Caveat worth keeping in
+# mind — git does not run ``post-merge`` when a merge stops on conflicts, so a merge you
+# finish by hand with ``git commit`` still needs ``planners index .`` run manually.
+INDEX_HOOK_ID = "planners-index"
 
 GITATTRIBUTES_REL = Path(".gitattributes")
 # The generated index is a tracked file, so it has merge semantics whether or not
@@ -109,10 +120,14 @@ GITATTRIBUTES_REL = Path(".gitattributes")
 #   renders, and a regeneration repairs it — whereas ``ours`` would silently drop
 #   the incoming branch's rows.
 #
-# No hook accompanies it: measured at ``pre-merge-commit`` and
-# ``prepare-commit-msg``, a hook that regenerates and stages the index cannot get
-# it into the merge commit — git writes the merge tree from the index it already
-# holds — so the regeneration would land as an uncommitted change either way.
+# The accompanying hook is ``post-merge`` (:data:`INDEX_HOOK_ID`), and the stage is
+# forced: measured at ``pre-merge-commit`` and ``prepare-commit-msg``, a hook that
+# regenerates and stages the index cannot get it into the merge commit — git writes
+# the merge tree from the index it already holds. ``post-merge`` runs after that tree
+# is written, so the regeneration necessarily lands as an **uncommitted change** to
+# commit alongside. That is the ceiling for any hook here, not a shortcoming of this
+# one: what the hook buys is that the repair happens at all, unprompted, rather than
+# waiting to surface as a ``validate`` failure some commits later.
 #
 # Reach: **local merges only**. GitHub's server-side merge does not apply the
 # attribute, so a PR whose two sides both touched the index still reports a
@@ -199,17 +214,54 @@ class GeneratedArtifact:
     render: Callable[[str, Mode], str]
 
 
-def _precommit_hook_block(mode: Mode) -> str:
-    """The ``repo: local`` block wiring the validate hook, with a mode-correct entry."""
+def _validate_hook_entry(mode: Mode) -> str:
+    """The ``planners-validate`` hook entry, with a mode-correct ``entry:`` line."""
     return f"""\
-  - repo: local
-    hooks:
       - id: {HOOK_ID}
         name: validate plan frontmatter
         entry: {invocation(mode)} validate
         language: system
         files: ^\\.planners/plans/[^/]+/plan\\.md$
 """
+
+
+def _index_hook_entry(mode: Mode) -> str:
+    """The ``planners-index`` hook entry, run at ``post-merge`` to repair the index.
+
+    ``always_run`` with ``pass_filenames: false`` because ``post-merge`` hands the
+    hook no filenames to match on: the trigger is "a merge happened", not "these
+    files changed".
+    """
+    return f"""\
+      - id: {INDEX_HOOK_ID}
+        name: regenerate plan index after merge
+        entry: {invocation(mode)} index .
+        language: system
+        stages: [post-merge]
+        always_run: true
+        pass_filenames: false
+"""
+
+
+def _precommit_hook_block(mode: Mode) -> str:
+    """The ``repo: local`` block wiring both hooks, with mode-correct entries."""
+    return (
+        "  - repo: local\n    hooks:\n"
+        + _validate_hook_entry(mode)
+        + "\n"
+        + _index_hook_entry(mode)
+    )
+
+
+def _index_hook_block(mode: Mode) -> str:
+    """A standalone ``repo: local`` block for the index hook alone.
+
+    Appended when a config predates the index hook: those repos already carry a
+    ``planners-validate`` block, and appending a second ``repo: local`` block is
+    valid for pre-commit — which keeps the back-fill a text append, with no YAML
+    parsing and no risk to the entry already committed there.
+    """
+    return "  - repo: local\n    hooks:\n" + _index_hook_entry(mode)
 
 
 @dataclass(frozen=True)
@@ -607,13 +659,27 @@ def _hook_entry_line(mode: Mode) -> str:
     return f"        entry: {invocation(mode)} validate\n"
 
 
-def wire_precommit(root: Path, mode: Mode = "local", *, resync: bool = True) -> bool:
-    """Ensure the ``planners-validate`` pre-commit hook is present and mode-correct.
+def _append_block(text: str, block: str) -> str:
+    """Append a ``repo: local`` block to ``text``, ensuring a separating newline."""
+    if not text.endswith("\n"):
+        text += "\n"
+    return text + block
 
-    Returns ``True`` if the config was created or modified, ``False`` if the
-    hook was already there with the right entry. Appending a ``repo: local``
+
+def wire_precommit(root: Path, mode: Mode = "local", *, resync: bool = True) -> bool:
+    """Ensure the ``planners`` pre-commit hooks are present and mode-correct.
+
+    Two hooks: ``planners-validate`` at ``pre-commit``, and ``planners-index`` at
+    ``post-merge`` (see :data:`INDEX_HOOK_ID`).
+
+    Returns ``True`` if the config was created or modified, ``False`` if both
+    hooks were already there with the right entry. Appending a ``repo: local``
     block is valid for pre-commit, which keeps the first install idempotent
     without parsing YAML.
+
+    A config carrying only ``planners-validate`` predates the index hook and gets
+    it appended, so an existing consumer picks the automation up on its next
+    install rather than needing to hand-write the block.
 
     When the hook already exists but in the *other* mode's invocation, its
     ``entry:`` line is rewritten only if ``resync`` is true — a genuine mode
@@ -630,22 +696,29 @@ def wire_precommit(root: Path, mode: Mode = "local", *, resync: bool = True) -> 
         config.write_text("repos:\n" + block, encoding="utf-8")
         return True
     text = config.read_text(encoding="utf-8")
-    if HOOK_ID in text:
-        desired = _hook_entry_line(mode)
-        if desired in text:
-            return False
-        other = _hook_entry_line("local" if mode == "global" else "global")
-        if other in text and resync:
-            config.write_text(text.replace(other, desired), encoding="utf-8")
-            return True
-        # Either the entry is in the other mode's form but this is a same-mode
-        # re-install (resync=False), or it was hand-customized to neither
-        # invocation. Both are deliberate — leave the committed entry alone.
-        return False
-    if not text.endswith("\n"):
-        text += "\n"
-    config.write_text(text + block, encoding="utf-8")
-    return True
+    if HOOK_ID not in text:
+        config.write_text(_append_block(text, block), encoding="utf-8")
+        return True
+
+    changed = False
+    desired = _hook_entry_line(mode)
+    other = _hook_entry_line("local" if mode == "global" else "global")
+    if desired not in text and other in text and resync:
+        text = text.replace(other, desired)
+        changed = True
+    # Otherwise the entry is in the other mode's form on a same-mode re-install
+    # (resync=False), or was hand-customized to neither invocation. Both are
+    # deliberate — leave the committed entry alone.
+    #
+    # The index hook is keyed on its *id*, not its entry line, for the same
+    # reason: a repo that customized the invocation has the hook, and only a
+    # config predating it needs the block appended.
+    if INDEX_HOOK_ID not in text:
+        text = _append_block(text, _index_hook_block(mode))
+        changed = True
+    if changed:
+        config.write_text(text, encoding="utf-8")
+    return changed
 
 
 def _index_attr_line(text: str) -> tuple[int, str] | None:
@@ -886,8 +959,13 @@ def _precommit_hook_registered(root: Path) -> bool:
         return False
 
 
-def _run_precommit_install(root: Path) -> bool:
+def _run_precommit_install(root: Path, hook_type: str | None = None) -> bool:
     """Run ``uv run pre-commit install`` in ``root``; ``True`` only on exit 0.
+
+    ``hook_type`` adds ``--hook-type <type>``. pre-commit registers only the
+    ``pre-commit`` hook by default, so the ``post-merge`` index hook needs its own
+    call — a config entry with ``stages: [post-merge]`` and no registered
+    ``post-merge`` script is exactly the silent no-op this module exists to avoid.
 
     Best-effort by contract: a missing ``uv``/``pre-commit`` (``FileNotFoundError``)
     or any non-zero exit returns ``False`` rather than raising, so a fresh
@@ -898,10 +976,11 @@ def _run_precommit_install(root: Path) -> bool:
     location hazard one level down: run through :func:`planners.proc.run` it
     installs the hook in ``root``, not wherever an ambient ``GIT_DIR`` points.
     """
+    cmd = ["uv", "run", "pre-commit", "install"]
+    if hook_type is not None:
+        cmd += ["--hook-type", hook_type]
     try:
-        result = proc.run(
-            root, ["uv", "run", "pre-commit", "install"], capture_output=True
-        )
+        result = proc.run(root, cmd, capture_output=True)
     except FileNotFoundError:
         return False
     return result.returncode == 0
@@ -947,7 +1026,13 @@ def activate_precommit(root: Path, *, attempt: bool = True) -> HookStatus:
         return "config_only"
     if core_hookspath_set(root):
         return "hookspath_blocked"
-    return "activated" if _run_precommit_install(root) else "config_only"
+    if not _run_precommit_install(root):
+        return "config_only"
+    # The validate hook is what "activated" reports, so the post-merge
+    # registration rides along best-effort: failing to wire the index repair
+    # must not downgrade a validation hook that is genuinely live.
+    _run_precommit_install(root, hook_type="post-merge")
+    return "activated"
 
 
 def report_hook(root: Path) -> HookReport:

@@ -14,11 +14,13 @@ from planners.install import (
     HOOK_ID,
     INDEX_ATTR_LINE,
     INDEX_ATTR_PATTERN,
+    INDEX_HOOK_ID,
     INDEX_MERGE_ATTR,
     RULE,
     RULE_REL,
     RuleCheck,
     SkillStub,
+    _index_hook_block,
     _precommit_hook_block,
     _recover_mode,
     activate_precommit,
@@ -151,6 +153,138 @@ def test_wire_precommit_appends_to_existing_config(tmp_path: Path) -> None:
     assert HOOK_ID in text
     assert text.startswith("repos:")
     assert wire_precommit(tmp_path) is False
+
+
+# --- the post-merge index hook -----------------------------------------------
+
+
+def test_wire_precommit_writes_both_hooks(tmp_path: Path) -> None:
+    assert wire_precommit(tmp_path) is True
+    text = (tmp_path / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    assert HOOK_ID in text
+    assert INDEX_HOOK_ID in text
+    # post-merge hands the hook no filenames, so it must run unconditionally
+    assert "stages: [post-merge]" in text
+    assert "always_run: true" in text
+    assert "pass_filenames: false" in text
+
+
+def test_index_hook_entry_is_mode_aware() -> None:
+    assert "entry: uv run planners index ." in _precommit_hook_block("local")
+    assert "entry: planners index ." in _precommit_hook_block("global")
+
+
+def test_wire_precommit_backfills_index_hook_into_older_config(tmp_path: Path) -> None:
+    """A config predating the index hook picks it up, keeping its validate entry."""
+    config = tmp_path / ".pre-commit-config.yaml"
+    legacy = (
+        "repos:\n"
+        "  - repo: local\n"
+        "    hooks:\n"
+        f"      - id: {HOOK_ID}\n"
+        "        name: validate plan frontmatter\n"
+        "        entry: uv run planners validate\n"
+        "        language: system\n"
+        "        files: ^\\.planners/plans/[^/]+/plan\\.md$\n"
+    )
+    config.write_text(legacy, encoding="utf-8")
+
+    assert wire_precommit(tmp_path) is True
+    text = config.read_text(encoding="utf-8")
+    assert text.startswith(legacy)  # the committed entry is untouched
+    assert INDEX_HOOK_ID in text
+    # and the back-fill is idempotent
+    assert wire_precommit(tmp_path) is False
+
+
+def test_wire_precommit_backfills_even_when_entry_is_customized(tmp_path: Path) -> None:
+    """A hand-customized validate entry is left alone but still gets the new hook."""
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n"
+        "  - repo: local\n"
+        "    hooks:\n"
+        f"      - id: {HOOK_ID}\n"
+        "        entry: poetry run planners validate\n",
+        encoding="utf-8",
+    )
+    assert wire_precommit(tmp_path) is True
+    text = config.read_text(encoding="utf-8")
+    assert "entry: poetry run planners validate" in text
+    assert INDEX_HOOK_ID in text
+
+
+def test_wire_precommit_leaves_customized_index_hook_alone(tmp_path: Path) -> None:
+    """Keyed on the id, so a repo that customized the index entry is not re-appended."""
+    config = tmp_path / ".pre-commit-config.yaml"
+    config.write_text(
+        "repos:\n"
+        "  - repo: local\n"
+        "    hooks:\n"
+        f"      - id: {HOOK_ID}\n"
+        "        entry: uv run planners validate\n"
+        f"      - id: {INDEX_HOOK_ID}\n"
+        "        entry: poetry run planners index .\n",
+        encoding="utf-8",
+    )
+    before = config.read_text(encoding="utf-8")
+    assert wire_precommit(tmp_path) is False
+    assert config.read_text(encoding="utf-8") == before
+
+
+def test_index_hook_block_is_a_standalone_repo_block() -> None:
+    block = _index_hook_block("local")
+    assert block.startswith("  - repo: local\n    hooks:\n")
+    assert HOOK_ID not in block
+
+
+def test_activate_registers_the_post_merge_hook(tmp_path: Path, monkeypatch) -> None:
+    """Activation registers post-merge too — a config entry alone never fires."""
+    calls: list[str | None] = []
+
+    def fake_install(root: Path, hook_type: str | None = None) -> bool:
+        calls.append(hook_type)
+        return True
+
+    monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: False)
+    monkeypatch.setattr(install_mod, "is_git_repo", lambda _root, hook_type=None: True)
+    monkeypatch.setattr(install_mod, "core_hookspath_set", lambda _root: False)
+    monkeypatch.setattr(install_mod, "_run_precommit_install", fake_install)
+
+    assert activate_precommit(tmp_path) == "activated"
+    assert calls == [None, "post-merge"]
+
+
+def test_activate_reports_activated_when_only_post_merge_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A live validate hook is not downgraded by a failed post-merge registration."""
+
+    def fake_install(root: Path, hook_type: str | None = None) -> bool:
+        return hook_type is None
+
+    monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: False)
+    monkeypatch.setattr(install_mod, "is_git_repo", lambda _root, hook_type=None: True)
+    monkeypatch.setattr(install_mod, "core_hookspath_set", lambda _root: False)
+    monkeypatch.setattr(install_mod, "_run_precommit_install", fake_install)
+
+    assert activate_precommit(tmp_path) == "activated"
+
+
+def test_run_precommit_install_passes_hook_type(tmp_path: Path, monkeypatch) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(root: Path, cmd: list[str], **kwargs):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(install_mod.proc, "run", fake_run)
+    assert install_mod._run_precommit_install(tmp_path, hook_type="post-merge") is True
+    assert seen[0][-2:] == ["--hook-type", "post-merge"]
+
+    seen.clear()
+    assert install_mod._run_precommit_install(tmp_path) is True
+    assert "--hook-type" not in seen[0]
 
 
 # --- mode: invocation prefix -------------------------------------------------
@@ -426,7 +560,9 @@ def test_bare_cli_available_reflects_path(monkeypatch) -> None:
 
 def test_activate_precommit_reports_already_active(tmp_path: Path, monkeypatch) -> None:
     # An existing registered hook is reported without re-running the installer.
-    monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: True)
+    monkeypatch.setattr(
+        install_mod, "_precommit_hook_registered", lambda _root, hook_type=None: True
+    )
     monkeypatch.setattr(
         install_mod,
         "_run_precommit_install",
@@ -462,7 +598,9 @@ def test_activate_precommit_activated_when_install_succeeds(
     # config) before shelling out, so without this the developer's own global
     # core.hooksPath would flip this to hookspath_blocked.
     monkeypatch.setattr(install_mod, "core_hookspath_set", lambda _root: False)
-    monkeypatch.setattr(install_mod, "_run_precommit_install", lambda _root: True)
+    monkeypatch.setattr(
+        install_mod, "_run_precommit_install", lambda _root, hook_type=None: True
+    )
     assert activate_precommit(tmp_path) == "activated"
 
 
@@ -472,7 +610,9 @@ def test_activate_precommit_config_only_when_install_fails(
     (tmp_path / ".git").mkdir()
     monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: False)
     monkeypatch.setattr(install_mod, "core_hookspath_set", lambda _root: False)
-    monkeypatch.setattr(install_mod, "_run_precommit_install", lambda _root: False)
+    monkeypatch.setattr(
+        install_mod, "_run_precommit_install", lambda _root, hook_type=None: False
+    )
     assert activate_precommit(tmp_path) == "config_only"
 
 
@@ -672,7 +812,9 @@ def test_activate_precommit_hookspath_blocked_without_shelling_out(
     # NOT shell out to the doomed install.
     (tmp_path / ".git").mkdir()
     monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: False)
-    monkeypatch.setattr(install_mod, "core_hookspath_set", lambda _root: True)
+    monkeypatch.setattr(
+        install_mod, "core_hookspath_set", lambda _root, hook_type=None: True
+    )
     monkeypatch.setattr(
         install_mod,
         "_run_precommit_install",
@@ -687,7 +829,9 @@ def test_activate_precommit_already_active_beats_hookspath_check(
     # A hook already live (at any path) reports already_active and never reaches
     # the core.hooksPath check — the ordering guard that keeps a live hook at a
     # configured hooksPath from being mislabeled "blocked".
-    monkeypatch.setattr(install_mod, "_precommit_hook_registered", lambda _root: True)
+    monkeypatch.setattr(
+        install_mod, "_precommit_hook_registered", lambda _root, hook_type=None: True
+    )
     monkeypatch.setattr(
         install_mod,
         "core_hookspath_set",

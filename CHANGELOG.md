@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `install` now wires a `planners-index` hook at `post-merge`, so the plan index
+  is regenerated automatically after a merge instead of being left for whoever
+  remembers. The `merge=union` attribute keeps a local merge from conflicting on
+  the generated index, but can leave a row duplicated when both sides rewrote the
+  same one — repairable only by regenerating from the plan files, and only after
+  the merge, once both sides' plans are on disk. Until now that step was manual
+  and its omission silent: a duplicated row surfaces as a `validate` failure some
+  commits later, well after the merge that caused it. Registration is included —
+  `pre-commit install` wires only the `pre-commit` hook, so activation now also
+  runs `--hook-type post-merge`, without which the config entry would never fire.
+  A config carrying only `planners-validate` predates this and has the new hook
+  appended on its next `install`, leaving its committed entry untouched.
+
+  Two limits, both documented in the generated rule: git skips `post-merge` when
+  a merge stops on conflicts (finish it by hand and run `planners index .`
+  yourself), and the regenerated index lands as an uncommitted change, since git
+  writes the merge tree before the hook runs — commit it alongside.
+
 ## [0.6.1] - 2026-09-09
 
 ### Fixed
