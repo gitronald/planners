@@ -1027,6 +1027,30 @@ def test_installed_index_attr_reports_what_is_there(tmp_path: Path) -> None:
     assert installed_index_attr(tmp_path) == f"{INDEX_ATTR_PATTERN} merge=ours"
 
 
+def test_unreadable_gitattributes_is_reported_not_clobbered(tmp_path: Path) -> None:
+    # An unreadable file must not read as `missing`: that is the state install
+    # repairs by *writing the line*, and writing it here would replace bytes
+    # nothing has seen. Reported as its own status, and left on disk untouched.
+    config = tmp_path / GITATTRIBUTES_REL
+    original = b"*.png binary\n\xff\xfe not utf-8\n"
+    config.write_bytes(original)
+
+    assert check_gitattributes(tmp_path) == "unreadable"
+    assert installed_index_attr(tmp_path) is None
+    assert wire_gitattributes(tmp_path) is False
+    assert config.read_bytes() == original
+
+
+def test_force_does_not_overwrite_an_unreadable_gitattributes(tmp_path: Path) -> None:
+    # --force rewrites a line install has *read*; it is not a licence to discard
+    # a file it could not read. Before the guard this path raised instead.
+    config = tmp_path / GITATTRIBUTES_REL
+    original = b"\xff\xfe not utf-8\n"
+    config.write_bytes(original)
+    assert wire_gitattributes(tmp_path, force=True) is False
+    assert config.read_bytes() == original
+
+
 # --- report_hook: the per-clone registration --check can see -----------------
 
 

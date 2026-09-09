@@ -1804,6 +1804,28 @@ def test_install_leaves_a_drifted_attribute_alone_until_forced(
     assert attrs.read_text(encoding="utf-8") == install_mod.INDEX_ATTR_LINE + "\n"
 
 
+def test_install_survives_an_unreadable_gitattributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both paths used to be wrong about a file they could not read: `install`
+    # raised out of read_text, and had it not, the write path would have called
+    # the file "already present" — the one thing it could not have checked.
+    repo = _isolate_home(tmp_path, monkeypatch)
+    attrs = repo / ".gitattributes"
+    original = b"\xff\xfe not utf-8\n"
+    attrs.write_bytes(original)
+
+    plain = runner.invoke(app, ["install"])
+    assert plain.exit_code == 0, plain.output
+    assert attrs.read_bytes() == original
+    assert "already present" not in plain.output
+    assert "cannot be read" in plain.output
+
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 1
+    assert "gitattr: unreadable" in checked.output
+
+
 def test_install_check_reports_an_unregistered_hook_without_failing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
