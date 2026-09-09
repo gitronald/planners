@@ -124,3 +124,66 @@ Written ~8 hours before plan 005 concluded; four things moved under it.
 - The plan-number race (two branches independently taking the same `NNN` from `planners
   add`) surfaced while testing this, but it is the batch-creation problem the
   `--defer` / `finalize` flow already addresses. Out of scope here.
+
+## Log
+
+### 2026-09-08 — step 1 prototyped; the three-part design is replaced by one part
+
+Step 1 asked which hook stage could put a regenerated index into the merge commit. The
+answer is **none**, and chasing it surfaced a driver the plan never considered that makes
+the hook unnecessary. Scratch repos under a temp dir; two branches that both add plans,
+which is the collision the survey counted.
+
+**Finding 1 — a merge-time hook cannot affect the merge commit.** `pre-merge-commit`
+*does* clear the bar step 1 was unsure about: a hook that regenerates and then
+`git add`s the index reports `Passed`, because pre-commit's "files were modified by this
+hook" check compares the **unstaged** diff, which staging leaves empty. But the merge
+commit still shipped the un-regenerated index — git writes the merge tree from the index
+it already held, so the corrected file was left *staged and uncommitted* after a merge
+that reported success. `prepare-commit-msg` behaves identically. This is git's documented
+"the hook cannot affect the outcome of the merge," now measured rather than assumed. So
+`pre-merge-commit` has no advantage over `post-merge`; both leave a repair to be
+committed afterwards, and the ritual step 1 hoped to avoid is unavoidable at any stage.
+
+**Finding 2 — `merge=union` is built in, so two of the three parts disappear.** The plan
+reached for `merge=ours` and then spent its length on the consequence: git will not take
+a driver *definition* from a repository, so a per-clone `git config merge.ours.driver
+true` is required, is silently absent in a fresh clone, and needs a drift detector to be
+visible at all. `union` is a **low-level built-in** — it needs no definition, so a bare
+`.gitattributes` line is self-sufficient in every clone including a fresh one. Measured
+on the two-branch case: no conflict, clean tree, and a merge commit whose index was
+byte-identical to a fresh render, with no hook and **no `git config` at all**.
+
+**Finding 3 — union's failure mode is visible and non-destructive, unlike `ours`.** With
+the harder collision — the feature branch *closes* a plan (its row is rewritten and
+re-sorts) while the base *adds* one — union keeps both versions of the changed row, so
+plan 001 appears twice, once `draft` and once `done`. That is wrong, but it is
+**stale-and-loud**: no row is lost, the table still renders, and `planners index .`
+repairs it. `merge=ours` fails the opposite way — it silently **drops** the incoming
+branch's rows, which is the same "looks like success" failure the plan already rejects
+for a regenerating merge driver, and it costs a per-clone config to get.
+
+**Revised design.** One committed part, no per-clone git state:
+
+| Part | Kind | Status |
+|---|---|---|
+| `.gitattributes`: `.planners/README.md merge=union` | committed repo content | keep |
+| `git config merge.ours.driver true` | per-clone `.git/config` | **dropped** — union needs none |
+| a merge-stage hook that regenerates the index | committed config + per-clone registration | **dropped** — cannot reach the merge commit (finding 1) |
+
+Steps 2 and 3 shrink accordingly: `install` writes and `install --check` reports one
+line in `.gitattributes`. Step 4 grows in importance — with the hook gone, a stale-index
+check is the only thing that catches union's duplicate row, so it moves from optional to
+the repair mechanism.
+
+**Still unverified: whether GitHub's server-side merge honors `merge=union`.** It matters
+because `close` merges through `gh pr merge`, not a local `git merge`. Everything above
+was measured locally. If GitHub ignores the attribute the result is today's behavior —
+a conflict surfaced in the PR — so this is a no-regression risk, not a correctness one,
+but the plan should not claim the PR path is fixed until it is seen to be.
+
+**Step 3's inherited follow-ups survive the shrink.** 005's staged-diff check and 006's
+fresh-clone hook-registration finding were routed here because `install --check` is the
+detector for per-clone state. Union removes the per-clone state *this* plan introduced;
+it does not remove the pre-commit hook registration those two are about, so step 3 still
+has that job.
