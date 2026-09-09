@@ -41,3 +41,18 @@ Give the close skill an explicit no-PR path and a rule for conflicts:
 - Update the `close` skill instructions (and `pipeline`, which embeds close).
 - Frontmatter semantics already support it: merged-without-PR is the
   documented `pr: null` case.
+
+### Note (2026-09-08): the local merge no longer collides on the index
+
+Plan 004 marks `.planners/README.md` as `merge=union` in `.gitattributes`, and
+that attribute applies to exactly the merge this plan performs — a local
+`git merge --no-ff` into the base. So the no-PR path does **not** need to handle
+an index conflict, and it is the path where 004's fix works best: GitHub's
+server-side merge ignores the attribute, but nothing here goes through GitHub.
+
+Two consequences for the steps above. The local merge can leave a plan's row
+duplicated when both branches rewrote it (union keeps both), so a no-PR close
+should run `planners index .` after merging and commit the result — the same
+repair any local merge needs. And `planners validate` now fails on an index that
+disagrees with the frontmatter, so the review gate does not have to check for
+this by eye; a stale index blocks the commit on its own.

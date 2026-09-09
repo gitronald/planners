@@ -106,10 +106,17 @@ GITATTRIBUTES_REL = Path(".gitattributes")
 # holds — so the regeneration would land as an uncommitted change either way.
 #
 # Reach: **local merges only**. GitHub's server-side merge does not apply the
-# attribute (measured — see plan 004), so a PR whose two sides both touched the
-# index still reports a conflict there. What changes is the resolution: merging
-# the base in locally resolves the index by itself instead of by hand-editing a
-# generated file.
+# attribute, so a PR whose two sides both touched the index still reports a
+# conflict there. What changes is the resolution: merging the base in locally
+# resolves the index by itself instead of by hand-editing a generated file.
+#
+# That is measured, not assumed — two PR pairs with identical index edits,
+# differing only in the attribute, both reported CONFLICTING on GitHub while the
+# attribute pair merged cleanly locally (plan 004's Log has the setup). Do not
+# re-run that probe. The one thing it did not rule out: GitHub may read
+# .gitattributes from the repository's *default* branch, which did not carry the
+# attribute when this was measured. Once a release lands it on the default
+# branch, a PR that conflicts only on the index is the free re-test.
 INDEX_MERGE_ATTR = "merge=union"
 INDEX_ATTR_PATTERN = INDEX_PATH.as_posix()
 INDEX_ATTR_LINE = f"{INDEX_ATTR_PATTERN} {INDEX_MERGE_ATTR}"
