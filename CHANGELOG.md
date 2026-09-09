@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-09
+
 ### Fixed
 
 - `install` no longer raises on a `.gitattributes` it cannot read. The file was
