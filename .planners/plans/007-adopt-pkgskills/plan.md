@@ -5,7 +5,7 @@ status: active
 branch: feature/adopt-pkgskills
 created: 2026-09-11T17:50:47-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/24
 ---
 
 # Adopt pkgskills for prompt packaging and install
