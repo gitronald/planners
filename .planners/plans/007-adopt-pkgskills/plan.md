@@ -17,19 +17,27 @@ grew: shipping prompts as package data, printing them on demand through a `skill
 command, and materializing version-stamped stubs where the harness reads them.
 That machinery was extracted from here, and the two have not diverged —
 `planners/proc.py` and `pkgskills/proc.py` are code-identical, differing only in
-docstrings. Adopting it deletes roughly a third of this package's source — the skill,
-rule, and permissions modules, the generic half of `install.py`, and the four
+docstrings. Adopting it deletes close to half of this package's source — the
+skill, rule, and permissions modules, nearly all of `install.py`, and the four
 CLI commands that front them — and leaves the plan-lifecycle logic untouched.
 
 ### Dependency
 
-Depend on the **published distribution** — `pkgskills>=0.3.0` from PyPI, resolved
+Depend on the **published distribution** — `pkgskills>=0.4.0` from PyPI, resolved
 normally. Not a path dependency, not an editable install against a local
-checkout, not a git URL. `0.3.0` is the floor because it closes the three gaps a
-review of this plan found in `0.2.0` (upstream plan 007): a same-dist
-pre-adoption stamp now gets an honest `foreign` reason, `InstallReport` carries
-`force`, and a bare `skill` on a dispatcher host lists its bodies. The upstream
-dev cycle is at `0.3.1a0` with nothing behind it but the prerelease bump. Runtime cost is one transitive dependency
+checkout, not a git URL. Two upstream releases came out of reviewing this plan,
+and `0.4.0` is the floor because both are needed:
+
+- `0.3.0` (upstream plan 007) closed three adoption gaps: a same-dist
+  pre-adoption stamp gets an honest `foreign` reason, `InstallReport` carries
+  `force`, and a bare `skill` on a dispatcher host lists its bodies.
+- `0.4.0` (upstream plan 008) moved the repo-wiring machinery up:
+  `pkgskills.precommit` (`Hook`, `wire`, `checks`, `add_dependency`), `Line`
+  on `Host.lines` for one owned line in a file the host does not own, and
+  `previous_names` on `Rule` / `Skill` / `Agent`.
+
+The upstream dev cycle is at `0.4.1a0`, carrying the prerelease bump and a
+`Line` hardening commit (normalized line text, `..` paths rejected). Runtime cost is one transitive dependency
 (`typer`), which this package already requires, and `requires-python` matches.
 
 ### What moves
@@ -40,6 +48,9 @@ dev cycle is at `0.3.1a0` with nothing behind it but the prerelease bump. Runtim
 | `planners/permissions.py` | `Host.permissions` — the ladder's rule *data* stays as declaration, the merge/render/settings-path code goes |
 | `planners/proc.py` | **stays** — see the decision below; `pkgskills.proc` is code-identical but is not imported |
 | `planners/install.py` — stamping, mode resolution, holder rendering, artifact path/write/check, drift + foreign detection, stale removal | `pkgskills.artifacts` |
+| `planners/install.py` — pre-commit config wiring, `pre-commit install`, `core.hooksPath` detection, hook status rows, `uv add --dev pre-commit` | `pkgskills.precommit`: two `Hook` declarations, `wire(report, HOOKS)` in `after_install`, `checks(...)` in `extra_checks`, `add_dependency` |
+| `planners/install.py` — the `.gitattributes merge=union` line and its four-status check | `Line(".gitattributes", "<index path>", "merge=union")` on `Host.lines` |
+| `planners/install.py` — `superseded_legacy_rule` | `previous_names=("plan-files",)` on the `Rule` |
 | `planners/cli.py` — the `skill`, `rule`, `install`, and `permissions` commands | `register(app, HOST)` |
 
 The prompt files themselves do not move. `pkgskills` reads only the last two
@@ -48,18 +59,18 @@ already this package's layout, so `planners/prompts/` stays exactly as it is.
 
 ### What stays
 
-Everything about plans, plus the repo-wiring half of `install.py`:
+Everything about plans, plus the *declarations* of the repo wiring, which is
+per-clone state the library cannot know about but can now act on:
 
-- pre-commit config wiring, hook registration, and `core.hooksPath` detection
-- the `.gitattributes merge=union` line for the generated index
-- the `post-merge` index-regeneration hook
-- supersession of the legacy hand-maintained convention file
+- two `Hook`s — `planners-validate` at `pre-commit` and `planners-index` at
+  `post-merge` — passed to `precommit.wire` from `after_install` and to
+  `precommit.checks` from `extra_checks`, so the shared `install --check`
+  table keeps reporting hook status as non-gating rows
+- one `Line` for the generated index's `merge=union` attribute
+- the legacy convention-file name, as the rule's `previous_names`
 
-These are per-clone state `pkgskills` cannot see, and they keep working through
-the two hooks the library provides for exactly this: `Host.after_install` for the
-write side, and `Host.extra_checks` for the `install --check` table, so the
-shared table keeps reporting hook status rather than this package re-implementing
-its own `install` command around it.
+That is a few dozen lines in the `HOST` declaration and one small hook
+function. `install.py` itself goes away.
 
 `base.py`, `index.py`, `metadata.py`, and the `add` / `finalize` / `activate` /
 `index` / `validate` / `schema` / `base` commands are untouched.
@@ -81,10 +92,12 @@ the rule is always written. A host-declared install option is an upstream
 design question, deferred there until a second host needs it; do not add a
 planners-local wrapper command to keep the flags alive.
 
-`--force` keeps its second job. Today it also authorizes rewriting a differing
-`.gitattributes` line; `InstallReport.force` (added in `0.3.0` for exactly
-this) carries the user's consent into `after_install`, so `wire_gitattributes`
-reads it from the report rather than from a CLI flag.
+`--force` keeps its second job with no host code. Today it also authorizes
+rewriting a differing `.gitattributes` line; a `Line` is rewritten when drifted
+only under `--force`, which is the same contract, enforced by the library.
+`--full`'s dependency step survives as `precommit.add_dependency`, which the
+library keeps opt-in and separate from `wire`; with no flag to trigger it, the
+README tells a consumer to run `uv add --dev pre-commit` once instead.
 
 Two smaller behavior changes ride along:
 
@@ -100,22 +113,20 @@ Two smaller behavior changes ride along:
 **Keep the local module. Do not import `pkgskills.proc`.** It is the one row in
 the table above that does *not* move.
 
-All seven `proc.run` call sites remain planners code after the refactor — four in
-the pre-commit/hook wiring that stays behind `after_install`, and three in
-lifecycle git (`cli.py` ×2, `base.py` ×1). No caller migrates upstream, so
-nothing about this adoption forces the question; the only question is whether to
-delete 76 zero-dependency lines in order to import an identical implementation
-from a dependency. Three reasons not to:
+Four of the seven `proc.run` call sites — the pre-commit/hook wiring — leave
+with `install.py`; `pkgskills.precommit` runs those through its own
+`pkgskills.proc.run`. Three remain in lifecycle git (`cli.py` ×2, `base.py` ×1),
+and those are the question: whether to delete 76 zero-dependency lines in order
+to import an identical implementation from a dependency. Two reasons not to:
 
-- **Upstream has no internal consumer.** `pkgskills` runs no subprocesses of its
-  own and says so in the module docstring; the only references are the
-  re-export in `__init__.py` and its own `test_proc.py`. A module nothing in its
-  home package calls is the most likely to be refactored or drift, because
-  nothing there breaks when it does.
 - **It is the commit-safety guard** (see plan 006). A future release trimming
   `LOCATION_ENV` or changing `pinned_env` would mean planners writing commits
   into the wrong repository, silently — the exact failure the module prevents.
-  On a `>=0.2.0` range against a 0.x package, any minor bump can move it.
+  On a `>=0.4.0` range against a 0.x package, any minor bump can move it.
+  (An earlier draft added that upstream had no internal consumer of its copy;
+  `0.4.0` gave it one in `precommit`, so that argument is gone — but a consumer
+  wiring hooks exercises the guard differently from one committing plans, and
+  does not protect the commit path.)
 - **No cohesion.** "Which repository does this git command act on" is not a
   prompt-packaging concern; sharing the code would not make the concept shared.
 
@@ -131,19 +142,18 @@ either way.
    `permissions` ladder). Register it under the `pkgskills.hosts` entry-point
    group so `pkgskills hosts` discovers it.
 2. Mount `register(app, HOST)` and delete the four superseded CLI commands.
-3. Move pre-commit and `.gitattributes` wiring behind `after_install` /
-   `extra_checks`, with the gitattributes rewrite gated on
-   `InstallReport.force`; delete the generic half of `install.py` and the three
-   dropped flags.
+3. Declare the two `Hook`s, the `Line`, and the rule's `previous_names`; set
+   `after_install` to call `precommit.wire` and `extra_checks` to return
+   `precommit.checks`; delete `install.py` and the three dropped flags.
 4. Delete `skill.py`, `rule.py`, `permissions.py`, and resolve the `proc.py`
    decision.
 5. Prune the superseded tests; keep and re-point the ones covering what stays.
    Add `assert_spec_conformant(HOST)` and `assert_prompt_commands(HOST, app)`
    from `pkgskills.testing`, which check statically what was previously only
    caught by hand.
-6. Reinstall and verify: `install --check` reports `ok` across holder, rule,
-   gitattr, and hook, and the emitted stub and rule are byte-comparable to
-   today's apart from the stamp.
+6. Reinstall and verify: `install --check` reports `ok` for the holder, the
+   rule, and the `.gitattributes` line, `active` for both hooks, and the
+   emitted stub and rule are byte-comparable to today's apart from the stamp.
 
 ### Compatibility
 
@@ -163,6 +173,11 @@ and the word is `foreign` rather than `drifted`, so the changelog note must say
 exactly that and name `--force` as the remedy. The three dropped install flags
 and the removed overwrite prompt go in the same note.
 
+The existing `.pre-commit-config.yaml` entries and `.gitattributes` line need
+nothing: `precommit.wire` judges presence by the `- id:` line and resyncs an
+entry only on a genuine mode switch, and a `Line` whose key already carries the
+value reports `ok`. A consumer that customized its hook entry keeps it.
+
 ### Out of scope
 
 Any change to plan-file semantics, frontmatter, the index format, or the
@@ -179,3 +194,9 @@ directory and every plan in it must be unaffected.
   `>=0.3.0`, to drop `--full` / `--no-activate` / `--no-rule` explicitly, to
   correct the compatibility story (`foreign`, no metadata change), to keep
   `proc.py` out of the moves table, and to add the entry-point registration.
+- `pkgskills` `0.4.0` shipped upstream plan 008 (`precommit`, `Line`,
+  `previous_names`). Revised this plan to require `>=0.4.0`, to move the hook
+  wiring, the gitattributes line, and the legacy-rule supersession into the
+  moves table, to shrink "what stays" to declarations, to delete `install.py`
+  outright, and to drop the "no upstream consumer" argument from the `proc.py`
+  decision now that `precommit` consumes the upstream copy.
