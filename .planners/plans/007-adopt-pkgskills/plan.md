@@ -1,8 +1,8 @@
 ---
 id: 7
 slug: adopt-pkgskills
-status: draft
-branch:
+status: active
+branch: feature/adopt-pkgskills
 created: 2026-09-11T17:50:47-07:00
 concluded:
 pr:
