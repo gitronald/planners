@@ -262,3 +262,25 @@ directory and every plan in it must be unaffected.
   inverted pre-commit's default while its docstring claimed pass-through.
   Fixed upstream and shipped as `0.5.1`; raised the floor to `>=0.5.1` and
   removed the workaround from "what stays".
+- Implemented against the published `pkgskills` `0.5.1`. `planners/host.py`
+  declares `HOST` (the dispatcher `Skill` with today's holder description, the
+  `Rule` with `previous_names=("plan-files",)`, the two `Hook`s, the index
+  `Line`, and the `permissions` increments) and is registered under
+  `pkgskills.hosts`. `cli.py` mounts `register(app, HOST)`; `install.py`,
+  `skill.py`, `rule.py`, `permissions.py`, and their tests are deleted, and
+  `proc.py` stays. `planners.get_skill` / `list_skills` left the public API with
+  `skill.py`. A new `tests/test_host.py` covers what stays: the install writes,
+  the hook entries, `--force` on the `.gitattributes` line, the `foreign`
+  refusal of a pre-adoption holder, and the permissions ladder.
+- `assert_spec_conformant` does not pass as the plan assumed: `0.5.1` flags all
+  seven flat `skills/<name>.md` sources under its `entry-file` rule (they would
+  have to be `<name>/SKILL.md`). Kept the prompt layout, per "the prompt files do
+  not move" — they are dispatcher sources, never installed as skills of their
+  own — and the test checks the spec with only that rule excluded; no other rule
+  fires. `assert_prompt_commands` passes unchanged.
+- Verified: the rendered rule is byte-identical to the pre-adoption render apart
+  from the stamp line, in both modes; the stub carries the same two fields,
+  quoted, over the library's dispatcher body. A local `install --force` in the
+  worktree reports the stub, the `.gitattributes` line, and both hooks `ok` /
+  `active`; its local rule reads `stale` only because a global rule also exists
+  on the machine, which is the library's shadowing report working as intended.
