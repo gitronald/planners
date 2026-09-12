@@ -289,3 +289,9 @@ directory and every plan in it must be unaffected.
   The rendered stub and rule are byte-identical before and after the move, and
   the built wheel ships all seven `SKILL.md` files. This amends "the prompt files
   do not move": the rule stays flat at `rules/planners.md`.
+- Gave each of the seven bodies `metadata.version: "1.0.0"` (quoted, since
+  unquoted YAML reads it as a number and the spec check rejects it). The version
+  does not reach the installed `/planners` stub: a dispatcher generates its own
+  frontmatter and lifts no `metadata` from its sources (only a single-source
+  skill passes it through), so the stub still declares none and did not drift.
+  It is informational only; nothing in `pkgskills` reads it.
