@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The prompt-packaging and install machinery now comes from
+  [pkgskills](https://pypi.org/project/pkgskills/) (`>=0.5.1`), a new runtime
+  dependency (it brings in PyYAML). `skill`, `rule`, `install`, and `permissions`
+  are mounted from it; plan files, the index, and the lifecycle commands are
+  unchanged. `pkgskills hosts` now discovers planners through the
+  `pkgskills.hosts` entry point.
+- **Every existing install reports `foreign` after upgrading, not `drifted`.**
+  The generated stamp gains a `via pkgskills X` token, so a holder or rule written
+  by an earlier release cannot be verified as generated. A bare `install` refuses
+  to overwrite it; run `planners install --force` (`--local --force` for a
+  per-repo install) once to replace both. The existing `.pre-commit-config.yaml`
+  entries and `.gitattributes` line need nothing.
+- `install --check` prints the pkgskills table: one row per artifact, one for the
+  `.gitattributes` line, and a non-gating row per hook (`hook planners-validate`,
+  `hook planners-index`), replacing the `holder:`/`rule:`/`gitattr:`/`hook:` lines.
+- The generated `/planners` stub quotes its `name` and `description` frontmatter
+  and uses the pkgskills dispatcher body; the rule is unchanged apart from the stamp.
+
+### Removed
+
+- `install --full`, `--no-activate`, and `--no-rule`. The hooks are always
+  registered and the rule always written; instead of `--full`, run
+  `uv add --dev pre-commit` once.
+- The interactive confirmation before `install --force` overwrites a file; a bare
+  `install` over a file it did not generate now refuses with a pointer to `--force`.
+- `planners.get_skill` and `planners.list_skills` from the package's public API.
+
 ### Added
 
 - `install` now wires a `planners-index` hook at `post-merge`, so the plan index
