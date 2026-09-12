@@ -78,7 +78,16 @@ per-clone state the library cannot know about but can now act on:
 - two `Hook`s — `planners-validate` at `pre-commit` and `planners-index` at
   `post-merge` — passed to `precommit.wire` from `after_install` and to
   `precommit.checks` from `extra_checks`, so the shared `install --check`
-  table keeps reporting hook status as non-gating rows
+  table keeps reporting hook status as non-gating rows. `Hook` defaults
+  `pass_filenames` to **false**, which suits the index hook and breaks the
+  validate hook: `validate` requires paths, so the validate `Hook` must set
+  `pass_filenames=True` (today's entry omits the key, so pre-commit passes the
+  matched files). Declared that way, both rendered entries match today's
+  key for key.
+- the `permissions` ladder is only the four `_INCREMENT` tuples. The
+  bare-`planners` grant a global install needs (`_GLOBAL_ONLY`) goes: the
+  library derives that rule from the host's invocation and adds it at the
+  lowest granting level itself
 - one `Line` for the generated index's `merge=union` attribute
 - the legacy convention-file name, as the rule's `previous_names`
 
@@ -238,3 +247,9 @@ directory and every plan in it must be unaffected.
   stub and rule with the published `0.5.0` against this repo's installed
   holder and rule, and by running the `0.5.0` frontmatter check over the
   seven sources.
+- Checked the remaining seams against `0.5.0`: `Hook`, `wire`, `checks`,
+  `register`, `assert_spec_conformant`, and `assert_prompt_commands` all
+  exist with the signatures the plan assumes. Two notes added to "what
+  stays": the validate `Hook` needs `pass_filenames=True` or the hook runs
+  `validate` with no paths and fails on every commit, and the global-only
+  invocation grant is now derived by the library.
