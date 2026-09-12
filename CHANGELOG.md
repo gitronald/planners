@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-12
+
 ### Changed
 
 - The prompt-packaging and install machinery now comes from
