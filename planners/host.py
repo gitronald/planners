@@ -115,7 +115,7 @@ HOST = Host(
     artifacts=(
         Skill(
             name="planners",
-            sources=tuple(f"skills/{name}.md" for name in SKILL_NAMES),
+            sources=tuple(f"skills/{name}/SKILL.md" for name in SKILL_NAMES),
             description=HOLDER_DESCRIPTION,
         ),
         # Installs tool-namespaced as planners.md, superseding the hand-maintained

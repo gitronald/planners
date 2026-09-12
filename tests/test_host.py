@@ -4,8 +4,12 @@ from pathlib import Path
 
 import pytest
 from pkgskills import precommit
-from pkgskills.spec import SPEC, report
-from pkgskills.testing import Sandbox, assert_prompt_commands, sandbox
+from pkgskills.testing import (
+    Sandbox,
+    assert_prompt_commands,
+    assert_spec_conformant,
+    sandbox,
+)
 from typer.testing import CliRunner
 
 from planners.cli import app
@@ -30,11 +34,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Sandbox:
 
 
 def test_host_skills_follow_the_agent_skills_spec() -> None:
-    # The seven bodies are dispatcher sources, printed by `skill <sub>` and never
-    # installed as skills of their own, so they stay flat `skills/<name>.md`
-    # rather than `<name>/SKILL.md`; every other rule of the spec still applies.
-    violations = [v for v in SPEC.check_host(HOST) if v.rule != "entry-file"]
-    assert violations == [], report(violations, header="spec violations:")
+    assert_spec_conformant(HOST)
 
 
 def test_prompts_name_only_commands_the_cli_has() -> None:
