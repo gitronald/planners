@@ -284,3 +284,8 @@ directory and every plan in it must be unaffected.
   worktree reports the stub, the `.gitattributes` line, and both hooks `ok` /
   `active`; its local rule reads `stale` only because a global rule also exists
   on the machine, which is the library's shadowing report working as intended.
+- Reversed the `entry-file` exclusion above: moved the seven bodies to
+  `skills/<name>/SKILL.md` so the host passes `assert_spec_conformant` in full.
+  The rendered stub and rule are byte-identical before and after the move, and
+  the built wheel ships all seven `SKILL.md` files. This amends "the prompt files
+  do not move": the rule stays flat at `rules/planners.md`.
