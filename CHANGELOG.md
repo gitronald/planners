@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-12
+
+### Changed
+
+- The prompt-packaging and install machinery now comes from
+  [pkgskills](https://pypi.org/project/pkgskills/) (`>=0.5.1`), a new runtime
+  dependency (it brings in PyYAML). `skill`, `rule`, `install`, and `permissions`
+  are mounted from it; plan files, the index, and the lifecycle commands are
+  unchanged. `pkgskills hosts` now discovers planners through the
+  `pkgskills.hosts` entry point.
+- **Every existing install reports `foreign` after upgrading, not `drifted`.**
+  The generated stamp gains a `via pkgskills X` token, so a holder or rule written
+  by an earlier release cannot be verified as generated. A bare `install` refuses
+  to overwrite it; run `planners install --force` (`--local --force` for a
+  per-repo install) once to replace both. The existing `.pre-commit-config.yaml`
+  entries and `.gitattributes` line need nothing.
+- `install --check` prints the pkgskills table: one row per artifact, one for the
+  `.gitattributes` line, and a non-gating row per hook (`hook planners-validate`,
+  `hook planners-index`), replacing the `holder:`/`rule:`/`gitattr:`/`hook:` lines.
+- The generated `/planners` stub quotes its `name` and `description` frontmatter
+  and uses the pkgskills dispatcher body; the rule is unchanged apart from the stamp.
+
+### Removed
+
+- `install --full`, `--no-activate`, and `--no-rule`. The hooks are always
+  registered and the rule always written; instead of `--full`, run
+  `uv add --dev pre-commit` once.
+- The interactive confirmation before `install --force` overwrites a file; a bare
+  `install` over a file it did not generate now refuses with a pointer to `--force`.
+- `planners.get_skill` and `planners.list_skills` from the package's public API.
+
+### Added
+
+- `install` now wires a `planners-index` hook at `post-merge`, so the plan index
+  is regenerated automatically after a merge instead of being left for whoever
+  remembers. The `merge=union` attribute keeps a local merge from conflicting on
+  the generated index, but can leave a row duplicated when both sides rewrote the
+  same one — repairable only by regenerating from the plan files, and only after
+  the merge, once both sides' plans are on disk. Until now that step was manual
+  and its omission silent: a duplicated row surfaces as a `validate` failure some
+  commits later, well after the merge that caused it. Registration is included —
+  `pre-commit install` wires only the `pre-commit` hook, so activation now also
+  runs `--hook-type post-merge`, without which the config entry would never fire.
+  A config carrying only `planners-validate` predates this and has the new hook
+  appended on its next `install`, leaving its committed entry untouched.
+
+  Two limits, both documented in the generated rule: git skips `post-merge` when
+  a merge stops on conflicts (finish it by hand and run `planners index .`
+  yourself), and the regenerated index lands as an uncommitted change, since git
+  writes the merge tree before the hook runs — commit it alongside.
+
 ## [0.6.1] - 2026-09-09
 
 ### Fixed

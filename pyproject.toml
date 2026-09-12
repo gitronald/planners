@@ -1,12 +1,13 @@
 [project]
 name = "planners"
-version = "0.6.1"
+version = "0.7.0"
 description = ""
 authors = [
     {name = "gitronald", email = "gitronald@users.noreply.github.com"}
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "pkgskills>=0.5.1",
     "typer",
 ]
 readme = "README.md"
@@ -17,6 +18,9 @@ repository = "https://github.com/gitronald/planners"
 
 [project.scripts]
 planners = "planners.cli:app"
+
+[project.entry-points."pkgskills.hosts"]
+planners = "planners.host:HOST"
 
 [build-system]
 requires = ["hatchling"]
