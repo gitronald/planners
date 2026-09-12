@@ -293,10 +293,24 @@ wheels = [
 ]
 
 [[package]]
+name = "pkgskills"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/7b/6f94425cd4c570716771ea1bedbebacb3a77c77fef3a3ecd177a9e95f0a9/pkgskills-0.5.1.tar.gz", hash = "sha256:40a7c195e505b06ef347b4e3bd3c443621e3ba21cdecdc1d5fa997a22287df67", size = 62277, upload-time = "2026-09-12T18:54:52.531Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/79/3f922641bedc6b4e048a85ff39ed58f7bd78fb5c1fb046dccb24a3b97f2b/pkgskills-0.5.1-py3-none-any.whl", hash = "sha256:dea60682675b0d2ea6f027da59943e9cadbe38c784aa0f981ec3b009ece514e6", size = 65045, upload-time = "2026-09-12T18:54:51.104Z" },
+]
+
+[[package]]
 name = "planners"
 version = "0.6.2a0"
 source = { editable = "." }
 dependencies = [
+    { name = "pkgskills" },
     { name = "typer" },
 ]
 
@@ -311,7 +325,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typer" }]
+requires-dist = [
+    { name = "pkgskills", specifier = ">=0.5.1" },
+    { name = "typer" },
+]
 
 [package.metadata.requires-dev]
 dev = [
