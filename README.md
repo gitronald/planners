@@ -28,7 +28,7 @@ These tools can be used manually via CLI commands, but they are largely intended
    This will:
    - (Re)generate the global `~/.claude/skills/planners/SKILL.md` holder and
      `~/.claude/rules/planners.md` convention rule, which can change as the package version advances.
-   - Wire the `planners-validate` pre-commit hook into the project folder/repo's `.pre-commit-config.yaml` (registering it when `pre-commit` is available).
+   - Wire the `planners-validate` (pre-commit) and `planners-index` (post-merge) hooks into the project folder/repo's `.pre-commit-config.yaml` (registering them when `pre-commit` is available).
    - Give the generated index its merge semantics: a `.planners/README.md merge=union`
      line in the repo's `.gitattributes`, so a **local** merge whose two sides both
      added or closed plans stops conflicting on it. `union` is built into git, so the
@@ -37,10 +37,16 @@ These tools can be used manually via CLI commands, but they are largely intended
      index; merging the base in locally then resolves it without hand-editing a
      generated file.
 
-   `planners install --check` reports each part (`holder`, `rule`, `gitattr`) and
-   exits non-zero if any has drifted, plus a `hook` line saying whether the git hook
-   is actually registered **in this clone** — registration is per-clone state that a
-   fresh clone silently lacks, so it is reported rather than assumed.
+   `planners install --check` reports each part (the skill stub, the rule, and the
+   `.gitattributes` line) and exits non-zero unless all are `ok`, plus a row per hook
+   saying whether it is actually registered **in this clone** — registration is
+   per-clone state that a fresh clone silently lacks, so it is reported rather than
+   assumed. The hooks only fire once `pre-commit` is available: in a uv project, run
+   `uv add --dev pre-commit` once, then re-run `planners install`.
+
+   The install, check, and print commands (`install`, `skill`, `rule`, `permissions`)
+   come from [pkgskills](https://pypi.org/project/pkgskills/), which planners
+   declares itself to as a host.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 
@@ -93,6 +99,6 @@ GitHub auto-renders on folder browse.
 `planners install` writes a version-stamped, auto-loaded `~/.claude/rules/planners.md` (global) or
 `.claude/rules/planners.md` (per-repo). The rule is **owned by the package** — edit the convention in
 the package and reinstall; don't hand-edit the installed file. A hand-maintained `plan-files.md` is
-superseded by the generated `planners.md` (install warns, never deletes it).
+superseded by the generated `planners.md` (install reports it, and never deletes an unstamped one).
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes.

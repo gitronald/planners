@@ -82,8 +82,8 @@ if [ "$mode" = local ]; then
     "$planners_root" "$target")
   step "adding planners as an editable dev dependency ($rel)"
   ( cd "$target" && uv add --dev --editable "$rel" )
-  # `planners install --full` now folds these two steps (add pre-commit, then
-  # activate the hook) into one; kept explicit here for a transparent step list.
+  # Two explicit steps (add pre-commit, then activate the hook) so the step
+  # list stays transparent; `planners install` itself never adds the dependency.
   step "ensuring pre-commit is available"
   ( cd "$target" && uv add --dev pre-commit )
   step "writing the /planners holder + rule + wiring the pre-commit hook"

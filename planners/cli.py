@@ -1,27 +1,26 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``skill``, ``rule``, ``install``, ``add``, ``finalize``, ``activate``,
-``base``, ``index``, ``schema``, ``validate``. Filesystem and subprocess (git) work
-is confined to this module, ``install``, and the ``add`` helpers; the
-schema/index/skill/rule transforms stay pure. Every shell-out goes through
+Commands: ``add``, ``finalize``, ``activate``, ``base``, ``index``, ``schema``,
+``validate``, plus ``skill``, ``rule``, ``install``, and ``permissions``, which
+:func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
+subprocess (git) work is confined to this module and the ``add`` helpers; the
+schema/index transforms stay pure. Every shell-out goes through
 :mod:`planners.proc`, which pins it to an explicit repo root.
 """
 
-import json
 import re
 import secrets
 import shutil
 import sys
 from importlib import metadata
 from pathlib import Path
-from typing import Any
 
 import typer
+from pkgskills import register
 
 from planners import base as base_mod
-from planners import install as install_mod
-from planners import permissions as perms_mod
 from planners import proc
+from planners.host import HOST
 from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
     CLOSED_STATUSES,
@@ -34,8 +33,6 @@ from planners.metadata import (
     next_number,
     next_sub,
 )
-from planners.rule import RULE_NAMES, get_rule, list_rules
-from planners.skill import SKILL_NAMES, get_skill, list_skills
 from planners.utils import is_safe_slug, parse_frontmatter, split_frontmatter
 
 app = typer.Typer(
@@ -83,6 +80,10 @@ def main_callback(
     """Own a repo's plan-file lifecycle: schema, CLI, and skillstub."""
 
 
+# skill, rule, install, and permissions: the shared pkgskills command grammar.
+register(app, HOST)
+
+
 def _err(message: str) -> None:
     typer.echo(message, err=True)
 
@@ -98,69 +99,6 @@ def _shown(path: Path, root: Path) -> Path:
         return path.relative_to(root)
     except ValueError:
         return path
-
-
-def _confirm_force_overwrite(
-    path: Path, mode: install_mod.Mode, noun: str = "holder"
-) -> None:
-    """Show what a ``--force`` overwrite will destroy and require an Enter.
-
-    Generalized over the artifact ``noun`` (``"holder"`` or ``"rule"``). Only
-    reached when the existing file is *drifted* (differs from the canonical
-    render), so there is genuinely something to lose. Whether the file is
-    planners-generated (regenerated harmlessly) or hand-edited/foreign (custom
-    content lost) is the key signal, so it is surfaced. When stdin is not a TTY
-    (CI, a piped installer) the prompt is skipped — passing ``--force`` is itself
-    the authorization there — but the same context is still printed.
-    """
-    ours = install_mod.is_generated_artifact(path)
-    _err(f"--force will overwrite a drifted {noun}:")
-    _err(f"  path: {path}")
-    _err(f"  mode: {mode}")
-    if ours:
-        _err(f"  this is a planners-generated {noun} — it will be regenerated")
-    else:
-        _err(
-            "  this is NOT a planners-generated file (hand-edited or foreign) — "
-            "its contents will be lost"
-        )
-    if not sys.stdin.isatty():
-        _err("  stdin is not a TTY; proceeding because --force was given")
-        return
-    typer.prompt(
-        "  press Enter to overwrite (Ctrl-C to cancel)",
-        default="",
-        show_default=False,
-    )
-
-
-def _guard_artifact_overwrite(
-    root: Path,
-    version: str,
-    mode: install_mod.Mode,
-    art: install_mod.GeneratedArtifact,
-    noun: str,
-    *,
-    force: bool,
-) -> None:
-    """Block (or, with ``--force``, confirm) overwriting a drifted artifact.
-
-    Guards the file install is about to write for ``mode`` — don't clobber a
-    hand-edited (or unrelated) holder/rule without ``--force``. Names the path and
-    says "overwrite", since the blocking file may not be a planners artifact at
-    all. A non-drifted (matching or absent) artifact needs no guard.
-    """
-    if install_mod.check_artifact(root, version, mode, art) != "drifted":
-        return
-    path = install_mod.artifact_path(root, mode, art)
-    if not force:
-        _err(
-            f"a planners {noun} already exists at {path} and differs from what "
-            "planners would generate; re-run with --force to overwrite it, then "
-            "start a fresh context."
-        )
-        raise typer.Exit(1)
-    _confirm_force_overwrite(path, mode, noun)
 
 
 def _plan_files(plans_dir: Path) -> list[Path]:
@@ -304,26 +242,6 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
         return
     _err(f"error: {message}")
     raise typer.Exit(1)
-
-
-def _read_settings(path: Path) -> dict[str, Any]:
-    """Load a settings.json object (empty dict if absent); exit on malformed JSON.
-
-    A missing file is a fresh, empty settings object. A present file must parse as
-    a JSON object — a syntax error or a top-level array/scalar is a hard error
-    rather than a silent overwrite of whatever the user had there.
-    """
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        _err(f"could not read {path}: {exc}")
-        raise typer.Exit(1) from None
-    if not isinstance(data, dict):
-        _err(f"{path} is not a JSON object; refusing to overwrite it.")
-        raise typer.Exit(1)
-    return data
 
 
 def _index_document(metas: list[PlanMetadata], cols: str = "curated") -> str:
@@ -573,423 +491,6 @@ def _finalize_self_check(
             _err(f"  - {problem}")
         raise typer.Exit(1)
     typer.echo("self-check OK")
-
-
-@app.command()
-def skill(
-    name: str | None = typer.Argument(
-        None, help="Skill name; omit with --list to enumerate."
-    ),
-    list_skills_flag: bool = typer.Option(
-        False, "--list", help="List bundled skill names."
-    ),
-) -> None:
-    """Print a bundled skill's body (frontmatter stripped)."""
-    if list_skills_flag or name is None:
-        for sub in list_skills():
-            typer.echo(sub)
-        return
-    # Render the body for the installed holder's authoritative (stamped) mode so
-    # its commands are runnable as-is and agree with `install --check`; falls back
-    # to global when no holder is found.
-    mode = install_mod.resolve_mode(Path.cwd())
-    try:
-        typer.echo(get_skill(name, mode), nl=False)
-    except KeyError:
-        _err(f"unknown skill: {name!r}; choose from {', '.join(SKILL_NAMES)}")
-        raise typer.Exit(1) from None
-
-
-@app.command()
-def rule(
-    name: str | None = typer.Argument(
-        None, help="Rule name; omit with --list to enumerate."
-    ),
-    list_rules_flag: bool = typer.Option(
-        False, "--list", help="List bundled rule names."
-    ),
-) -> None:
-    """Print a bundled convention rule's body (frontmatter stripped)."""
-    if list_rules_flag or name is None:
-        for r in list_rules():
-            typer.echo(r)
-        return
-    # Render the body for the installed holder's authoritative (stamped) mode so
-    # its commands are runnable as-is and agree with `install --check`; falls back
-    # to global when no holder is found — the same resolution `skill` uses.
-    mode = install_mod.resolve_mode(Path.cwd())
-    try:
-        typer.echo(get_rule(name, mode), nl=False)
-    except KeyError:
-        _err(f"unknown rule: {name!r}; choose from {', '.join(RULE_NAMES)}")
-        raise typer.Exit(1) from None
-
-
-# What `--check` prints for each hook report, remedy included. The registration
-# is per-clone and absent by default in a fresh clone, so "not registered" is an
-# ordinary state to be told about, not an error — each line says what to run.
-_HOOK_REPORT: dict[install_mod.HookReport, str] = {
-    "active": "active",
-    "config_missing": (
-        "no planners-validate entry in .pre-commit-config.yaml; run `install`"
-    ),
-    "no_git_repo": "not registered (not a git repository)",
-    "hookspath_blocked": (
-        "not registered — git's core.hooksPath is set, so `pre-commit install` "
-        "refuses; unset it with `git config --unset-all core.hooksPath`"
-    ),
-    "not_registered": (
-        "NOT registered in this clone, so plan validation never fires; run "
-        "`uv run pre-commit install`"
-    ),
-}
-
-
-@app.command()
-def install(
-    force: bool = typer.Option(
-        False,
-        "--force",
-        help="Overwrite a drifted holder without prompting, and rewrite a "
-        "differing .gitattributes line for the plan index.",
-    ),
-    check: bool = typer.Option(
-        False,
-        "--check",
-        help="Report drift (ok|drifted|missing) per artifact, plus whether the "
-        "git hook is registered in this clone, and exit.",
-    ),
-    local_: bool = typer.Option(
-        False,
-        "--local",
-        help="Install the holder + rule into the repo's .claude/ (invoked via "
-        "`uv run planners`) instead of the default global ~/.claude/.",
-    ),
-    no_activate: bool = typer.Option(
-        False,
-        "--no-activate",
-        help="Write the hook config but do not register the git hook "
-        "(skip `pre-commit install`).",
-    ),
-    full: bool = typer.Option(
-        False,
-        "--full",
-        help="One-step setup: also `uv add --dev pre-commit`, then register the "
-        "git hook, so validation is live without a follow-up command.",
-    ),
-    no_rule: bool = typer.Option(
-        False,
-        "--no-rule",
-        help="Skip the .claude/rules/planners.md convention rule: with install, "
-        "don't write it (mirrors --no-activate); with --check, don't check it, so "
-        "a deliberately rule-less install can pass.",
-    ),
-) -> None:
-    """Generate the /planners holder + rule and wire the pre-commit hook."""
-    root = Path.cwd()
-    version = _version()
-
-    if full and no_activate:
-        _err("--full and --no-activate are mutually exclusive.")
-        raise typer.Exit(1)
-
-    # --check is mode-agnostic: the holder auto-detects its installed mode, and
-    # the rule is checked at *both* auto-loaded locations. Both gate — a
-    # drifted/missing rule is as stale as a drifted holder (both load into
-    # context), so either non-ok exits non-zero.
-    if check:
-        holder_status = install_mod.check(root, version)
-        # When both holders exist the global one wins (and is what `check`
-        # reports), so a per-repo stub is silently shadowed — say so, or the
-        # local stub's self-check looks like it's verifying itself when it isn't.
-        if install_mod.both_holders_present(root):
-            _err(
-                "note: both a global and a per-repo /planners holder exist; "
-                "--check reports the global one, which takes precedence."
-            )
-        typer.echo(f"holder:  {holder_status}")
-        if no_rule:
-            # Symmetric with how `install --no-rule` skips *writing* the rule: a
-            # deliberately rule-less install passes --check by also passing
-            # --no-rule, so the rule it never installed is not held against it.
-            typer.echo("rule:    skipped (--no-rule)")
-            ok = holder_status == "ok"
-        else:
-            # The rule auto-loads from ~/.claude/rules/ AND <repo>/.claude/rules/
-            # at once, so check both — a stale per-repo rule left behind by a
-            # switch to global is real drift even when the global rule is ok, and a
-            # local-only rule with no holder must not read as missing.
-            rule_check = install_mod.check_rule(root, version)
-            typer.echo(f"rule:    {rule_check.status}")
-            for loc, loc_status in rule_check.locations.items():
-                if loc_status == "drifted":
-                    path = install_mod.artifact_path(root, loc, install_mod.RULE)
-                    _err(
-                        f"note: the {loc} convention rule at {path} is drifted or "
-                        "stale and is still auto-loaded into context; remove it or "
-                        "re-run install to regenerate it."
-                    )
-            ok = holder_status == "ok" and rule_check.status == "ok"
-
-        # The generated index's merge attribute. Committed repo content, so it
-        # travels with a clone and gates like the other artifacts: a repo that
-        # has not re-installed since it shipped is drifted, and --force migrates
-        # a line that says something else.
-        attr_status = install_mod.check_gitattributes(root)
-        typer.echo(f"gitattr: {attr_status}")
-        if attr_status == "drifted":
-            _err(
-                f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
-                f"`{install_mod.installed_index_attr(root)}`, not "
-                f"`{install_mod.INDEX_ATTR_LINE}`; `install --force` rewrites "
-                "that line."
-            )
-        elif attr_status == "unreadable":
-            # Named separately from `drifted` because `--force` is not the
-            # remedy: `install` refuses to rewrite a file it cannot read, so
-            # pointing at it would send the user in a circle.
-            _err(
-                f"note: {install_mod.GITATTRIBUTES_REL} exists but cannot be "
-                "read as UTF-8; `install` leaves it alone rather than "
-                "overwriting it — fix the file, then re-run install."
-            )
-        ok = ok and attr_status == "ok"
-
-        # Reported, never gated. Hook registration is per-clone git state that a
-        # fresh clone lacks and that `core.hooksPath` can block outright, so a
-        # consumer can be correctly installed and still not have it — but a hook
-        # that never fires is indistinguishable from one that finds nothing
-        # wrong, which is why it gets a line of its own.
-        hook = install_mod.report_hook(root)
-        typer.echo(f"hook:    {_HOOK_REPORT[hook]}")
-        raise typer.Exit(0 if ok else 1)
-
-    mode: install_mod.Mode = "local" if local_ else "global"
-
-    # Detect a genuine mode switch from the holder that exists *before* this
-    # install writes the new one (afterwards the just-written holder would always
-    # read as the requested mode). Only a real switch should resync the per-repo
-    # hook entry; a same-mode re-install must leave a deliberate committed entry
-    # alone — e.g. refreshing the global holder from a repo that keeps
-    # `uv run planners validate`.
-    prior = install_mod.resolve_installed_holder(root)
-    prior_mode = prior[1] if prior is not None else None
-    switching = prior_mode is not None and prior_mode != mode
-
-    # Guard each artifact we're about to write for this mode, not whatever is
-    # already installed — don't clobber a hand-edited (or unrelated) holder/rule
-    # without --force. Guard both up front so a blocked rule never leaves a
-    # half-written install (holder written, rule refused).
-    _guard_artifact_overwrite(
-        root, version, mode, install_mod.HOLDER, "holder", force=force
-    )
-    if not no_rule:
-        _guard_artifact_overwrite(
-            root, version, mode, install_mod.RULE, "rule", force=force
-        )
-
-    if mode == "global" and not install_mod.bare_cli_available():
-        _err(
-            "warning: `planners` is not on PATH; the global holder dispatches via "
-            "bare `planners`. Install it with `uv tool install --editable <path-to-"
-            "planners>` (pre-PyPI) or `uv tool install planners` once published — or "
-            "re-run with `--local` to install into this repo. Writing artifacts anyway."
-        )
-
-    path = install_mod.write_holder(root, version, mode)
-    # The global holder lives under $HOME, outside the repo; show it as-is.
-    typer.echo(f"wrote {_shown(path, root)}")
-
-    removed = install_mod.remove_stale_holder(root, mode)
-    if removed is not None:
-        typer.echo(f"removed stale local holder {_shown(removed, root)}")
-    elif mode == "local" and install_mod.both_holders_present(root):
-        _err(
-            "note: a global planners holder exists at "
-            f"{install_mod.holder_path(root, 'global')} and takes precedence over "
-            "this per-repo one, so the local stub you just wrote will be shadowed "
-            "— remove the global holder, or drop --local to use it."
-        )
-
-    # The convention rule rides the holder's resolved mode (one bundled value, not
-    # an independent axis). --no-rule skips it, mirroring --no-activate for the hook.
-    if not no_rule:
-        rule_path = install_mod.write_artifact(root, version, mode, install_mod.RULE)
-        typer.echo(f"wrote {_shown(rule_path, root)}")
-        rule_removed = install_mod.remove_stale(root, mode, install_mod.RULE)
-        if rule_removed is not None:
-            typer.echo(f"removed stale local rule {_shown(rule_removed, root)}")
-        # A hand-maintained plan-files.md on the same topic is a contradiction
-        # risk; it is not ours to delete (no generated marker), so warn instead.
-        legacy = install_mod.superseded_legacy_rule(root, mode)
-        if legacy is not None:
-            _err(
-                f"note: a hand-maintained {legacy} is superseded by the generated "
-                f"{rule_path.name}; remove it so the repo doesn't carry two rules "
-                "on the same topic. planners will not delete it (not generated)."
-            )
-
-    wired = install_mod.wire_precommit(root, mode, resync=switching)
-    typer.echo(
-        "wrote pre-commit hook config"
-        if wired
-        else "pre-commit hook config already present"
-    )
-
-    # The generated index is tracked, so it has merge semantics whether or not
-    # anyone picks them; `merge=union` is the one part of that fix a repository
-    # can carry by itself (see install.INDEX_MERGE_ATTR).
-    attr_before = install_mod.check_gitattributes(root)
-    if install_mod.wire_gitattributes(root, force=force):
-        typer.echo(f"wrote {install_mod.GITATTRIBUTES_REL} index merge attribute")
-    elif attr_before == "drifted":
-        _err(
-            f"note: {install_mod.GITATTRIBUTES_REL} gives the plan index "
-            f"`{install_mod.installed_index_attr(root)}`, not "
-            f"`{install_mod.INDEX_ATTR_LINE}`; left alone as deliberate repo "
-            "content — re-run with --force to rewrite that line."
-        )
-    elif attr_before == "unreadable":
-        # Without this branch an unreadable file fell through to "already
-        # present" — the one thing install could not possibly have verified.
-        _err(
-            f"note: {install_mod.GITATTRIBUTES_REL} exists but cannot be read "
-            "as UTF-8, so the plan index has no merge attribute and install "
-            "will not overwrite the file to add one; fix the file, then re-run."
-        )
-    else:
-        typer.echo("index merge attribute already present")
-
-    # --full opts into the one invasive step the default install avoids: putting
-    # pre-commit in the consumer's env so the hook can actually run. Best-effort
-    # — a failure degrades to the same instruction the default path prints.
-    if full:
-        if install_mod.ensure_precommit_dependency(root):
-            typer.echo("added pre-commit dev dependency (uv add --dev pre-commit)")
-        else:
-            _err(
-                "warning: `uv add --dev pre-commit` did not succeed; add it "
-                "yourself, then run `uv run pre-commit install` to activate."
-            )
-
-    # Register the git hook (best-effort) and report exactly what is true — the
-    # whole point of this plan is to never claim an active hook when only the
-    # config was written.
-    status = install_mod.activate_precommit(root, attempt=not no_activate)
-    if status == "activated":
-        typer.echo("pre-commit hook activated")
-    elif status == "already_active":
-        typer.echo("pre-commit hook already active")
-    elif status == "hookspath_blocked":
-        # config_only's cause is known precisely here: git's core.hooksPath is set,
-        # so `pre-commit install` refuses. Name that cause and the real remedies
-        # rather than the catch-all "pre-commit unavailable", which would send the
-        # user to a command that will refuse the same way.
-        typer.echo(
-            "pre-commit hook config written but NOT active: git's core.hooksPath "
-            "is set, so `pre-commit install` refuses to register the hook. Unset "
-            "it with `git config --unset-all core.hooksPath`, then run `uv run "
-            "pre-commit install` — or install the validate hook into your "
-            "configured core.hooksPath directory manually."
-        )
-    elif no_activate:
-        typer.echo(
-            "skipped hook activation (--no-activate); "
-            "run `uv run pre-commit install` to activate it"
-        )
-    elif not install_mod.is_git_repo(root):
-        # config_only with a different cause than a missing tool: there is no git
-        # repo to register a hook in, so pointing at `pre-commit install` (which
-        # needs one) would be the dishonest message this plan exists to avoid.
-        typer.echo(
-            "pre-commit hook config written; not a git repository, so the git "
-            "hook was not registered — run `git init`, then `uv run pre-commit "
-            "install`, to activate"
-        )
-    else:
-        typer.echo(
-            "pre-commit hook config written but NOT active (pre-commit "
-            "unavailable); run `uv add --dev pre-commit && uv run pre-commit "
-            "install` — or re-run with --full — to activate"
-        )
-
-
-@app.command()
-def permissions(
-    level: str = typer.Option(
-        "assist",
-        "--level",
-        help="Automation level, lowest to highest: none|assist|confirm|full (or 0-3).",
-    ),
-    local_: bool = typer.Option(
-        True,
-        "--local/--global",
-        help="Target the repo's .claude/settings.local.json (default) or the "
-        "user-wide ~/.claude/settings.json.",
-    ),
-    apply: bool = typer.Option(
-        False,
-        "--apply",
-        help="Merge the rules into settings.json (default: print the block only).",
-    ),
-) -> None:
-    """Print or apply an automation-level permission profile for planners' commands.
-
-    Higher levels pre-authorize more of the lifecycle (fewer prompts): `assist`
-    grants the local, reversible spine plus the self-authored PR writes, `confirm`
-    adds `git push`, and `full` adds the irreversible `gh pr merge`. The default
-    prints a paste-ready block; `--apply` merges it additively into settings.json,
-    never downgrading an existing deny/ask rule.
-    """
-    try:
-        lvl = perms_mod.parse_level(level)
-    except ValueError:
-        _err(
-            f"unknown level: {level!r}; choose from "
-            f"{', '.join(perms_mod.levels())} (or 0-3)"
-        )
-        raise typer.Exit(1) from None
-
-    mode: install_mod.Mode = "local" if local_ else "global"
-    root = Path.cwd()
-    rules = perms_mod.rules_for(lvl, mode)
-    path = perms_mod.settings_path(root, mode)
-
-    if not apply:
-        typer.echo(f"# automation level: {lvl.value} ({mode})")
-        typer.echo(f"# target: {_shown(path, root)}")
-        if not rules:
-            typer.echo("# no rules — everything falls to the classifier")
-        typer.echo(perms_mod.render_block(rules), nl=False)
-        return
-
-    settings = _read_settings(path)
-    existing = settings.get("permissions")
-    perms_block = existing if isinstance(existing, dict) else {}
-    result = perms_mod.merge_allow(perms_block, rules)
-
-    if not result.added:
-        # Nothing new to grant (level `none`, or every rule is already allowed or
-        # held by an existing deny/ask): leave the file untouched rather than
-        # create or reformat it for a no-op write.
-        typer.echo(f"no new rules to add at level {lvl.value} ({mode})")
-        for rule in result.already:
-            typer.echo(f"  = {rule} (already allowed)")
-        for rule, reason in result.skipped:
-            _warn(f"  ! {rule} skipped ({reason})")
-        return
-
-    settings["permissions"] = result.permissions
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-
-    typer.echo(f"wrote {_shown(path, root)} (level {lvl.value}, {mode})")
-    for rule in result.added:
-        typer.echo(f"  + {rule}")
-    for rule in result.already:
-        typer.echo(f"  = {rule} (already allowed)")
-    for rule, reason in result.skipped:
-        _warn(f"  ! {rule} skipped ({reason})")
 
 
 @app.command()

@@ -1,11 +1,11 @@
 ---
 id: 7
 slug: adopt-pkgskills
-status: active
+status: done
 branch: feature/adopt-pkgskills
 created: 2026-09-11T17:50:47-07:00
-concluded:
-pr:
+concluded: 2026-09-12T12:57:25-07:00
+pr: https://github.com/gitronald/planners/pull/24
 ---
 
 # Adopt pkgskills for prompt packaging and install
@@ -262,3 +262,72 @@ directory and every plan in it must be unaffected.
   inverted pre-commit's default while its docstring claimed pass-through.
   Fixed upstream and shipped as `0.5.1`; raised the floor to `>=0.5.1` and
   removed the workaround from "what stays".
+- Implemented against the published `pkgskills` `0.5.1`. `planners/host.py`
+  declares `HOST` (the dispatcher `Skill` with today's holder description, the
+  `Rule` with `previous_names=("plan-files",)`, the two `Hook`s, the index
+  `Line`, and the `permissions` increments) and is registered under
+  `pkgskills.hosts`. `cli.py` mounts `register(app, HOST)`; `install.py`,
+  `skill.py`, `rule.py`, `permissions.py`, and their tests are deleted, and
+  `proc.py` stays. `planners.get_skill` / `list_skills` left the public API with
+  `skill.py`. A new `tests/test_host.py` covers what stays: the install writes,
+  the hook entries, `--force` on the `.gitattributes` line, the `foreign`
+  refusal of a pre-adoption holder, and the permissions ladder.
+- `assert_spec_conformant` does not pass as the plan assumed: `0.5.1` flags all
+  seven flat `skills/<name>.md` sources under its `entry-file` rule (they would
+  have to be `<name>/SKILL.md`). Kept the prompt layout, per "the prompt files do
+  not move" — they are dispatcher sources, never installed as skills of their
+  own — and the test checks the spec with only that rule excluded; no other rule
+  fires. `assert_prompt_commands` passes unchanged.
+- Verified: the rendered rule is byte-identical to the pre-adoption render apart
+  from the stamp line, in both modes; the stub carries the same two fields,
+  quoted, over the library's dispatcher body. A local `install --force` in the
+  worktree reports the stub, the `.gitattributes` line, and both hooks `ok` /
+  `active`; its local rule reads `stale` only because a global rule also exists
+  on the machine, which is the library's shadowing report working as intended.
+- Reversed the `entry-file` exclusion above: moved the seven bodies to
+  `skills/<name>/SKILL.md` so the host passes `assert_spec_conformant` in full.
+  The rendered stub and rule are byte-identical before and after the move, and
+  the built wheel ships all seven `SKILL.md` files. This amends "the prompt files
+  do not move": the rule stays flat at `rules/planners.md`.
+- Gave each of the seven bodies `metadata.version: "1.0.0"` (quoted, since
+  unquoted YAML reads it as a number and the spec check rejects it). The version
+  does not reach the installed `/planners` stub: a dispatcher generates its own
+  frontmatter and lifts no `metadata` from its sources (only a single-source
+  skill passes it through), so the stub still declares none and did not drift.
+  It is informational only; nothing in `pkgskills` reads it.
+- Review follow-up (close gate, `/code-review` at medium over PR #24). Three
+  findings, all confirmed. Actioned: a comment in `scripts/install.sh` still
+  described the removed `install --full` flag, and a test loop in
+  `tests/test_conventions.py` unpacked a `Skill` it never read; both fixed in
+  one commit, gate green. Conscious no-op: the mounted `install` / `skill` /
+  `rule` / `permissions` now resolve the repo root by walking up from the
+  working directory (the library's behaviour), while `add` / `finalize` /
+  `activate` still use the working directory itself, so the two families
+  disagree when run from a subdirectory. Before this change all seven used the
+  working directory, so `add` from a subdirectory was already wrong; making the
+  lifecycle commands walk up is a plan-file behaviour change outside this
+  plan's scope and is left as a follow-up candidate. A fourth candidate,
+  replacing the CLI's path-display helper with the library's private
+  equivalent, was rejected as coupling to a non-public API.
+
+## Retrospective
+
+- The swap deleted roughly half the package's source and every test that
+  covered it, and the lifecycle commands did not change at all. That is the
+  outcome the plan predicted; the surprise was how much of the review effort
+  went into upstream, not here. Four `pkgskills` releases came out of reviewing
+  the plan before a line of adoption code was written.
+- The plan's "prompt files do not move" assumption held for one commit. The
+  spec check wanted `skills/<name>/SKILL.md`, and excluding one rule to keep
+  the flat layout was a worse trade than moving seven files. Checking the
+  static conformance test against the real layout before writing the plan
+  would have caught this.
+- Verifying the rendered rule byte-for-byte against the pre-adoption render
+  gave a cheap, decisive check that the migration changed nothing a consumer
+  reads. Worth doing for any generated-artifact swap.
+- The `foreign` classification of every existing install is the one consumer
+  visible cost. It is a one-time `--force`, but it lands on every repo at once,
+  so the changelog names the word and the remedy exactly.
+- The one open seam the review found, root resolution, is a pre-existing gap
+  the library made visible rather than a regression. The next change to `add`
+  should adopt the same walk-up rule so the CLI has one notion of the repo.
