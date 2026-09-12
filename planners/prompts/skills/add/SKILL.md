@@ -1,6 +1,8 @@
 ---
 name: add
 description: Scaffold a new plan file. Use when the user wants to plan, spec out, propose, draft, or outline new work.
+metadata:
+  version: "1.0"
 ---
 
 # add — scaffold a new plan

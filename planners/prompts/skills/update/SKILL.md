@@ -1,6 +1,8 @@
 ---
 name: update
 description: Update a plan's lifecycle state — activate, log, or transition status. Maps "abandon" to retired.
+metadata:
+  version: "1.0"
 ---
 
 # update — lifecycle transitions
