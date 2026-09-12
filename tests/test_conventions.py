@@ -20,7 +20,7 @@ def test_no_abandoned_anywhere_in_package_source() -> None:
 
 
 def test_no_abandoned_in_skill_bodies() -> None:
-    for name, (skill, source) in HOST.skill_sources().items():
+    for name, (_skill, source) in HOST.skill_sources().items():
         assert "abandoned" not in HOST.read(source), name
 
 
