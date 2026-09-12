@@ -61,15 +61,34 @@ its own `install` command around it.
 `base.py`, `index.py`, `metadata.py`, and the `add` / `finalize` / `activate` /
 `index` / `validate` / `schema` / `base` commands are untouched.
 
-### Open decision: `proc.py`
+### Decision: keep `planners/proc.py`
 
-`pkgskills.proc` is public and identical, but `base.py` and `cli.py` use `proc.run`
-for **plan-lifecycle** git calls, not just install. Deleting the local module makes
-a prompt-packaging library the home of this package's `GIT_DIR` safety guard for
-every commit it makes — a coupling that outlives the install code it came with.
-Keeping 76 duplicated lines may be the cleaner boundary. Decide during
-implementation; either way the guard's behavior must not change (plan 006 is the
-record of why it exists).
+**Keep the local module. Do not import `pkgskills.proc`.** It is the one row in
+the table above that does *not* move.
+
+All seven `proc.run` call sites remain planners code after the refactor — four in
+the pre-commit/hook wiring that stays behind `after_install`, and three in
+lifecycle git (`cli.py` ×2, `base.py` ×1). No caller migrates upstream, so
+nothing about this adoption forces the question; the only question is whether to
+delete 76 zero-dependency lines in order to import an identical implementation
+from a dependency. Three reasons not to:
+
+- **Upstream has no internal consumer.** `pkgskills` runs no subprocesses of its
+  own and says so in the module docstring; the only references are the
+  re-export in `__init__.py` and its own `test_proc.py`. A module nothing in its
+  home package calls is the most likely to be refactored or drift, because
+  nothing there breaks when it does.
+- **It is the commit-safety guard** (see plan 006). A future release trimming
+  `LOCATION_ENV` or changing `pinned_env` would mean planners writing commits
+  into the wrong repository, silently — the exact failure the module prevents.
+  On a `>=0.2.0` range against a 0.x package, any minor bump can move it.
+- **No cohesion.** "Which repository does this git command act on" is not a
+  prompt-packaging concern; sharing the code would not make the concept shared.
+
+The duplication is the accepted cost, and it is small: the two copies are
+independent guards over independent subprocess calls and have no requirement to
+agree, so divergence is not a defect. The guard's behavior must not change here
+either way.
 
 ### Implementation order
 
