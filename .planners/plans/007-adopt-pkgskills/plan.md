@@ -23,11 +23,12 @@ CLI commands that front them — and leaves the plan-lifecycle logic untouched.
 
 ### Dependency
 
-Depend on the **published distribution** — `pkgskills>=0.5.0` from PyPI, resolved
+Depend on the **published distribution** — `pkgskills>=0.5.1` from PyPI, resolved
 normally. Not a path dependency, not an editable install against a local
-checkout, not a git URL. Three upstream releases came out of reviewing this
+checkout, not a git URL. Four upstream releases came out of reviewing this
 plan. `0.4.0` is the functional floor, because both of the first two are
-needed; `0.5.0` is the declared floor, because it changes what a stub looks like:
+needed; `0.5.1` is the declared floor, because `0.5.0` changed what a stub
+looks like and `0.5.1` changed what a hook declaration means:
 
 - `0.3.0` (upstream plan 007) closed three adoption gaps: a same-dist
   pre-adoption stamp gets an honest `foreign` reason, `InstallReport` carries
@@ -45,8 +46,13 @@ needed; `0.5.0` is the declared floor, because it changes what a stub looks like
   The same release shipped the `Line` hardening (normalized value whitespace,
   `..` paths rejected) and emits `--global` in repair commands for a host
   whose default mode is local — which this host's is not.
+- `0.5.1` fixed `Hook.pass_filenames` to default to true, pre-commit's own
+  default. On `0.5.0` a validate hook declared without the key rendered
+  `pass_filenames: false` and failed on the consumer's first commit; on
+  `0.5.1` the same declaration is correct. A floor below `0.5.1` would let
+  the hook's meaning depend on which release resolved.
 
-The upstream dev cycle is at `0.5.1a0` with nothing beyond the prerelease bump.
+The upstream dev cycle is at `0.5.2a0` with nothing beyond the prerelease bump.
 Runtime cost is two transitive dependencies: `typer`, which this package
 already requires, and PyYAML, which is new here. `pkgskills` uses it to read
 prompt frontmatter; `planners` keeps its own flat `key: value` parser for plan
@@ -78,11 +84,10 @@ per-clone state the library cannot know about but can now act on:
 - two `Hook`s — `planners-validate` at `pre-commit` and `planners-index` at
   `post-merge` — passed to `precommit.wire` from `after_install` and to
   `precommit.checks` from `extra_checks`, so the shared `install --check`
-  table keeps reporting hook status as non-gating rows. `Hook` defaults
-  `pass_filenames` to **false**, which suits the index hook and breaks the
-  validate hook: `validate` requires paths, so the validate `Hook` must set
-  `pass_filenames=True` (today's entry omits the key, so pre-commit passes the
-  matched files). Declared that way, both rendered entries match today's
+  table keeps reporting hook status as non-gating rows. The validate `Hook`
+  takes pre-commit's default and receives the matched files; the index
+  `Hook` sets `pass_filenames=False` explicitly, since `post-merge` hands it
+  nothing to match on. Declared that way, both rendered entries match today's
   key for key.
 - the `permissions` ladder is only the four `_INCREMENT` tuples. The
   bare-`planners` grant a global install needs (`_GLOBAL_ONLY`) goes: the
@@ -250,6 +255,10 @@ directory and every plan in it must be unaffected.
 - Checked the remaining seams against `0.5.0`: `Hook`, `wire`, `checks`,
   `register`, `assert_spec_conformant`, and `assert_prompt_commands` all
   exist with the signatures the plan assumes. Two notes added to "what
-  stays": the validate `Hook` needs `pass_filenames=True` or the hook runs
-  `validate` with no paths and fails on every commit, and the global-only
-  invocation grant is now derived by the library.
+  stays": the validate `Hook` needed `pass_filenames=True` on `0.5.0` or the
+  hook ran `validate` with no paths and failed on every commit, and the
+  global-only invocation grant is now derived by the library.
+- The `pass_filenames` default was a `pkgskills` bug, not a host concern: it
+  inverted pre-commit's default while its docstring claimed pass-through.
+  Fixed upstream and shipped as `0.5.1`; raised the floor to `>=0.5.1` and
+  removed the workaround from "what stays".
