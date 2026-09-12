@@ -1,10 +1,10 @@
 ---
 id: 7
 slug: adopt-pkgskills
-status: active
+status: done
 branch: feature/adopt-pkgskills
 created: 2026-09-11T17:50:47-07:00
-concluded:
+concluded: 2026-09-12T12:57:25-07:00
 pr: https://github.com/gitronald/planners/pull/24
 ---
 
@@ -295,3 +295,39 @@ directory and every plan in it must be unaffected.
   frontmatter and lifts no `metadata` from its sources (only a single-source
   skill passes it through), so the stub still declares none and did not drift.
   It is informational only; nothing in `pkgskills` reads it.
+- Review follow-up (close gate, `/code-review` at medium over PR #24). Three
+  findings, all confirmed. Actioned: a comment in `scripts/install.sh` still
+  described the removed `install --full` flag, and a test loop in
+  `tests/test_conventions.py` unpacked a `Skill` it never read; both fixed in
+  one commit, gate green. Conscious no-op: the mounted `install` / `skill` /
+  `rule` / `permissions` now resolve the repo root by walking up from the
+  working directory (the library's behaviour), while `add` / `finalize` /
+  `activate` still use the working directory itself, so the two families
+  disagree when run from a subdirectory. Before this change all seven used the
+  working directory, so `add` from a subdirectory was already wrong; making the
+  lifecycle commands walk up is a plan-file behaviour change outside this
+  plan's scope and is left as a follow-up candidate. A fourth candidate,
+  replacing the CLI's path-display helper with the library's private
+  equivalent, was rejected as coupling to a non-public API.
+
+## Retrospective
+
+- The swap deleted roughly half the package's source and every test that
+  covered it, and the lifecycle commands did not change at all. That is the
+  outcome the plan predicted; the surprise was how much of the review effort
+  went into upstream, not here. Four `pkgskills` releases came out of reviewing
+  the plan before a line of adoption code was written.
+- The plan's "prompt files do not move" assumption held for one commit. The
+  spec check wanted `skills/<name>/SKILL.md`, and excluding one rule to keep
+  the flat layout was a worse trade than moving seven files. Checking the
+  static conformance test against the real layout before writing the plan
+  would have caught this.
+- Verifying the rendered rule byte-for-byte against the pre-adoption render
+  gave a cheap, decisive check that the migration changed nothing a consumer
+  reads. Worth doing for any generated-artifact swap.
+- The `foreign` classification of every existing install is the one consumer
+  visible cost. It is a one-time `--force`, but it lands on every repo at once,
+  so the changelog names the word and the remedy exactly.
+- The one open seam the review found, root resolution, is a pre-existing gap
+  the library made visible rather than a regression. The next change to `add`
+  should adopt the same walk-up rule so the CLI has one notion of the repo.
