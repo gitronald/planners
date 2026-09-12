@@ -2,7 +2,7 @@
 name: pipeline
 description: Drive a plan end to end — implement, do the work, then close — pausing only at the review gate. Use when the user wants a plan taken from draft to done in one run.
 metadata:
-  version: "1.0"
+  version: "1.0.0"
 ---
 
 # pipeline — drive a plan from implement to close

@@ -2,7 +2,7 @@
 name: index
 description: Regenerate the plan index — fully regenerate .planners/README.md from plan frontmatter.
 metadata:
-  version: "1.0"
+  version: "1.0.0"
 ---
 
 # index — regenerate the plans table

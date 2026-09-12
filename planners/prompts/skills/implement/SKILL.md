@@ -2,7 +2,7 @@
 name: implement
 description: Start implementing a plan — activate it on the base, branch from that commit, begin coding, and open a draft PR.
 metadata:
-  version: "1.0"
+  version: "1.0.0"
 ---
 
 # implement — start work on a plan

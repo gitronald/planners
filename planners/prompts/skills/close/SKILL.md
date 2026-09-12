@@ -2,7 +2,7 @@
 name: close
 description: Close a finished plan — review gate, final log, retrospective, frontmatter, merge, and cleanup.
 metadata:
-  version: "1.0"
+  version: "1.0.0"
 ---
 
 # close — finish a plan end to end

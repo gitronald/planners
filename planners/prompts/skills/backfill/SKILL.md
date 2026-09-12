@@ -2,7 +2,7 @@
 name: backfill
 description: Fill missing plan frontmatter (branch, concluded, pr) from git history and PRs; auto-retire stale inactive plans.
 metadata:
-  version: "1.0"
+  version: "1.0.0"
 ---
 
 # backfill — fill missing frontmatter from history
