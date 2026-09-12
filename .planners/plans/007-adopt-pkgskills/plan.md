@@ -23,10 +23,11 @@ CLI commands that front them — and leaves the plan-lifecycle logic untouched.
 
 ### Dependency
 
-Depend on the **published distribution** — `pkgskills>=0.4.0` from PyPI, resolved
+Depend on the **published distribution** — `pkgskills>=0.5.0` from PyPI, resolved
 normally. Not a path dependency, not an editable install against a local
-checkout, not a git URL. Two upstream releases came out of reviewing this plan,
-and `0.4.0` is the floor because both are needed:
+checkout, not a git URL. Three upstream releases came out of reviewing this
+plan. `0.4.0` is the functional floor, because both of the first two are
+needed; `0.5.0` is the declared floor, because it changes what a stub looks like:
 
 - `0.3.0` (upstream plan 007) closed three adoption gaps: a same-dist
   pre-adoption stamp gets an honest `foreign` reason, `InstallReport` carries
@@ -35,10 +36,22 @@ and `0.4.0` is the floor because both are needed:
   `pkgskills.precommit` (`Hook`, `wire`, `checks`, `add_dependency`), `Line`
   on `Host.lines` for one owned line in a file the host does not own, and
   `previous_names` on `Rule` / `Skill` / `Agent`.
+- `0.5.0` parses frontmatter with PyYAML instead of a line scanner, resolves
+  scalar types the way YAML does in the metadata check, and JSON-quotes the
+  generated stub fields (`name: "planners"`) so they round-trip. A stub
+  rendered by `0.4.0` and one rendered by `0.5.0` therefore differ in their
+  frontmatter, and two consumers whose locks resolved different releases
+  would each report the other's stub as `drifted`. One floor, one stub shape.
+  The same release shipped the `Line` hardening (normalized value whitespace,
+  `..` paths rejected) and emits `--global` in repair commands for a host
+  whose default mode is local — which this host's is not.
 
-The upstream dev cycle is at `0.4.1a0`, carrying the prerelease bump and a
-`Line` hardening commit (normalized line text, `..` paths rejected). Runtime cost is one transitive dependency
-(`typer`), which this package already requires, and `requires-python` matches.
+The upstream dev cycle is at `0.5.1a0` with nothing beyond the prerelease bump.
+Runtime cost is two transitive dependencies: `typer`, which this package
+already requires, and PyYAML, which is new here. `pkgskills` uses it to read
+prompt frontmatter; `planners` keeps its own flat `key: value` parser for plan
+frontmatter, and switching that to PyYAML is out of scope (plan-file semantics
+do not change). `requires-python` matches.
 
 ### What moves
 
@@ -137,10 +150,13 @@ either way.
 
 ### Implementation order
 
-1. Add the dependency; declare `HOST` (dist, cli, prompts package, the one
-   dispatcher `Skill` over the seven lifecycle sources, the `Rule`, and the
-   `permissions` ladder). Register it under the `pkgskills.hosts` entry-point
-   group so `pkgskills hosts` discovers it.
+1. Add the dependency; declare `HOST` (dist, cli, prompts package,
+   `render_cli=True`, the one dispatcher `Skill` over the seven lifecycle
+   sources with today's holder description, the `Rule`, and the `permissions`
+   ladder). `render_cli` is not optional: every source uses the `{cli}` token,
+   and a host that leaves it off installs the rule with the token unrendered.
+   Register the host under the `pkgskills.hosts` entry-point group so
+   `pkgskills hosts` discovers it.
 2. Mount `register(app, HOST)` and delete the four superseded CLI commands.
 3. Declare the two `Hook`s, the `Line`, and the rule's `previous_names`; set
    `after_install` to call `precommit.wire` and `extra_checks` to return
@@ -152,16 +168,26 @@ either way.
    from `pkgskills.testing`, which check statically what was previously only
    caught by hand.
 6. Reinstall and verify: `install --check` reports `ok` for the holder, the
-   rule, and the `.gitattributes` line, `active` for both hooks, and the
-   emitted stub and rule are byte-comparable to today's apart from the stamp.
+   rule, and the `.gitattributes` line, `active` for both hooks, the emitted
+   rule is byte-identical to today's apart from the stamp line, and the
+   emitted stub carries the same two frontmatter fields, quoted.
 
 ### Compatibility
 
-The stamp changes format: it gains `via pkgskills X`. The stub's frontmatter
-does not change — today's holder declares no `metadata`, and a `0.3.0`
-dispatcher stub declares none either (`0.2.0` would have added
-`metadata.pkgskills-version`; `0.3.0` removed it). So the emitted files really
-are byte-comparable apart from the stamp line.
+The stamp changes format: it gains `via pkgskills X`. The **rule** is otherwise
+byte-identical to today's (checked by rendering it with the published `0.5.0`
+against this repo's installed copy). The **stub** is not, in two ways, neither
+of which the harness can tell apart from today's: its two frontmatter fields
+are the same `name` and `description` but JSON-quoted, and its body is the
+library's dispatcher body rather than this package's hand-written one — the
+same shape (the `install --check` gate, `skill <subcommand>`, the subcommand
+list, the slash mapping), with each subcommand now carrying its source's own
+`description` and the closing sentence about the index replaced by a fallback
+to `skill --list`. Neither file gains `metadata`: today's holder declares none,
+and a dispatcher stub declares none (`0.2.0` would have added
+`metadata.pkgskills-version`; `0.3.0` removed it). The seven sources pass
+`0.5.0`'s YAML-resolved frontmatter check unchanged, and the holder
+description sits well under the spec's 1024-character limit.
 
 Every already-installed holder and rule is nonetheless **classified `foreign`,
 not `drifted`**: the old stamp lacks the `via pkgskills` token, so `pkgskills`
@@ -200,3 +226,15 @@ directory and every plan in it must be unaffected.
   moves table, to shrink "what stays" to declarations, to delete `install.py`
   outright, and to drop the "no upstream consumer" argument from the `proc.py`
   decision now that `precommit` consumes the upstream copy.
+- `pkgskills` `0.5.0` shipped (YAML frontmatter parsing, quoted stub fields,
+  PyYAML as a runtime dependency, the `Line` hardening). Revised this plan to
+  require `>=0.5.0` so every consumer renders one stub shape, to name PyYAML
+  as a new runtime dependency, and to correct the compatibility story: only
+  the rule is byte-comparable apart from the stamp; the stub's fields are
+  quoted and its body is the library's, which was already true under `0.4.0`
+  and had been misstated. Reviewing the moves table against `0.5.0` also
+  caught that the `HOST` outline never set `render_cli`, which the
+  `{cli}`-bearing sources need — added to step 1. Verified by rendering the
+  stub and rule with the published `0.5.0` against this repo's installed
+  holder and rule, and by running the `0.5.0` frontmatter check over the
+  seven sources.
