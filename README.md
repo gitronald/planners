@@ -84,6 +84,15 @@ planners permissions --level assist      # print an automation-level permission 
 > Detection reads git's current refs and goes inert rather than blocking a repo it can't resolve;
 > `--allow-branch` overrides the refusal where the mainline isn't detectable by name.
 
+> **Batch creation (`--defer` + `finalize`).** A plain `add` numbers a plan as max(existing) + 1, so
+> several `add`s running at once (e.g. parallel agents each drafting one plan of a split) can read the
+> same max and collide on a number. Instead, have each creator run `planners add <slug> --defer`, which
+> writes an unnumbered plan to its own directory under `.planners/staging/` with no commit and no shared
+> state. Once every creator is done, run `planners finalize` once: it orders the staged plans by
+> `created`, assigns sequential numbers, moves them under `plans/`, refreshes the index, commits the
+> batch (`plan [add]: NNN-MMM (N plans)`), and self-checks the result. `--defer` is for top-level
+> plans only; subplans (`--parent`) are numbered against their umbrella and use a plain `add`.
+
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
 > it with `uv add --dev planners` and run everything as `uv run planners …`; then `planners install --local`
 > writes the holder and rule into the repo's own `.claude/` rather than `~/.claude/`.
