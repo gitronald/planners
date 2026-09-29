@@ -226,7 +226,8 @@ hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--
   workstream and splitting by order disagree, split by order.
 - **A subplan closes when its own work is finished**, not when the effort is.
 - **An umbrella does not close over unfinished subplans.** `{cli} subplans <NNN>
-  --require-closed` fails while one is `draft`, `active`, or `blocked`. Each is finished, or
+  --require-closed` fails while one is `draft`, `active`, or `blocked`, and
+  `{cli} retire <NNN>` refuses the umbrella for the same reason. Each is finished, or
   moved: a step carried to a follow-up plan closes as `retired` with `moved_to: <NNN>`
   (`{cli} retire <NNN><letter> --into <NNN>`), and one that was partly done closes as `done`
   with what moved named in the Note column.

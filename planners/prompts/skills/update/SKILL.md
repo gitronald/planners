@@ -38,7 +38,9 @@ go through `{cli} subplans`, not a hand edit:
 ```
 
 That changes the subplan's frontmatter, which is the status of record, and
-regenerates the umbrella's table in the same step. Its log entries go in the
+regenerates the umbrella's table in the same step. Several `--set` options are
+applied together or not at all, and a file with no frontmatter is refused
+rather than given one. Its log entries go in the
 subplan's own `## Log`. `retire` and `set-pr` take the lettered reference
 directly (`{cli} retire 012d --into 015`).
 
@@ -74,7 +76,9 @@ to another plan and `--note "<sentence>"` for why. It sets `status: retired`,
 fills `concluded` from the authored date of `HEAD`, writes `null` for a
 `branch`/`pr` that was never filled, appends the Log entry, refreshes the index,
 and commits `plan [retire]: {NNN} - <slug>`. Do not hand-edit the frontmatter
-for this; the CLI owns it.
+for this; the CLI owns it. It refuses an umbrella that still has a `draft`,
+`active`, or `blocked` nested subplan: finish each, or retire it first
+(`{cli} retire {NNN}<letter>`).
 
 **Handoff** — for an effort that spans sessions, keep a `## Handoff` section
 between Log and Retrospective. It is **rewritten in place**, the one exception

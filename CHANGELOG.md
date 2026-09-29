@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   regenerates the table's Status column between two marker comments,
   `--set <letter>=<status>` changes one subplan and the table in the same step,
   and `--require-closed` fails while a subplan is `draft`, `active`, or
-  `blocked`.
+  `blocked`. The commands that change a subplan (`--set`, `add --nested`, and
+  `retire`) check everything that can refuse before they write, so a refusal
+  leaves every file as it was.
 - `planners add <slug> --parent <NNN> --nested` scaffolds a nested subplan and
   adds its row to the umbrella's table. It takes the next free letter from `b`;
   `--letter a` makes the investigation.
@@ -29,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners retire <NNN>` closes a plan as retired: frontmatter, Log entry,
   index, and commit. `--into <NNN>` records where the work went. Given a nested
   subplan (`retire 012d --into 015`), it writes `moved_to` and updates the
-  umbrella's table.
+  umbrella's table. It refuses an umbrella that still has a `draft`, `active`,
+  or `blocked` subplan.
 - A `blocked` status, for work that is waiting on a person. It is an open state:
   `concluded` stays empty, and it sorts after `active` in the index.
 - `planners validate --subplans` also checks nested subplan frontmatter. It is
