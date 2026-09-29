@@ -5,7 +5,7 @@ status: active
 branch: feature/sidecar-subplans-and-orchestrated-implement
 created: 2026-09-27T00:14:23-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/28
 ---
 
 # Support nested subplans and an orchestrated implement run
