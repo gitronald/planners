@@ -19,6 +19,29 @@ Read the plan's `# Title`, `status`, `branch`, and existing Log/Retrospective.
 Run `git log --oneline` for recent commits and `git diff --stat HEAD`; if there
 are uncommitted changes, stop and tell the user.
 
+**An umbrella does not close over unfinished subplans.** For a plan with nested
+subplans, run:
+
+```bash
+{cli} subplans {NNN} --require-closed
+```
+
+It exits non-zero and lists every subplan that is `draft`, `active`, or
+`blocked`, and any row where the umbrella's table disagrees with the subplan
+frontmatter. Refuse to close while it fails. Each listed subplan is finished, or
+moved:
+
+- **Finished** — its checks ran and passed, its Log entry is written, and
+  `{cli} subplans {NNN} --set <letter>=done` records it.
+- **Moved** — a step that waits on people (a decision, a manual check, someone
+  else's input) often outlasts the code and is carried to a follow-up plan. Its
+  subplan closes as `retired` with `moved_to`:
+  `{cli} retire {NNN}<letter> --into <follow-up NNN>`. A step that was partly
+  done closes as `done`, with what moved named in the table's Note column. The
+  subplan's Log maps each open item to its place in the follow-up. The follow-up
+  plan lists what it inherits, and sorts the inherited "not verified" items into
+  those it will check and those it leaves open.
+
 ### 2. Review gate (review → fix → verify) — MANDATORY, BEFORE MERGE
 
 Do not call `gh pr merge` until this gate has run and every finding is fixed or
@@ -63,7 +86,12 @@ If commits (including review fixes) are not yet in `## Log`, append a dated
 entry. If the gate produced fixes, include a **"Review follow-up"** sub-entry:
 what was raised, what was actioned (with tests), what was a conscious no-op.
 
-### 4. Retrospective
+### 4. Handoff and retrospective
+
+If the plan has a `## Handoff` section, bring it current, rewriting it in place:
+every open question is answered (with the answer and its date beside it) or
+handed to another plan by name, and what is still not verified is said in those
+words. A plan does not close with a question nobody owns.
 
 Append a concise `## Retrospective` (3–6 bullets): what went as planned vs.
 changed, key decisions, and what would help next time. Insight, not a summary.
@@ -86,8 +114,25 @@ gh pr merge --merge
 git checkout "$({cli} base)" && git pull         # back to the mainline, in the main checkout
 git worktree remove .worktrees/<branch-suffix>   # if the work ran on a worktree
 git push origin --delete <branch>
-git branch -d <branch>
+git merge-base --is-ancestor <branch> "$({cli} base)" && git branch -d <branch>
 ```
+
+**Before removing the worktree**, release whatever the repo has to release
+first. It is the counterpart of the setup step in `implement`, and the repo
+defines it the same way. Run it from inside the worktree:
+
+```bash
+[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
+```
+
+**Deleting the branch.** `git branch -d` tests the branch against its upstream
+or the current HEAD, not against the base, so it can refuse a branch that is
+merged: when the main checkout is on some other branch, or the upstream is
+already deleted. `git merge-base --is-ancestor <branch> <base>` is the test that
+matters, and it exits zero when the base contains the branch. When it passes and
+`-d` still refuses, check the base out and run `-d` again. Do not reach for
+`-D`: if the ancestor test fails, the branch holds commits the base does not,
+and that is the thing to report.
 
 Removing the worktree deletes its `.venv`, but worktrees share the main repo's
 `.git/hooks/` — a pre-commit hook installed from inside the worktree keeps its

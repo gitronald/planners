@@ -844,14 +844,16 @@ def test_activate_leaves_populated_branch_alone(
     assert "feature/ignored" not in text
 
 
-def test_activate_reactivates_an_inactive_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("parked", ["inactive", "blocked"])
+def test_activate_reactivates_an_inactive_or_blocked_plan(
+    parked: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A parked plan may be revisited; the convention says so explicitly.
+    # A parked plan may be revisited, and a blocked one resumes when the wait is
+    # over; the convention says so explicitly.
     _write_plan(
         tmp_path / ".planners" / "plans",
         "005-my-thing",
-        _DRAFT_PLAN.replace("status: draft", "status: inactive"),
+        _DRAFT_PLAN.replace("status: draft", f"status: {parked}"),
     )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["activate", "005", "--no-commit"])
