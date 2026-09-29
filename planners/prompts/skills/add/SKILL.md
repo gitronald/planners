@@ -40,8 +40,8 @@ Derive a kebab-case `<slug>` from the request, then run:
   by name, not as a way past the refusal.
 - Pass `--no-commit` to write the file only — no index refresh, no commit — when
   you want to author the `## Plan` body before committing, or are batching.
-- Pass `--parent <N>` to scaffold a **subplan** of umbrella `N` (see *Umbrella +
-  subplans* below) instead of a top-level plan.
+- Pass `--parent <N> --nested` to scaffold a **nested subplan** of umbrella `N`
+  (see *Nested subplans* below) instead of a top-level plan.
 
 Do not compute the next number, run `date`, or edit the index yourself; the CLI
 handles all of it.
@@ -66,10 +66,123 @@ git add .planners/plans/NNN-<slug>/plan.md .planners/README.md && git commit -m 
 
 If you let `add` commit in step 1, edit-then-commit the body as a normal follow-up.
 
-## Umbrella + subplans
+## Nested subplans
 
-When a plan is really one effort done in **steps in order** (or it would cross
-~500 lines), keep the parent as an *umbrella* and split the steps into subplans:
+**A plan is not split until it needs it.** Most plans are one file and stay that
+way. Split when a plan would cross ~500 lines, or when the user asks, and not
+before. A short plan with a few ordered steps keeps them as a list. Splitting an
+existing plan is a proposal: surface it and confirm first.
+
+**Subplans are nested.** Any request for subplans gets this shape, whatever
+words it uses:
+
+```
+.planners/plans/NNN-<slug>/
+  plan.md                  # umbrella: goal, decisions, order, risks, out of scope
+  subplans/
+    a-<step>.md            # one file per step or workstream
+    b-<step>.md
+```
+
+```bash
+{cli} add <step-slug> --parent <N> --nested --title "<Step title>"
+```
+
+This writes `subplans/<letter>-<step-slug>.md` inside the umbrella's directory,
+with a frontmatter of `status: draft` and `branch:` and a back-link to the
+umbrella, and adds the subplan's row to the umbrella's table. The umbrella must
+already exist. Always pass `--nested`: `--parent` without it makes a lettered
+sibling plan (see below).
+
+- **Letters are fixed once assigned**, as plan numbers are. The command takes
+  the next free letter from `b`. `a` is reserved for the investigation from the
+  first split, whether or not one is written yet: `--letter a` makes it. Making
+  room for it later would shift every letter, rewrite every cross-link, and
+  leave earlier Log entries naming files by letters they no longer have.
+- **The commit follows the umbrella.** Under an umbrella that is not yet
+  `active` the commit belongs on the mainline, and the same guard as a plain
+  `add` applies. Under an `active` one it lands on the current branch, where the
+  work is. `--no-commit` writes the files only.
+- **`--defer` does not apply.** A nested subplan takes a letter from its
+  umbrella, not a number from `finalize`. Add nested subplans one at a time.
+
+### What goes where
+
+- **The umbrella holds decisions, not findings.** It keeps the goal, the
+  numbered decisions, the order, the risks, and what is out of scope. The
+  inventory, the research, and the measurements behind them belong to the
+  investigation subplan. An umbrella that keeps the whole design is still too
+  long after the split and has to be split again.
+- **The umbrella's table is generated.** It sits between two marker comments,
+  and its Status column is written from the subplan frontmatter, which is the
+  status of record. The Scope and Note columns are hand-written: the command
+  seeds Scope with the title and leaves both alone afterwards. The Status column
+  holds only the enum, and anything else ("waiting on review") goes in Note.
+
+  ```markdown
+  <!-- planners:subplans:start -->
+  | Subplan | Scope | Status | Note |
+  |---|---|---|---|
+  | [a](subplans/a-investigate.md) | What exists today | done | |
+  | [b](subplans/b-build.md) | The work itself | active | |
+  <!-- planners:subplans:end -->
+  ```
+
+- **The execution order is a one-line dependency chain** in the umbrella, e.g.
+  `a -> (b, c, d) -> e`. To make it data, give each subplan an optional `needs:`
+  list of the letters it depends on (`needs: [a]`); `{cli} subplans <N>` prints
+  the chain those lists describe and fails on a cycle.
+- **A subplan is one node in the order.** An order that needs part of one
+  subplan before another and the rest after it, e.g. `c (1-2) -> b -> c (3)`,
+  is a sign that `c` is two subplans. Splitting by workstream reads well and
+  orders badly; when the two disagree, split by order.
+- **An empty `branch` means the umbrella's branch.** One PR for the effort does
+  not mean every step lands through it. A step that lands in another repo
+  records that branch, and the PR URL in an optional `pr`. Parallel steps that
+  commit for themselves each get a sub-branch off the umbrella's branch.
+- **Each file has its own length guidance.** ~500 lines applies to the umbrella
+  and to every subplan, each on its own.
+
+A suggested arc for the steps, as a starting point: investigate or spike, the
+work itself in one or more steps, review, then documentation. An investigation
+first tends to pay for itself, because its findings change the steps after it.
+
+### Splitting a plan that already exists
+
+1. Scaffold each subplan with `{cli} add ... --parent <N> --nested --no-commit`.
+2. Move the sections to `subplans/` **verbatim**. Raise the headings to fit
+   their new file, repoint the relative links, and condense or drop nothing on
+   the way.
+3. Diff the moved text against the original. This is how a dropped instruction
+   gets caught.
+4. Record the split, and what moved where, in the umbrella's Log.
+5. Commit the split in the session that made it. Do not leave it staged for the
+   next one.
+
+### A subplan's Log entry
+
+These headings are a suggestion, not a schema. Each has earned its place by
+being the thing a later session went looking for:
+
+| Heading | Holds |
+|---|---|
+| What was done | the work, with its commits |
+| Departures from the spec | the spec is left as written; each departure and its reason go here |
+| Surprises | defects and discoveries outside the step's scope |
+| Dead ends | approaches that failed, so they are not tried again |
+| Deferred | work passed to a later subplan, named by letter, and repeated in the umbrella's Log |
+| Gaps | what the step was meant to cover and did not |
+| Not verified | what was not run, not compared, or not looked at |
+
+### Lettered sibling plans, on request
+
+| Shape | Use when |
+|---|---|
+| nested subplans | the default whenever a plan is split. One PR into the mainline carries the whole effort |
+| `NNN<letter>` subplans | on request only: each step has its own branch, PR, and lifecycle |
+
+Make lettered sibling plans only when the request describes them. Building the
+lettered shape by mistake means folding it back by hand.
 
 ```bash
 {cli} add <step-slug> --parent <N> --title "<Step title>"
@@ -77,22 +190,10 @@ When a plan is really one effort done in **steps in order** (or it would cross
 
 This writes a sibling directory `.planners/plans/{NNN}<letter>-<step-slug>/`
 (e.g. `010a-…`, then `010b-…`) that **shares the umbrella's number** and adds the
-next free letter, with `id: {NNN}` and `sub: <letter>` in its frontmatter. The
-umbrella must already exist (create it first with a plain `{cli} add`).
-
-Conventions, mirroring the global plan-files rule:
-
-- The umbrella's `## Plan` is just a **subplan table** (`# | Subplan | Scope |
-  Status`) plus the explicit **execution order** and a whole-effort *out of
-  scope* — the real spec for each step lives in its subplan.
-- Each subplan is a normal plan with its own frontmatter and lifecycle; cross-
-  link the umbrella and siblings.
-- The umbrella keeps its own metadata and stays `active` until every subplan is
-  done; closing the last subplan closes the umbrella.
-
-The generated `.planners/README.md` renders an umbrella and its subplans as one
-contiguous block (umbrella first, then `a`, `b`, …). The canonical shape is an
-umbrella `NNN` plus subplans `NNNa`–`NNNe`, each its own directory.
+next free letter, with `id: {NNN}` and `sub: <letter>` in its frontmatter. Each
+is a normal plan with its own frontmatter, lifecycle, and row in the index,
+where an umbrella and its lettered subplans render as one contiguous block. The
+umbrella stays `active` until every subplan is done.
 
 ## Batch / deferred creation
 
@@ -118,4 +219,5 @@ Use deferred numbering instead:
   mainline guard applies — run it from a mainline branch. A refused finalize
   leaves the batch staged and recoverable, nothing half-materialized.
 - Two creators may pick the same slug; finalize keeps them distinct by number and
-  notes the duplicate. `--defer` is for top-level plans only (not `--parent`).
+  notes the duplicate. `--defer` is for top-level plans only (not `--parent`,
+  nested or lettered).
