@@ -1,8 +1,8 @@
 ---
 id: 8
 slug: sidecar-subplans-and-orchestrated-implement
-status: draft
-branch:
+status: active
+branch: feature/sidecar-subplans-and-orchestrated-implement
 created: 2026-09-27T00:14:23-07:00
 concluded:
 pr:
