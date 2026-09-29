@@ -1129,3 +1129,45 @@ def test_validate_with_no_argument_still_fails_on_an_empty_repo(
     result = runner.invoke(app, ["validate"])
     assert result.exit_code == 1
     assert "no plan files matched" in result.output
+
+
+def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The old single line, "activated <plan> on <branch>", named the recorded
+    # branch in the place a reader expects the branch committed on.
+    _init_git(tmp_path)
+    subprocess.run(["git", "checkout", "-qb", "main"], cwd=tmp_path, check=True)
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    _commit_all(tmp_path, "initial commit")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "recorded branch feature/my-thing" in result.output
+    assert "committed the activation on main" in result.output
+    assert " on feature/my-thing" not in result.output
+
+
+def test_activate_no_commit_claims_no_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "005", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "recorded branch feature/my-thing" in result.output
+    assert "committed" not in result.output
+
+
+def test_activate_on_a_detached_head_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_git(tmp_path)
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    _commit_all(tmp_path, "initial commit")
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "005", "--allow-branch"])
+    assert result.exit_code == 0, result.output
+    assert "committed the activation on a detached HEAD" in result.output

@@ -1067,7 +1067,10 @@ def activate(
         # Re-render only the frontmatter and keep the body verbatim — the same
         # mutate-preserving-body shape `finalize` uses. The plan text is the record.
         path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-        typer.echo(f"activated {_shown(path, root)} on {meta.branch}")
+        # The branch named here is the one written to the frontmatter, where the
+        # work will go. It is not where the activation is committed, which the
+        # line after the commit says, so the two are never read as one.
+        typer.echo(f"activated {_shown(path, root)}; recorded branch {meta.branch}")
 
     if no_commit:
         return
@@ -1079,6 +1082,12 @@ def activate(
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
     _git(root, ["commit", "-m", f"plan [activate]: {meta.prefix} - {meta.slug}"])
+    typer.echo(f"committed the activation on {_current_branch(root)}")
+
+
+def _current_branch(root: Path) -> str:
+    """The branch HEAD is on, in words fit for a message."""
+    return base_mod.detect(root).current or "a detached HEAD"
 
 
 def _apply_status(plan: Path, assignment: str) -> None:
