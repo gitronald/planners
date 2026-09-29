@@ -135,3 +135,19 @@ def test_set_frontmatter_key_adds_a_block_when_there_is_none() -> None:
     assert set_frontmatter_key("---\nstatus: x\n", "status", "draft") == (
         "---\nstatus: draft\n---\n\n---\nstatus: x\n"
     )
+
+
+def test_a_title_that_ends_in_a_hash_keeps_it() -> None:
+    # The closing run of `#` is set off by whitespace, as CommonMark has it. It
+    # used to be stripped without one, so `## Log#` was read as the Log section.
+    text = "## Log#\n\n- not the log\n\n## C#\n\n- notes\n\n## Log ##\n\n- real\n"
+    assert section_span(text, "Log") == (8, 11)
+    assert section_span(text, "Log#") == (0, 4)
+    assert section_span(text, "C#") == (4, 8)
+
+
+def test_a_heading_with_tabs_and_trailing_space_is_read() -> None:
+    assert section_span("##\tLog \t\n\n- x\n", "Log") == (0, 3)
+    assert section_span("## Log #  \n", "Log") == (0, 1)
+    # No space after the opening run is not a heading.
+    assert section_span("##Log\n", "Log") is None

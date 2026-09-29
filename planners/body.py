@@ -8,6 +8,9 @@ nothing here touches the filesystem, git, or the clock.
 Lines inside a fenced code block are never treated as structure. A plan that
 documents a heading or a marker comment in an example would otherwise have the
 example edited in place of the real thing.
+
+Text is taken to end its lines with ``\n``, which is what the CLI hands over:
+it reads with universal newlines, so a CRLF file arrives here already converted.
 """
 
 from __future__ import annotations
@@ -23,7 +26,9 @@ __all__ = [
 ]
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+# An ATX heading. The closing run of `#` is optional and must be set off by a
+# space or tab, as CommonMark has it, so a title that ends in `#` keeps it.
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
 
 
 def fenced_lines(lines: list[str]) -> list[bool]:
