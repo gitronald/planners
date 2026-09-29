@@ -24,8 +24,11 @@ INDEX_PATH = Path(".planners/README.md")
 EM_DASH = "—"
 
 # Index sort order over statuses (open work first, then closed, parked last).
+# `blocked` sits with the work in progress it was part of, ahead of what has not
+# started.
 STATUS_ORDER = [
     Status.active,
+    Status.blocked,
     Status.draft,
     Status.done,
     Status.inactive,

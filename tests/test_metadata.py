@@ -386,3 +386,25 @@ def test_next_sub_raises_when_letters_exhausted() -> None:
     # directory scans would silently drop).
     with pytest.raises(ValueError, match="exhausted"):
         next_sub(["z"])
+
+
+def test_blocked_is_an_open_status() -> None:
+    # Waiting on a person is still open work: nothing has concluded, and the
+    # nullable fields stay pending rather than confirmed absent.
+    text = (
+        "---\nid: 1\nslug: thing\nstatus: blocked\nbranch: feature/thing\n"
+        "created: 2026-06-07T12:00:00-07:00\nconcluded:\npr:\n---\n\n# Thing\n"
+    )
+    meta = PlanMetadata.from_text(text, dirname="001-thing")
+    assert meta.status == Status.blocked
+    assert meta.validate() == []
+
+    closed = PlanMetadata.from_text(
+        text.replace("concluded:", "concluded: 2026-06-08T12:00:00-07:00").replace(
+            "pr:", "pr: null"
+        ),
+        dirname="001-thing",
+    )
+    errors = closed.validate()
+    assert "blocked plan must leave concluded empty" in errors
+    assert "blocked plan must not use null for pr" in errors

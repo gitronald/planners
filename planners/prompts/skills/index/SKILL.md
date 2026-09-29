@@ -27,7 +27,7 @@ aggregate.
 ```
 
 Pass a different path in place of `.` to target another repo root. Rows sort by
-status (`active, draft, done, inactive, retired`), then by concluded datetime,
+status (`active, blocked, draft, done, inactive, retired`), then by concluded datetime,
 PR, and plan number (descending); empty cells render as an em-dash.
 
 ### 2. Verify

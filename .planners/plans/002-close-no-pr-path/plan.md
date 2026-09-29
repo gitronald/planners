@@ -41,6 +41,8 @@ Give the close skill an explicit no-PR path and a rule for conflicts:
 - Update the `close` skill instructions (and `pipeline`, which embeds close).
 - Frontmatter semantics already support it: merged-without-PR is the
   documented `pr: null` case.
+- `activate` reports the base's unpushed commits (see the addition of
+  2026-09-29 below), with the matching sentence in the `implement` skill.
 
 ### Note (2026-09-08): the local merge no longer collides on the index
 
@@ -56,3 +58,59 @@ should run `planners index .` after merging and commit the result — the same
 repair any local merge needs. And `planners validate` now fails on an index that
 disagrees with the frontmatter, so the review gate does not have to check for
 this by eye; a stale index blocks the commit on its own.
+
+### Addition (2026-09-29): `activate` reports the base's unpushed commits
+
+Handed on from plan 008, which left it as an open question. It is a separate
+change from the no-PR path and shares only the release it lands in.
+
+**The problem.** The `implement` skill pushes the base right after `activate`,
+and that push publishes every unpushed commit on the base along with the
+activation. The skill says to push when every one of them is the plan's own and
+to confirm otherwise. That sorting is done by eye, by whoever is following the
+skill, and prose can be skipped.
+
+**What is not being built.** The confirmation does not move into `activate`.
+
+- `activate` does not push. Everything it does is local and can be undone, and
+  the push is a separate command in the skill.
+- A CLI run by a harness cannot hold a confirmation. A prompt either hangs or is
+  answered with a flag, which is the prose problem again.
+- Pushes already have an enforcement point. `git push` is granted at the
+  `confirm` permission level, so at the default level the harness asks before
+  any push. The skill's sentence only carries weight where pushes were
+  pre-authorized.
+
+**What is being built.** `activate` counts and sorts, and the skill reads the
+result. After its commit, `activate` prints one line:
+
+    committed the activation on dev
+    dev is 6 ahead of origin/dev (as last fetched): 6 are plan 008's own, 0 are other
+
+When there are others, it lists them, one per line, as `git log --oneline` would.
+
+- **A commit is the plan's own** when every path it touches is under that plan's
+  directory (`.planners/plans/<NNN>-<slug>/`, nested subplans included) or is
+  the index (`.planners/README.md`).
+- **The count is against the local remote-tracking ref.** `activate` does not
+  fetch, so the line says "as last fetched". A checkout that is behind its
+  remote gives a true count of a stale comparison.
+- **It goes quiet when there is nothing to compare against**: no upstream for
+  the base, or no remote. This is the same stance as the mainline guard, which
+  never blocks a repo it cannot reason about.
+- **It never refuses.** The report is information. `--no-commit` prints nothing,
+  since it commits nothing.
+
+The `implement` skill's step 3 then changes from a rule to sort by to a fact to
+read: push when `activate` reported no other commits, and show its list and
+confirm when it reported some.
+
+**Evidence.** In both runs where this came up during plan 008, every unpushed
+commit was the plan's own: three on one base, and six on another after a plan
+was split into nested subplans. That is the usual case for a plan that was
+edited or split before it was activated, so a confirmation on every push would
+mostly be noise. The case worth catching is unrelated work that rides along.
+
+**Work.** One helper that lists the commits ahead of the upstream with the
+paths each touches, the output line, and tests for: none ahead, all the plan's
+own, some other, no upstream, and `--no-commit`.

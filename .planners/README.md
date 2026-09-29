@@ -3,6 +3,7 @@
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
 | 002 | [Support a no-PR close path in the close skill](plans/002-close-no-pr-path/plan.md) | draft | — | — |
+| 008 | [Support nested subplans and an orchestrated implement run](plans/008-sidecar-subplans-and-orchestrated-implement/plan.md) | done | 2026-09-29 03:19 PT | [#28](https://github.com/gitronald/planners/pull/28) |
 | 007 | [Adopt pkgskills for prompt packaging and install](plans/007-adopt-pkgskills/plan.md) | done | 2026-09-12 12:57 PT | [#24](https://github.com/gitronald/planners/pull/24) |
 | 004 | [Own the generated plan index's merge semantics in install](plans/004-index-merge-semantics/plan.md) | done | 2026-09-08 22:41 PT | [#18](https://github.com/gitronald/planners/pull/18) |
 | 005 | [Give activate a CLI command](plans/005-activate-cli-command/plan.md) | done | 2026-09-08 18:53 PT | [#16](https://github.com/gitronald/planners/pull/16) |

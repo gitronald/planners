@@ -16,7 +16,8 @@ infer the action from the user's words or the plan's current state.
 | **activate** | "start", "activate", "begin" | `{cli} activate {NNN}` — on the mainline |
 | **log** | "log", "note", "update" | Append a dated entry to the `## Log` section |
 | **close** | "close", "finish", "done", "complete" | Hand off to `/planners close` (review gate, merge, cleanup) |
-| **retire** | "abandon", "drop", "cancel", "retire", "supersede" | `status: retired`; fill `concluded` |
+| **block** | "block", "waiting on", "stuck on" | `status: blocked`; say what it waits on |
+| **retire** | "abandon", "drop", "cancel", "retire", "supersede" | `{cli} retire {NNN}` |
 
 An abandon, drop, or cancel request maps to `status: retired` (neutral terminal
 closure) — there is no separate failed status.
@@ -27,6 +28,21 @@ closure) — there is no separate failed status.
 
 Glob `.planners/plans/{NNN}-*/plan.md`. Read its `# Title`, current frontmatter, and
 whether a `## Log` section exists.
+
+A reference with a letter that matches no plan directory (e.g. `012d`) names a
+**nested subplan**, `subplans/d-*.md` inside umbrella `012`. Its status changes
+go through `{cli} subplans`, not a hand edit:
+
+```bash
+{cli} subplans 012 --set d=active     # or blocked, done, ...
+```
+
+That changes the subplan's frontmatter, which is the status of record, and
+regenerates the umbrella's table in the same step. Several `--set` options are
+applied together or not at all, and a file with no frontmatter is refused
+rather than given one. Its log entries go in the
+subplan's own `## Log`. `retire` and `set-pr` take the lettered reference
+directly (`{cli} retire 012d --into 015`).
 
 ### 2. Apply the action
 
@@ -49,10 +65,49 @@ end if absent), using a real timestamp from `date -Iseconds`:
 
 Commit `plan [log]: {NNN} - {brief summary}`.
 
-**Retire** — set `status: retired`. Fill `concluded` with the ISO timestamp of
-the deciding commit (`git log --format="%aI" -1`). Use explicit `null` for a
-genuinely-absent `branch`/`pr`; never the string `none`. Commit
-`plan [retire]: {NNN} - <slug>`.
+**Block** — set `status: blocked` for work that is waiting on a person: a
+decision, a manual check, access only they have. It is an open state, so
+`concluded` stays empty.
+
+- **A plan:** edit `status:` and run `{cli} index .`. Write what it waits on,
+  and who, in the plan's `## Handoff` section. Commit
+  `plan [block]: {NNN} - <slug>`. When the wait is over, `{cli} activate {NNN}`
+  sets it back to `active`.
+- **A nested subplan:** `{cli} subplans {NNN} --set <letter>=blocked`. Write
+  what it waits on in the Note column of its row in the umbrella's table, by
+  hand: the command writes the Status column and no other. When the wait is a
+  question, put it in the umbrella's `## Handoff` as well. Commit
+  `plan [block]: {NNN}<letter> - <step>`. When the wait is over,
+  `--set <letter>=active` resumes it, and the Note is cleared by hand.
+  `activate` does not take a nested subplan.
+
+**Retire** — run `{cli} retire {NNN}`, with `--into <NNN>` when the work moved
+to another plan and `--note "<sentence>"` for why. It sets `status: retired`,
+fills `concluded` from the authored date of `HEAD`, writes `null` for a
+`branch`/`pr` that was never filled, appends the Log entry, refreshes the index,
+and commits `plan [retire]: {NNN} - <slug>`. Do not hand-edit the frontmatter
+for this; the CLI owns it. The Log entry already says "Retired. The work moved
+to plan NNN.", so `--note` carries the reason and does not repeat that. A nested
+subplan keeps an empty `branch`, which for it means the umbrella's branch.
+
+`--into` names a plan that exists **on the branch where `retire` runs**. A
+follow-up plan made during the work is added on the mainline, as every plan is,
+so from a feature branch it is not there yet. The order is:
+
+1. Add the follow-up plan from the base's checkout (`{cli} add <slug>`).
+2. Merge the base into the feature branch (`git merge --no-ff <base>`), from the
+   feature branch's worktree.
+3. Retire with `--into`, from that worktree. It refuses an umbrella that still has a `draft`,
+`active`, or `blocked` nested subplan: finish each, or retire it first
+(`{cli} retire {NNN}<letter>`).
+
+**Handoff** — for an effort that spans sessions, keep a `## Handoff` section
+between Log and Retrospective. It is **rewritten in place**, the one exception
+to append-only, because it describes the present and the Log keeps the history.
+It holds the state of each piece (including what is uncommitted or unpushed),
+the open questions (numbered once, never renumbered, each answer and its date
+beside its question), the questions settled or handed to another plan, what is
+not verified, and the order of the remaining work with who each item waits on.
 
 **Close** — defer to `/planners close`, which runs the review gate and merge.
 
@@ -63,3 +118,5 @@ genuinely-absent `branch`/`pr`; never the string `none`. Commit
 ```
 
 Commit the regenerated `.planners/README.md` if the status change moved the row.
+`activate`, `retire`, and `set-pr` refresh and commit the index themselves, so
+this step is for the hand-written actions.
