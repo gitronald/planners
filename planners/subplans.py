@@ -29,7 +29,6 @@ from planners.utils import parse_frontmatter, split_frontmatter
 
 __all__ = [
     "FIRST_STEP_LETTER",
-    "INVESTIGATION_LETTER",
     "SUBPLANS_DIRNAME",
     "TABLE_END",
     "TABLE_START",
@@ -54,7 +53,6 @@ FILENAME_RE = re.compile(r"^([a-z])-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 
 # `a` is the investigation, reserved from the first split whether or not one is
 # written yet. Making room for it later would shift every letter after it.
-INVESTIGATION_LETTER = "a"
 FIRST_STEP_LETTER = "b"
 
 # The statuses an umbrella cannot close over: work that has not started, is in
@@ -433,6 +431,17 @@ def _new_row(sub: SubplanMetadata, header: list[str], status_col: int) -> str:
     return _row(cells)
 
 
+def _fresh_table(ordered: list[SubplanMetadata]) -> list[str]:
+    """The lines of a table started from nothing: header, separator, and rows."""
+    header = list(TABLE_HEADER)
+    status_col = header.index("Status")
+    return [
+        _row(header),
+        "|" + "|".join(["---"] * len(header)) + "|",
+        *(_new_row(sub, header, status_col) for sub in ordered),
+    ]
+
+
 def write_table(text: str, subplans: list[SubplanMetadata]) -> str:
     """Bring the table's Status column into line with the subplan frontmatter.
 
@@ -450,31 +459,15 @@ def write_table(text: str, subplans: list[SubplanMetadata]) -> str:
     if table is None:
         if not ordered:
             return text
-        header = list(TABLE_HEADER)
-        status_col = header.index("Status")
         block = "\n".join(
-            [
-                "### Subplans",
-                "",
-                TABLE_START,
-                _row(header),
-                "|" + "|".join(["---"] * len(header)) + "|",
-                *(_new_row(sub, header, status_col) for sub in ordered),
-                TABLE_END,
-            ]
+            ["### Subplans", "", TABLE_START, *_fresh_table(ordered), TABLE_END]
         )
         return insert_before_section(text, block, _AFTER_SPEC)
 
     lines = list(table.lines)
     if table.header is None:
         # Markers with nothing between them: the table is ours to start.
-        header = list(TABLE_HEADER)
-        status_col = header.index("Status")
-        lines[table.end : table.end] = [
-            _row(header) + "\n",
-            "|" + "|".join(["---"] * len(header)) + "|\n",
-            *(_new_row(sub, header, status_col) + "\n" for sub in ordered),
-        ]
+        lines[table.end : table.end] = [line + "\n" for line in _fresh_table(ordered)]
         return "".join(lines)
     if table.status_col is None:
         raise ValueError("the subplan table has no Status column")
