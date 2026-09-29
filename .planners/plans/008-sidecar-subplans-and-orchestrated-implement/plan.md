@@ -479,8 +479,9 @@ Found while running the shapes above. Each is small and independent of the rest.
    it? Handed on (2026-09-29): it is a change to the packaging library, not to this repo,
    and this plan put the instruction in the rule instead.
 2. Should the confirmation before an activation push be enforced by `activate`, in code?
-   Open, and not part of this plan. Today it is prose in the `implement` skill. A follow-up
-   plan would own it.
+   Handed on to plan 002 (2026-09-29), with this answer: the confirmation stays with the
+   harness, and `activate` reports which unpushed commits are the plan's own and which are
+   not, so the skill reads a fact where it used to sort by eye.
 
 **Not verified.** The `gh` steps of the new skill text, the orchestration guidance, and the
 `post-merge` hook, as the last Log entry lists them.
