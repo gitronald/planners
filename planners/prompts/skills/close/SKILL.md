@@ -36,7 +36,9 @@ moved:
 - **Moved** — a step that waits on people (a decision, a manual check, someone
   else's input) often outlasts the code and is carried to a follow-up plan. Its
   subplan closes as `retired` with `moved_to`:
-  `{cli} retire {NNN}<letter> --into <follow-up NNN>`. A step that was partly
+  `{cli} retire {NNN}<letter> --into <follow-up NNN>`. The follow-up plan is
+  added on the mainline and merged into the feature branch first, or `--into`
+  does not find it; `{cli} skill update` gives the order. A step that was partly
   done closes as `done`, with what moved named in the table's Note column. The
   subplan's Log maps each open item to its place in the follow-up. The follow-up
   plan lists what it inherits, and sorts the inherited "not verified" items into
@@ -102,27 +104,35 @@ changed, key decisions, and what would help next time. Insight, not a summary.
   (`git log --format="%aI" -1`), not now.
 - `pr` = the PR URL (`gh pr list --head "$(git branch --show-current)" --state all --json url --jq '.[0].url'`);
   if merged with no dedicated PR, write `pr: null` — never the string `none`.
+  `implement` records it with `{cli} set-pr` when the PR opens, so it is
+  usually filled already; check it, and fill it only when it is not.
 - Set `status: done`.
 - `{cli} index .` and commit the regenerated `.planners/README.md`.
 
 ### 6. Commit, merge, clean up
 
+The commands run in two places, and each block names its own. In the
+**worktree**, on the feature branch:
+
 ```bash
 git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
 git push
 gh pr merge --merge
-git checkout "$({cli} base)" && git pull         # back to the mainline, in the main checkout
+[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
+```
+
+The last line releases whatever the repo has to release before the worktree
+goes. It is the counterpart of the setup step in `implement`, and the repo
+defines it the same way.
+
+Then in the **main checkout**, which is where the base is checked out (a
+worktree cannot check the base out a second time, and cannot remove itself):
+
+```bash
+git checkout "$({cli} base)" && git pull         # a no-op checkout when already on it
 git worktree remove .worktrees/<branch-suffix>   # if the work ran on a worktree
 git push origin --delete <branch>
 git merge-base --is-ancestor <branch> "$({cli} base)" && git branch -d <branch>
-```
-
-**Before removing the worktree**, release whatever the repo has to release
-first. It is the counterpart of the setup step in `implement`, and the repo
-defines it the same way. Run it from inside the worktree:
-
-```bash
-[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
 ```
 
 **Deleting the branch.** `git branch -d` tests the branch against its upstream

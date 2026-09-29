@@ -76,8 +76,11 @@ git push
 
 **Confirm before the push when the base was ahead.** `git push` publishes every
 unpushed commit on the base along with the activation. When step 2 counted any,
-show the count and what they are (`git log --oneline @{upstream}..HEAD`) and
-confirm before pushing. When it counted none, push.
+list them (`git log --oneline @{upstream}..HEAD`). When every one is this plan's
+own (its `plan [add]` commits, those of its nested subplans, and edits to its
+files), say how many there are and push: a plan that was split arrives with
+several. When the list holds anything else, show it and confirm before pushing.
+When step 2 counted none, push.
 
 `activate` prints two lines, and they name different branches: the branch it
 **recorded** in the frontmatter, where the work will go, and the branch it
@@ -138,7 +141,11 @@ uv project, which needs its own environment per worktree.
 
 A dependency given as a **relative path** (`path = "../lib"`) resolves from the
 main checkout and not from a worktree, which sits deeper. Check the project's
-dependency table for one before syncing, and say so when it is there.
+dependency table for one before syncing, and say so when it is there. A
+**remote** given as a relative path (`git remote get-url origin`) fails the same
+way: every `git push` from inside the worktree reports that the remote is not a
+repository. Push from the main checkout instead, with
+`git -C "$root" push -u origin <branch>`.
 
 ### 5. Implement
 
@@ -221,7 +228,9 @@ to create.
    its own works on that sub-branch, in its own worktree, and merges back into
    the umbrella's branch with `--no-ff`.
 6. **Close it when its own work is finished**, not when the effort is: append
-   its Log entry, then `{cli} subplans 012 --set d=done`. Mark it done only when
+   its Log entry, then `{cli} subplans 012 --set d=done`. The entry is dated like
+   any other (`- **{timestamp}** — ...`), and the headings the `add` skill
+   suggests go inside it. Mark it done only when
    its checks ran and passed. A step waiting on a person is `blocked`, with what
    it waits on in the table's Note column.
 
