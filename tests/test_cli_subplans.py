@@ -563,3 +563,39 @@ def test_sync_refuses_a_planned_text_that_is_not_a_subplan(
             tmp_path, plan_dir / "plan.md", {target: "# no frontmatter\n"}
         )
     assert _snapshot(plan_dir) == before
+
+
+def test_subplans_order_leaves_out_a_retired_subplan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The order is of the work to be run. A retired subplan with no needs used to
+    # print as a root of the chain: `(a, e) -> b`.
+    _repo(
+        tmp_path,
+        subplans={
+            "a-look.md": _subplan("done"),
+            "b-build.md": _subplan("active", "needs: [a, e]\n"),
+            "e-moved.md": _subplan("retired", "moved_to: 015\n"),
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["subplans", "012", "--write"])
+    assert result.exit_code == 0, result.output
+    assert "order: a -> b" in result.output
+    assert "012e  retired" in result.output
+
+
+def test_subplans_prints_no_order_when_only_a_retired_subplan_has_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(
+        tmp_path,
+        subplans={
+            "a-look.md": _subplan("done"),
+            "e-moved.md": _subplan("retired", "needs: [a]\n"),
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["subplans", "012", "--write"])
+    assert result.exit_code == 0, result.output
+    assert "order:" not in result.output

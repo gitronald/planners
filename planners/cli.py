@@ -1396,8 +1396,11 @@ def subplans(
 
     set_errors = subplans_mod.check_set(metas)
     problems.extend(set_errors)
-    if any(meta.needs for meta in metas) and not set_errors:
-        order = subplans_mod.render_order(subplans_mod.phases(metas))
+    # The order is of the work to be run, so a retired subplan is not a node in
+    # it. Left in, one with no needs would print as a root of the chain.
+    live = [meta for meta in metas if meta.status != Status.retired]
+    if any(meta.needs for meta in live) and not set_errors:
+        order = subplans_mod.render_order(subplans_mod.phases(live))
         typer.echo(f"order: {order}")
 
     problems.extend(
