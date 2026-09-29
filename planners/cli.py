@@ -15,6 +15,7 @@ import shutil
 import sys
 from importlib import metadata
 from pathlib import Path
+from typing import NamedTuple
 
 import typer
 from pkgskills import register
@@ -143,34 +144,17 @@ def _resolve_dir_plans(directory: Path) -> list[Path]:
     return _plan_files(directory)
 
 
-def _resolve_plan(plans_dir: Path, ref: str) -> Path:
-    """Resolve a plan reference (``5``, ``005``, ``005a``) to its ``plan.md``.
+class _Ref(NamedTuple):
+    """What a plan reference resolved to.
 
-    The reference names a number and an optional subplan letter; the slug is not
-    part of it, so a retitled or re-slugged plan stays addressable by the number
-    that identifies it. Matching is on the parsed ``(number, letter)`` pair rather
-    than a string prefix, so ``5`` and ``005`` are the same plan while ``5`` never
-    matches ``050-...``.
-
-    Exits with a CLI error when the reference is malformed or matches no plan.
+    ``plan`` is the ``plan.md`` the reference names, or the umbrella's when it
+    names a nested subplan, which is then ``nested``. ``label`` is the reference
+    in its canonical ``NNN[x]`` form.
     """
-    want_id, want_sub = _parse_ref(ref)
-    plan = _find_plan(plans_dir, want_id, want_sub)
-    if plan is not None:
-        return plan
 
-    if want_sub and _find_nested(plans_dir, want_id, want_sub) is not None:
-        # A nested subplan has no directory, no index row, and no activation of
-        # its own, so the commands that act on a plan have nothing to act on.
-        _err(
-            f"{want_id:03d}{want_sub} is a nested subplan of plan {want_id:03d}, "
-            f"not a plan of its own; set its status with `planners subplans "
-            f"{want_id:03d} --set {want_sub}=<status>`."
-        )
-        raise typer.Exit(1)
-
-    _err(f"no plan {want_id:03d}{want_sub} found under {plans_dir}.")
-    raise typer.Exit(1)
+    plan: Path
+    nested: Path | None
+    label: str
 
 
 def _parse_ref(ref: str) -> tuple[int, str]:
@@ -209,66 +193,124 @@ def _subplan_files(plan_dir: Path) -> list[Path]:
     ]
 
 
-def _find_nested(plans_dir: Path, want_id: int, letter: str) -> Path | None:
-    """The nested subplan ``letter`` of umbrella ``want_id``, or ``None``."""
-    umbrella = _find_plan(plans_dir, want_id, "")
-    if umbrella is None:
-        return None
-    for path in _subplan_files(umbrella.parent):
+def _subplan_by_letter(plan_dir: Path, letter: str) -> Path | None:
+    """The nested subplan ``letter`` under ``plan_dir``, or ``None``."""
+    for path in _subplan_files(plan_dir):
         if path.name.startswith(f"{letter}-"):
             return path
     return None
 
 
-def _resolve_ref(plans_dir: Path, ref: str) -> tuple[Path, Path | None]:
-    """Resolve a reference to a plan, or to a nested subplan inside one.
+def _resolve_ref(plans_dir: Path, ref: str) -> _Ref:
+    """Resolve a reference (``5``, ``005``, ``005a``) to a plan or a nested subplan.
 
-    Returns ``(plan.md, None)`` for a plan and ``(umbrella plan.md, subplan file)``
-    for a nested subplan. A lettered sibling plan wins over a nested subplan with
-    the same letter, since it is the one with an identity of its own.
+    The reference names a number and an optional letter; the slug is not part of
+    it, so a retitled or re-slugged plan stays addressable by the number that
+    identifies it. Matching is on the parsed ``(number, letter)`` pair rather than
+    a string prefix, so ``5`` and ``005`` are the same plan while ``5`` never
+    matches ``050-...``.
+
+    A lettered sibling plan wins over a nested subplan with the same letter, since
+    it is the one with an identity of its own.
+
+    Exits with a CLI error when the reference is malformed or matches nothing.
     """
     want_id, want_sub = _parse_ref(ref)
+    label = f"{want_id:03d}{want_sub}"
     plan = _find_plan(plans_dir, want_id, want_sub)
     if plan is not None:
-        return plan, None
+        return _Ref(plan, None, label)
     if want_sub:
-        nested = _find_nested(plans_dir, want_id, want_sub)
         umbrella = _find_plan(plans_dir, want_id, "")
-        if nested is not None and umbrella is not None:
-            return umbrella, nested
-    _err(f"no plan {want_id:03d}{want_sub} found under {plans_dir}.")
+        if umbrella is not None:
+            nested = _subplan_by_letter(umbrella.parent, want_sub)
+            if nested is not None:
+                return _Ref(umbrella, nested, label)
+    _err(f"no plan {label} found under {plans_dir}.")
     raise typer.Exit(1)
 
 
-def _load_subplans(plan: Path) -> tuple[list[SubplanMetadata], list[str]]:
+def _resolve_plan(plans_dir: Path, ref: str) -> Path:
+    """Resolve a reference to a plan's ``plan.md``, refusing a nested subplan.
+
+    For the commands that act on a plan as a whole. A nested subplan has no
+    directory, no index row, and no activation of its own, so they have nothing
+    to act on.
+    """
+    found = _resolve_ref(plans_dir, ref)
+    if found.nested is not None:
+        number, letter = found.label[:-1], found.label[-1]
+        _err(
+            f"{found.label} is a nested subplan of plan {number}, not a plan of "
+            f"its own; set its status with `planners subplans {number} --set "
+            f"{letter}=<status>`."
+        )
+        raise typer.Exit(1)
+    return found.plan
+
+
+def _load_subplans(
+    plan: Path, planned: dict[Path, str] | None = None
+) -> tuple[list[SubplanMetadata], list[str]]:
     """Parse an umbrella's nested subplans: the readable ones, and the errors.
 
     An unreadable file is reported and left out rather than raised, so one bad
     subplan does not hide the state of the rest.
+
+    ``planned`` holds texts that are about to be written, keyed by path. Each is
+    read in place of what is on disk, a file that does not exist yet included, so
+    a command can see the state it is about to create before it creates any of it.
     """
+    planned = planned or {}
+    paths = {*_subplan_files(plan.parent), *planned}
     metas: list[SubplanMetadata] = []
     errors: list[str] = []
-    for path in _subplan_files(plan.parent):
+    for path in sorted(paths, key=lambda found: found.name):
         try:
-            text = path.read_text(encoding="utf-8")
+            text = planned.get(path)
+            if text is None:
+                text = path.read_text(encoding="utf-8")
             metas.append(SubplanMetadata.from_text(text, path.name))
         except (SubplanError, OSError, UnicodeDecodeError) as exc:
             errors.append(f"{path.name}: {exc}")
     return metas, errors
 
 
-def _write_subplan_table(plan: Path, metas: list[SubplanMetadata]) -> bool:
-    """Regenerate the umbrella's table from ``metas``; True when the file changed."""
-    text = plan.read_text(encoding="utf-8")
+def _sync_subplans(
+    root: Path, plan: Path, planned: dict[Path, str], *, warn: bool = True
+) -> None:
+    """Write ``planned`` subplan texts and the umbrella's table, as one step.
+
+    Everything that can refuse is settled before anything is written: each
+    planned text must read as a subplan, and the table must be one this command
+    may write. A refusal therefore leaves every file as it was, where writing
+    first would leave a subplan changed, the table stale, and no commit.
+    """
+    for path, text in planned.items():
+        try:
+            SubplanMetadata.from_text(text, path.name)
+        except SubplanError as exc:
+            _err(f"{_shown(path, root)}: {exc}")
+            raise typer.Exit(1) from None
+
+    metas, errors = _load_subplans(plan, planned)
+    if warn:
+        for error in errors:
+            _warn(f"warning: {error}")
+
+    current = plan.read_text(encoding="utf-8")
     try:
-        updated = subplans_mod.write_table(text, metas)
+        updated = subplans_mod.write_table(current, metas)
     except ValueError as exc:
-        _err(f"{plan}: {exc}")
+        _err(f"{_shown(plan, root)}: {exc}")
         raise typer.Exit(1) from None
-    if updated == text:
-        return False
-    plan.write_text(updated, encoding="utf-8")
-    return True
+
+    for path, text in planned.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    if updated != current:
+        plan.write_text(updated, encoding="utf-8")
+        typer.echo(f"updated the subplan table in {_shown(plan, root)}")
 
 
 def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
@@ -654,19 +696,10 @@ def _add_nested(
     if not no_commit and meta.status != Status.active:
         _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
 
-    directory = umbrella.parent / SUBPLANS_DIRNAME
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{letter}-{slug}.md"
-    path.write_text(
-        subplans_mod.render_subplan(title, meta.title, branch), encoding="utf-8"
-    )
+    path = umbrella.parent / SUBPLANS_DIRNAME / f"{letter}-{slug}.md"
+    text = subplans_mod.render_subplan(title, meta.title, branch)
+    _sync_subplans(root, umbrella, {path: text})
     typer.echo(f"wrote {path.relative_to(root)}")
-
-    metas, errors = _load_subplans(umbrella)
-    for error in errors:
-        _warn(f"warning: {error}")
-    if _write_subplan_table(umbrella, metas):
-        typer.echo(f"updated the subplan table in {umbrella.relative_to(root)}")
 
     if no_commit:
         return
@@ -1103,13 +1136,6 @@ def _head_authored(root: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-def _ref_label(plans_dir: Path, ref: str) -> str:
-    """``ref`` in its canonical ``NNN[x]`` form, after checking that it exists."""
-    _resolve_ref(plans_dir, ref)
-    number, sub = _parse_ref(ref)
-    return f"{number:03d}{sub}"
-
-
 @app.command(name="set-pr")
 def set_pr(
     ref: str = typer.Argument(
@@ -1135,14 +1161,13 @@ def set_pr(
         _err(f"not a PR URL: {url!r}; pass the full URL, not the number.")
         raise typer.Exit(1)
 
-    plan, nested = _resolve_ref(root / PLANS_DIR, ref)
-    number, sub = _parse_ref(ref)
+    plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
     target = nested or plan
 
     if nested is not None:
         text = nested.read_text(encoding="utf-8")
         updated = set_frontmatter_key(text, "pr", url)
-        label, slug = f"{number:03d}{sub}", nested.stem[2:]
+        slug = nested.stem[2:]
         staged = [nested]
     else:
         try:
@@ -1154,7 +1179,7 @@ def set_pr(
         _, body = split_frontmatter(text)
         meta.pr = url
         updated = meta.render_frontmatter() + body
-        label, slug = meta.prefix, meta.slug
+        slug = meta.slug
         staged = [plan]
 
     if updated == text and (no_commit or _is_unmodified(root, target)):
@@ -1201,11 +1226,9 @@ def retire(
     """
     root = Path.cwd()
     plans_dir = root / PLANS_DIR
-    plan, nested = _resolve_ref(plans_dir, ref)
-    number, sub = _parse_ref(ref)
-    label = f"{number:03d}{sub}"
+    plan, nested, label = _resolve_ref(plans_dir, ref)
 
-    moved = _ref_label(plans_dir, into) if into is not None else ""
+    moved = _resolve_ref(plans_dir, into).label if into is not None else ""
     if moved and moved == label:
         _err(f"plan {label} cannot be retired into itself.")
         raise typer.Exit(1)
@@ -1230,12 +1253,8 @@ def retire(
         text = set_frontmatter_key(text, "status", Status.retired.value)
         if moved:
             text = set_frontmatter_key(text, "moved_to", moved)
-        nested.write_text(append_to_section(text, "Log", entry), encoding="utf-8")
+        _sync_subplans(root, plan, {nested: append_to_section(text, "Log", entry)})
         typer.echo(f"retired {_shown(nested, root)}")
-        metas, errors = _load_subplans(plan)
-        for error in errors:
-            _warn(f"warning: {error}")
-        _write_subplan_table(plan, metas)
         staged, slug = [nested, plan], nested.stem[2:]
     else:
         try:
@@ -1245,6 +1264,21 @@ def retire(
             raise typer.Exit(1) from None
         if meta.status in CLOSED_STATUSES:
             _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
+            raise typer.Exit(1)
+        # An umbrella does not close over unfinished subplans, by either door:
+        # `close` checks it with `subplans --require-closed`, and this is the
+        # same check for the plan that is retired instead.
+        unfinished = [
+            f"{sub.letter} ({sub.status.value})"
+            for sub in _load_subplans(plan)[0]
+            if sub.status in subplans_mod.UNFINISHED_STATUSES
+        ]
+        if unfinished:
+            _err(
+                f"plan {meta.prefix} has unfinished subplans: "
+                f"{', '.join(unfinished)}. Finish each, or retire it first with "
+                f"`planners retire {meta.prefix}<letter>`."
+            )
             raise typer.Exit(1)
         _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
         meta.status = Status.retired
@@ -1267,8 +1301,16 @@ def retire(
     _git(root, ["commit", "-m", f"plan [retire]: {label} - {slug}"])
 
 
-def _apply_status(plan: Path, assignment: str) -> None:
-    """Apply one ``<letter>=<status>`` to the subplan it names, or exit."""
+def _plan_status(
+    root: Path, plan: Path, assignment: str, planned: dict[Path, str]
+) -> str:
+    """Add one ``<letter>=<status>`` to ``planned``, or exit; writes nothing.
+
+    Returns the line that reports the change, for once it has been written.
+
+    Every assignment is checked here, before any is applied, so a bad one among
+    several refuses the whole command rather than the part of it that came after.
+    """
     letter, sep, value = assignment.partition("=")
     letter, value = letter.strip(), value.strip()
     if not sep or not re.fullmatch(r"[a-z]", letter):
@@ -1280,16 +1322,20 @@ def _apply_status(plan: Path, assignment: str) -> None:
         allowed = ", ".join(s.value for s in Status)
         _err(f"invalid status {value!r}; use one of: {allowed}.")
         raise typer.Exit(1) from None
-    path = next(
-        (p for p in _subplan_files(plan.parent) if p.name.startswith(f"{letter}-")),
-        None,
-    )
+    path = _subplan_by_letter(plan.parent, letter)
     if path is None:
         _err(f"no subplan {letter!r} under {plan.parent / SUBPLANS_DIRNAME}.")
         raise typer.Exit(1)
-    text = path.read_text(encoding="utf-8")
-    path.write_text(set_frontmatter_key(text, "status", status.value), encoding="utf-8")
-    typer.echo(f"set {path.name} to {status.value}")
+    text = planned.get(path)
+    if text is None:
+        text = path.read_text(encoding="utf-8")
+    if split_frontmatter(text)[0] is None:
+        # A status can be repaired in a frontmatter that exists. One is never
+        # invented: a file without it is somebody's notes, not a subplan.
+        _err(f"{_shown(path, root)} has no frontmatter; it is not a subplan.")
+        raise typer.Exit(1)
+    planned[path] = set_frontmatter_key(text, "status", status.value)
+    return f"set {path.name} to {status.value}"
 
 
 @app.command()
@@ -1325,12 +1371,17 @@ def subplans(
     plan = _resolve_plan(root / PLANS_DIR, ref)
     prefix = plan.parent.name.split("-", 1)[0]
 
-    for assignment in set_ or []:
-        _apply_status(plan, assignment)
+    planned: dict[Path, str] = {}
+    changes = [
+        _plan_status(root, plan, assignment, planned) for assignment in set_ or []
+    ]
+    if write or planned:
+        # The listing below reports what cannot be read, so it is not warned twice.
+        _sync_subplans(root, plan, planned, warn=False)
+    for change in changes:
+        typer.echo(change)
 
     metas, problems = _load_subplans(plan)
-    if (write or set_) and _write_subplan_table(plan, metas):
-        typer.echo(f"updated the subplan table in {_shown(plan, root)}")
 
     if not metas and not problems:
         typer.echo(f"plan {prefix} has no nested subplans")

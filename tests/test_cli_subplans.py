@@ -4,10 +4,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
+from planners import cli as cli_mod
 from planners.cli import app
 from planners.subplans import TABLE_END, TABLE_START
+from tests.helpers import commit_all, git_out, init_git
 
 runner = CliRunner()
 
@@ -36,25 +39,6 @@ def _repo(
         path.parent.mkdir(exist_ok=True)
         path.write_text(body, encoding="utf-8")
     return plan_dir
-
-
-def _init_git(path: Path) -> None:
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=path, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
-
-
-def _commit_all(path: Path, message: str) -> None:
-    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
-    subprocess.run(["git", "commit", "-qm", message], cwd=path, check=True)
-
-
-def _git_out(path: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=path, check=True, capture_output=True, text=True
-    ).stdout
 
 
 def test_subplans_on_a_plan_with_none(
@@ -353,9 +337,9 @@ def test_add_nested_warns_about_an_unreadable_sibling(
 def test_add_nested_commits_on_the_branch_of_an_active_umbrella(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     plan_dir = _repo(tmp_path, status="active")
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     subprocess.run(
         ["git", "checkout", "-qb", "feature/big-effort"], cwd=tmp_path, check=True
     )
@@ -363,24 +347,24 @@ def test_add_nested_commits_on_the_branch_of_an_active_umbrella(
 
     result = runner.invoke(app, ["add", "build", "--parent", "12", "--nested"])
     assert result.exit_code == 0, result.output
-    assert _git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
         "plan [add]: 012b - build"
     )
-    changed = _git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert sorted(changed) == [
         ".planners/plans/012-big-effort/plan.md",
         ".planners/plans/012-big-effort/subplans/b-build.md",
     ]
-    assert _git_out(tmp_path, "status", "--porcelain") == ""
+    assert git_out(tmp_path, "status", "--porcelain") == ""
     assert (plan_dir / "subplans" / "b-build.md").is_file()
 
 
 def test_add_nested_guards_the_mainline_for_a_draft_umbrella(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     plan_dir = _repo(tmp_path, status="draft")
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/x"], cwd=tmp_path, check=True)
     monkeypatch.chdir(tmp_path)
 
@@ -393,7 +377,7 @@ def test_add_nested_guards_the_mainline_for_a_draft_umbrella(
         app, ["add", "build", "--parent", "12", "--nested", "--allow-branch"]
     )
     assert allowed.exit_code == 0, allowed.output
-    assert "plan [add]: 012b - build" in _git_out(tmp_path, "log", "--oneline")
+    assert "plan [add]: 012b - build" in git_out(tmp_path, "log", "--oneline")
 
 
 def test_add_parent_without_nested_still_makes_a_lettered_plan(
@@ -451,3 +435,131 @@ def test_validate_subplans_passes_on_conformant_subplans(
     result = runner.invoke(app, ["validate", ".planners/plans", "--subplans"])
     assert result.exit_code == 0, result.output
     assert "2 file(s) valid" in result.output
+
+
+_NO_STATUS_TABLE = f"\n{TABLE_START}\n| Step | Scope |\n|---|---|\n{TABLE_END}\n"
+
+
+def _snapshot(plan_dir: Path) -> dict[str, str]:
+    """Every file under a plan directory, by relative path, with its text."""
+    return {
+        str(path.relative_to(plan_dir)): path.read_text(encoding="utf-8")
+        for path in sorted(plan_dir.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_add_nested_writes_nothing_when_the_table_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The subplan file used to be written first, so a table the command may not
+    # write left an orphan file with no row and no commit.
+    plan_dir = _repo(tmp_path, subplans={"b-build.md": _subplan()})
+    plan = plan_dir / "plan.md"
+    plan.write_text(plan.read_text() + _NO_STATUS_TABLE)
+    before = _snapshot(plan_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["add", "next", "--parent", "12", "--nested", "--no-commit"]
+    )
+    assert result.exit_code == 1
+    assert "no Status column" in result.output
+    assert "wrote" not in result.output
+    assert _snapshot(plan_dir) == before
+
+
+def test_subplans_set_applies_every_assignment_or_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Assignments used to be written as they were read, so a bad one after a
+    # good one left the frontmatter changed and the table not regenerated.
+    plan_dir = _repo(
+        tmp_path, subplans={"b-build.md": _subplan(), "c-check.md": _subplan()}
+    )
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["subplans", "012", "--write"]).exit_code == 0
+    before = _snapshot(plan_dir)
+
+    for bad in ("z=done", "c=bogus", "c"):
+        result = runner.invoke(
+            app, ["subplans", "012", "--set", "b=done", "--set", bad]
+        )
+        assert result.exit_code == 1, bad
+        assert "set b-build.md" not in result.output
+        assert _snapshot(plan_dir) == before, bad
+
+    both = runner.invoke(
+        app, ["subplans", "012", "--set", "b=done", "--set", "c=active"]
+    )
+    assert both.exit_code == 0, both.output
+    assert "set b-build.md to done" in both.output
+    assert "set c-check.md to active" in both.output
+
+
+def test_subplans_set_writes_nothing_when_the_table_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path, subplans={"b-build.md": _subplan()})
+    plan = plan_dir / "plan.md"
+    plan.write_text(plan.read_text() + _NO_STATUS_TABLE)
+    before = _snapshot(plan_dir)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["subplans", "012", "--set", "b=done"])
+    assert result.exit_code == 1
+    assert "no Status column" in result.output
+    assert _snapshot(plan_dir) == before
+
+
+def test_subplans_set_the_same_letter_twice_keeps_the_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path, subplans={"b-build.md": _subplan()})
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["subplans", "012", "--set", "b=active", "--set", "b=done"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "status: done" in (plan_dir / "subplans" / "b-build.md").read_text()
+    assert "| done |" in (plan_dir / "plan.md").read_text()
+
+
+def test_subplans_set_does_not_invent_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A file named like a subplan with no frontmatter is somebody's notes. `--set`
+    # used to prepend a frontmatter block to it and add it to the table.
+    notes = "# Free-form notes\n\nNo frontmatter here.\n"
+    plan_dir = _repo(tmp_path, subplans={"b-notes.md": notes})
+    before = _snapshot(plan_dir)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["subplans", "012", "--set", "b=done"])
+    assert result.exit_code == 1
+    assert "has no frontmatter; it is not a subplan" in result.output
+    assert _snapshot(plan_dir) == before
+
+
+def test_subplans_set_repairs_a_status_that_does_not_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The frontmatter exists, so the status in it can be put right.
+    plan_dir = _repo(tmp_path, subplans={"b-build.md": _subplan("waiting")})
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["subplans", "012", "--set", "b=blocked"])
+    assert result.exit_code == 0, result.output
+    assert "status: blocked" in (plan_dir / "subplans" / "b-build.md").read_text()
+
+
+def test_sync_refuses_a_planned_text_that_is_not_a_subplan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The last line of defense behind the commands: whatever builds the text, one
+    # that does not read as a subplan is never written.
+    plan_dir = _repo(tmp_path, subplans={"b-build.md": _subplan()})
+    before = _snapshot(plan_dir)
+    target = plan_dir / "subplans" / "c-next.md"
+    with pytest.raises(typer.Exit):
+        cli_mod._sync_subplans(
+            tmp_path, plan_dir / "plan.md", {target: "# no frontmatter\n"}
+        )
+    assert _snapshot(plan_dir) == before

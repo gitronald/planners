@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from planners.cli import app
+from tests.helpers import commit_all, git_out, init_git
 
 runner = CliRunner()
 
@@ -21,25 +22,14 @@ _SUBPLAN = "---\nstatus: active\nbranch: other-repo-branch\n---\n\n# Step\n"
 
 def _repo(root: Path, *, git: bool = False) -> Path:
     if git:
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"], cwd=root, check=True
-        )
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+        init_git(root)
     plan_dir = root / ".planners" / "plans" / "005-my-thing"
     (plan_dir / "subplans").mkdir(parents=True)
     (plan_dir / "plan.md").write_text(_PLAN, encoding="utf-8")
     (plan_dir / "subplans" / "d-step.md").write_text(_SUBPLAN, encoding="utf-8")
     if git:
-        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        subprocess.run(["git", "commit", "-qm", "initial commit"], cwd=root, check=True)
+        commit_all(root, "initial commit")
     return plan_dir
-
-
-def _git_out(path: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=path, check=True, capture_output=True, text=True
-    ).stdout
 
 
 def test_set_pr_no_commit_writes_only_the_field(
@@ -100,10 +90,10 @@ def test_set_pr_commits_the_plan_with_a_refreshed_index(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["set-pr", "005", _URL])
     assert result.exit_code == 0, result.output
-    assert _git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
         "plan [pr]: 005 - my-thing"
     )
-    changed = _git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert sorted(changed) == [
         ".planners/README.md",
         ".planners/plans/005-my-thing/plan.md",
@@ -111,11 +101,11 @@ def test_set_pr_commits_the_plan_with_a_refreshed_index(
     assert "[#7]" in (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
     assert runner.invoke(app, ["validate"]).exit_code == 0
 
-    before = _git_out(tmp_path, "rev-parse", "HEAD")
+    before = git_out(tmp_path, "rev-parse", "HEAD")
     again = runner.invoke(app, ["set-pr", "005", _URL])
     assert again.exit_code == 0
     assert "nothing to do" in again.output
-    assert _git_out(tmp_path, "rev-parse", "HEAD") == before
+    assert git_out(tmp_path, "rev-parse", "HEAD") == before
 
 
 def test_set_pr_finishes_a_write_that_was_never_committed(
@@ -127,8 +117,8 @@ def test_set_pr_finishes_a_write_that_was_never_committed(
     result = runner.invoke(app, ["set-pr", "005", _URL])
     assert result.exit_code == 0, result.output
     assert "nothing to do" not in result.output
-    assert _git_out(tmp_path, "status", "--porcelain") == ""
-    assert "plan [pr]: 005 - my-thing" in _git_out(tmp_path, "log", "--oneline")
+    assert git_out(tmp_path, "status", "--porcelain") == ""
+    assert "plan [pr]: 005 - my-thing" in git_out(tmp_path, "log", "--oneline")
 
 
 def test_set_pr_on_a_nested_subplan_writes_its_own_field(
@@ -145,8 +135,8 @@ def test_set_pr_on_a_nested_subplan_writes_its_own_field(
     )
     # The umbrella's own pr: is a different field and stays pending.
     assert (plan_dir / "plan.md").read_text(encoding="utf-8") == _PLAN
-    assert _git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
         "plan [pr]: 005d - step"
     )
-    changed = _git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert changed == [".planners/plans/005-my-thing/subplans/d-step.md"]

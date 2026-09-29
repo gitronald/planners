@@ -1,6 +1,5 @@
 """CLI tests for ``retire``."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,6 +8,7 @@ from typer.testing import CliRunner
 from planners import cli as cli_mod
 from planners.cli import app
 from planners.metadata import PlanMetadata, Status
+from tests.helpers import commit_all, git_out, init_git
 
 runner = CliRunner()
 
@@ -28,11 +28,7 @@ _SUBPLAN = "---\nstatus: blocked\nbranch:\n---\n\n# Step\n\n## Plan\n\n## Log\n"
 
 def _repo(root: Path, *, git: bool = False) -> Path:
     if git:
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"], cwd=root, check=True
-        )
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+        init_git(root)
     plans = root / ".planners" / "plans"
     for number, slug in ((5, "old-idea"), (15, "follow-up")):
         plan_dir = plans / f"{number:03d}-{slug}"
@@ -42,27 +38,8 @@ def _repo(root: Path, *, git: bool = False) -> Path:
     sub.parent.mkdir()
     sub.write_text(_SUBPLAN, encoding="utf-8")
     if git:
-        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
-        subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.name=Test",
-                "commit",
-                "-qm",
-                "initial commit",
-                "--date=2026-06-20T08:00:00-07:00",
-            ],
-            cwd=root,
-            check=True,
-        )
+        commit_all(root, "initial commit", date="2026-06-20T08:00:00-07:00")
     return plans
-
-
-def _git_out(path: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=path, check=True, capture_output=True, text=True
-    ).stdout
 
 
 @pytest.fixture(autouse=True)
@@ -121,15 +98,15 @@ def test_retire_commits_with_the_date_of_head_and_a_fresh_index(
 
     meta = PlanMetadata.from_file(plans / "005-old-idea" / "plan.md")
     assert meta.concluded == "2026-06-20T08:00:00-07:00"
-    assert _git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
         "plan [retire]: 005 - old-idea"
     )
-    changed = _git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert sorted(changed) == [
         ".planners/README.md",
         ".planners/plans/005-old-idea/plan.md",
     ]
-    assert _git_out(tmp_path, "status", "--porcelain") == ""
+    assert git_out(tmp_path, "status", "--porcelain") == ""
     assert runner.invoke(app, ["validate"]).exit_code == 0
 
 
@@ -186,10 +163,10 @@ def test_retire_a_nested_subplan_records_where_it_moved(
     assert "| [d](subplans/d-step.md) | Step | retired |  |" in umbrella
     # The umbrella itself stays open: only its step closed.
     assert "status: draft" in umbrella
-    assert _git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
         "plan [retire]: 015d - step"
     )
-    changed = _git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert sorted(changed) == [
         ".planners/plans/015-follow-up/plan.md",
         ".planners/plans/015-follow-up/subplans/d-step.md",
@@ -214,3 +191,57 @@ def test_retire_a_nested_subplan_warns_about_an_unreadable_sibling(
     broken = runner.invoke(app, ["retire", "015e", "--no-commit"])
     assert broken.exit_code == 1
     assert "cannot read" in broken.output
+
+
+def test_retire_a_nested_subplan_writes_nothing_when_the_table_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The subplan used to be rewritten first. A table the command may not write
+    # then left it retired with no commit, and a rerun refused it as closed.
+    plans = _repo(tmp_path)
+    plan = plans / "015-follow-up" / "plan.md"
+    plan.write_text(
+        plan.read_text()
+        + "\n<!-- planners:subplans:start -->\n| Step | Scope |\n|---|---|\n"
+        "<!-- planners:subplans:end -->\n"
+    )
+    umbrella = plan.read_text()
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["retire", "015d", "--no-commit"])
+    assert result.exit_code == 1
+    assert "no Status column" in result.output
+    assert "retired" not in result.output
+    assert (plans / "015-follow-up" / "subplans" / "d-step.md").read_text() == _SUBPLAN
+    assert plan.read_text() == umbrella
+
+
+@pytest.mark.parametrize("status", ["draft", "active", "blocked"])
+def test_retire_refuses_an_umbrella_with_unfinished_subplans(
+    status: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An umbrella does not close over unfinished subplans, by either door.
+    plans = _repo(tmp_path)
+    sub = plans / "015-follow-up" / "subplans" / "d-step.md"
+    sub.write_text(_SUBPLAN.replace("status: blocked", f"status: {status}"))
+    before = (plans / "015-follow-up" / "plan.md").read_text()
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["retire", "015", "--no-commit"])
+    assert result.exit_code == 1
+    assert f"plan 015 has unfinished subplans: d ({status})" in result.output
+    assert "planners retire 015<letter>" in result.output
+    assert (plans / "015-follow-up" / "plan.md").read_text() == before
+
+
+@pytest.mark.parametrize("status", ["done", "inactive"])
+def test_retire_closes_an_umbrella_whose_subplans_are_finished(
+    status: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = _repo(tmp_path)
+    sub = plans / "015-follow-up" / "subplans" / "d-step.md"
+    sub.write_text(_SUBPLAN.replace("status: blocked", f"status: {status}"))
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["retire", "015", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "status: retired" in (plans / "015-follow-up" / "plan.md").read_text()
