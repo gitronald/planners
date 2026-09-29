@@ -1,10 +1,10 @@
 ---
 id: 8
 slug: sidecar-subplans-and-orchestrated-implement
-status: active
+status: done
 branch: feature/sidecar-subplans-and-orchestrated-implement
 created: 2026-09-27T00:14:23-07:00
-concluded:
+concluded: 2026-09-29T03:19:42-07:00
 pr: https://github.com/gitronald/planners/pull/28
 ---
 
@@ -424,21 +424,87 @@ Found while running the shapes above. Each is small and independent of the rest.
   were run by the orchestrator, not reported by an agent: `ruff check`, `ruff format
   --check`, `pyrefly check`, and `pytest` pass at `cc3c759`, with 344 tests and 95%
   coverage. CI passed on the same commit.
+- **2026-09-29T03:19:42-07:00** — Ran the new skills from their text, in a scratch repo, and
+  fixed what the run found.
+
+  **What was done.** A fresh agent followed `add`, `implement`, `update`, and `close` as
+  printed by the command, with no access to the source. It worked in a throwaway repo with a
+  local bare remote: it added an umbrella, split it into four nested subplans with `needs`,
+  implemented each in order with real edits, blocked and unblocked one, retired a fifth into
+  a follow-up plan, and closed the umbrella. The run ended with `validate`,
+  `validate --subplans`, and `subplans --require-closed` all exiting zero. The orchestrator
+  then read the scratch repo itself (the log, the umbrella, the retired subplan, and the
+  edited script, which it ran) and confirmed that the working repo was untouched. The
+  agent's account matched.
+
+  | Found | Outcome |
+  |---|---|
+  | The confirmation before an activation push fires on every split plan, whose own `add` commits are all unpushed | the skill now pushes when every unpushed commit is the plan's own, and confirms otherwise (`c76ac08`) |
+  | A remote given as a relative path cannot be reached from inside a worktree. Reproduced by the orchestrator | the skill says so, and pushes from the main checkout (`c76ac08`) |
+  | `retire --into` does not find a follow-up plan added on the mainline during the work | the order is documented: add on the mainline, merge the base into the branch, then retire (`c76ac08`) |
+  | The first nested `add` writes its own `### Subplans` heading, which the skill did not say | the skill says where the table goes, and how to place it elsewhere (`c76ac08`) |
+  | A retired subplan printed as a root of the execution order | fixed in `57ae266`, with a test |
+  | The Block paragraph sent a nested subplan to `activate`, and disagreed with the rule on where the wait is written | the skill has a path for a plan and one for a nested subplan (`c76ac08`) |
+  | `needs:` has no flag, and the skill did not say it is added by hand | said (`c76ac08`) |
+  | Two Log formats, one dated and one with headings | reconciled: the headings go inside a dated entry (`c76ac08`) |
+  | The close commands read as one block but run in two directories | split by directory (`c76ac08`) |
+  | `close` did not say `set-pr` usually fills `pr:` already | said (`c76ac08`) |
+
+  **Left as found.**
+
+  - The refusal on a feature branch names `--allow-branch`, and the agent reached for it once
+    (with `--no-commit`, and undid it). The message pre-dates this plan.
+  - The `close` skill's review gate names this repo's own check commands and assumes a PR
+    exists. Both pre-date this plan.
+  - A subplan's activation is a hand-written commit, since `subplans --set` writes none.
+
+  **Not verified.**
+
+  - Every `gh` step. The scratch repo had no remote on a forge, so the draft PR, `set-pr`
+    after it, the PR comment, and the PR merge were not run from the new text there.
+  - The orchestration guidance. The run used no subagents, as instructed.
+  - The `post-merge` index hook, which the scratch repo did not install.
+  - The installed stub and rule, which still carry the released text.
+
+  The checks pass at `c76ac08`, run by the orchestrator: `ruff check`, `ruff format --check`,
+  `pyrefly check`, and `pytest`, with 346 tests and 95% coverage.
 
 ## Handoff
 
-**State.** The work is committed and pushed on the feature branch, and the PR is open as a
-draft. Nothing is uncommitted. The plan is `active`, and closes once the review is approved.
+**State.** Closed. The work is merged through the PR, and nothing is uncommitted or unpushed.
 
 **Open questions.**
 
 1. Should the stub tell the harness to print a subcommand's instructions before describing
-   it? That is a change to the packaging library, and is not part of this plan.
+   it? Handed on (2026-09-29): it is a change to the packaging library, not to this repo,
+   and this plan put the instruction in the rule instead.
 2. Should the confirmation before an activation push be enforced by `activate`, in code?
-   Today it is prose in the `implement` skill, and prose can be skipped.
+   Open, and not part of this plan. Today it is prose in the `implement` skill. A follow-up
+   plan would own it.
 
-**Not verified.** The items under "Not verified" in the Log entry above.
+**Not verified.** The `gh` steps of the new skill text, the orchestration guidance, and the
+`post-merge` hook, as the last Log entry lists them.
 
-**Remaining.** Approval of the review, then the closing frontmatter, the merge, and the
-cleanup. After the merge, `install --force` regenerates the stub and the rule from the new
-text, which waits on a release.
+**Remaining.** Nothing in this plan. After the next release, `install --force` regenerates
+the installed stub and rule from the new text.
+
+## Retrospective
+
+- **The tooling was worth writing before the prose.** The rule and the skills describe
+  commands that existed, so their examples could be run. The one place the prose still got
+  ahead of the code, the Block paragraph, is where the scratch run found a wrong instruction.
+- **The review found one defect three times.** `add --nested`, nested `retire`, and
+  `subplans --set` each wrote a file and then checked whether the rest could be written. The
+  fix was one function that settles every refusal first. A command that changes two files
+  should be written that way from the start.
+- **A reader who did not write the text finds what the author cannot.** Ten of the scratch
+  run's findings were things the author knew and had not written down: that the first `add`
+  writes a heading, that `needs:` is added by hand, that a follow-up plan is not on the
+  branch yet. None of them showed in the tests, which passed throughout.
+- **The plan followed its own guidance only in part.** It ran as one file, in one session,
+  without subplans, so the nested shape was exercised in a scratch repo and not on the plan
+  that specified it. It closes just over 500 lines, the length at which it would itself be
+  split.
+- **What would help next time:** run the skills from their text before the review, not after
+  it. The scratch run changed both the code and the prose, and the review had already passed
+  over the version it changed.
