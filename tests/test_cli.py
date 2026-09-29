@@ -1099,3 +1099,33 @@ def test_validate_summarizes_a_stale_index_only_failure(
     result = runner.invoke(app, ["validate", "."])
     assert result.exit_code == 1
     assert "1 stale index file(s)" in result.output
+
+
+def test_validate_with_no_argument_checks_the_current_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A missing argument used to be a usage error (exit 2), which in a chained
+    # command reads as the check having run.
+    _write_plan(tmp_path / ".planners" / "plans", "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    ok = runner.invoke(app, ["validate"])
+    assert ok.exit_code == 0, ok.output
+    assert "1 file(s) valid" in ok.output
+
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "001-thing",
+        _VALID_PLAN.replace("status: active", "status: bogus"),
+    )
+    bad = runner.invoke(app, ["validate"])
+    assert bad.exit_code == 1
+    assert "invalid status" in bad.output
+
+
+def test_validate_with_no_argument_still_fails_on_an_empty_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate"])
+    assert result.exit_code == 1
+    assert "no plan files matched" in result.output

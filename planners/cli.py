@@ -1291,8 +1291,10 @@ def _subplan_violations(plan: Path) -> list[str]:
 
 @app.command()
 def validate(
-    paths: list[Path] = typer.Argument(
-        ..., help="Plan files, a plans directory, or a repo root."
+    paths: list[Path] | None = typer.Argument(
+        None,
+        help="Plan files, a plans directory, or a repo root (default: the current "
+        "directory).",
     ),
     subplans_: bool = typer.Option(
         False,
@@ -1315,9 +1317,12 @@ def validate(
     a failure by default (the vacuous-pass bug: a script asserting on the exit
     code would otherwise green-light a repo whose plans were never examined);
     ``--allow-empty`` opts back into the old warn-and-pass.
+
+    With no argument the current directory is validated. A missing argument used
+    to be a usage error, which in a chained command reads as the check having run.
     """
     files: list[Path] = []
-    for p in paths:
+    for p in paths or [Path(".")]:
         if p.is_dir():
             found = _resolve_dir_plans(p)
             if not found:
