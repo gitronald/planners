@@ -1,6 +1,6 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``,
+Commands: ``add``, ``finalize``, ``activate``, ``set-pr``,
 ``subplans``, ``base``, ``index``, ``schema``, and ``validate``, plus ``skill``,
 ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
@@ -1088,6 +1088,69 @@ def activate(
 def _current_branch(root: Path) -> str:
     """The branch HEAD is on, in words fit for a message."""
     return base_mod.detect(root).current or "a detached HEAD"
+
+
+@app.command(name="set-pr")
+def set_pr(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    url: str = typer.Argument(..., help="The full PR URL."),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Record a plan's PR URL, refresh the index, and commit.
+
+    The index shows the PR, so the three hand steps (edit ``pr:``, regenerate,
+    commit) are one command here and the middle one cannot be forgotten. There is
+    no mainline guard: the PR exists once the branch does, so this commit belongs
+    on the branch with the work.
+
+    For a nested subplan the URL goes in the subplan's own ``pr:``, which is how a
+    step that lands through another repo's PR is recorded.
+    """
+    root = Path.cwd()
+    if not re.fullmatch(r"https?://\S+", url):
+        _err(f"not a PR URL: {url!r}; pass the full URL, not the number.")
+        raise typer.Exit(1)
+
+    plan, nested = _resolve_ref(root / PLANS_DIR, ref)
+    number, sub = _parse_ref(ref)
+    target = nested or plan
+
+    if nested is not None:
+        text = nested.read_text(encoding="utf-8")
+        updated = set_frontmatter_key(text, "pr", url)
+        label, slug = f"{number:03d}{sub}", nested.stem[2:]
+        staged = [nested]
+    else:
+        try:
+            meta = PlanMetadata.from_file(plan)
+        except PlanError as exc:
+            _err(f"cannot read {_shown(plan, root)}: {exc}")
+            raise typer.Exit(1) from None
+        text = plan.read_text(encoding="utf-8")
+        _, body = split_frontmatter(text)
+        meta.pr = url
+        updated = meta.render_frontmatter() + body
+        label, slug = meta.prefix, meta.slug
+        staged = [plan]
+
+    if updated == text and (no_commit or _is_unmodified(root, target)):
+        typer.echo(f"plan {label} already records {url}; nothing to do.")
+        return
+    if updated != text:
+        target.write_text(updated, encoding="utf-8")
+        typer.echo(f"recorded {url} in {_shown(target, root)}")
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
 
 
 def _apply_status(plan: Path, assignment: str) -> None:
