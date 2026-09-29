@@ -1,7 +1,8 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``, ``base``, ``index``, ``schema``,
-``validate``, plus ``skill``, ``rule``, ``install``, and ``permissions``, which
+Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``retire``,
+``subplans``, ``base``, ``index``, ``schema``, and ``validate``, plus ``skill``,
+``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
 subprocess (git) work is confined to this module and the ``add`` helpers; the
 schema/index transforms stay pure. Every shell-out goes through
@@ -14,12 +15,15 @@ import shutil
 import sys
 from importlib import metadata
 from pathlib import Path
+from typing import NamedTuple
 
 import typer
 from pkgskills import register
 
 from planners import base as base_mod
 from planners import proc
+from planners import subplans as subplans_mod
+from planners.body import append_to_section, set_frontmatter_key
 from planners.host import HOST
 from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
@@ -33,6 +37,7 @@ from planners.metadata import (
     next_number,
     next_sub,
 )
+from planners.subplans import SUBPLANS_DIRNAME, SubplanError, SubplanMetadata
 from planners.utils import is_safe_slug, parse_frontmatter, split_frontmatter
 
 app = typer.Typer(
@@ -139,32 +144,173 @@ def _resolve_dir_plans(directory: Path) -> list[Path]:
     return _plan_files(directory)
 
 
-def _resolve_plan(plans_dir: Path, ref: str) -> Path:
-    """Resolve a plan reference (``5``, ``005``, ``005a``) to its ``plan.md``.
+class _Ref(NamedTuple):
+    """What a plan reference resolved to.
 
-    The reference names a number and an optional subplan letter; the slug is not
-    part of it, so a retitled or re-slugged plan stays addressable by the number
-    that identifies it. Matching is on the parsed ``(number, letter)`` pair rather
-    than a string prefix, so ``5`` and ``005`` are the same plan while ``5`` never
-    matches ``050-...``.
-
-    Exits with a CLI error when the reference is malformed or matches no plan.
+    ``plan`` is the ``plan.md`` the reference names, or the umbrella's when it
+    names a nested subplan, which is then ``nested``. ``label`` is the reference
+    in its canonical ``NNN[x]`` form.
     """
+
+    plan: Path
+    nested: Path | None
+    label: str
+
+
+def _parse_ref(ref: str) -> tuple[int, str]:
+    """Split a plan reference into its number and optional letter, or exit."""
     match = re.fullmatch(r"(\d+)([a-z]?)", ref.strip())
     if match is None:
         _err(f"not a plan reference: {ref!r}; use a number like 005 (or 005a).")
         raise typer.Exit(1)
-    want_id, want_sub = int(match.group(1)), match.group(2)
+    return int(match.group(1)), match.group(2)
 
+
+def _find_plan(plans_dir: Path, want_id: int, want_sub: str) -> Path | None:
+    """The ``plan.md`` of the plan directory numbered ``want_id`` + ``want_sub``."""
     for plan in _plan_files(plans_dir):
         parts = DIRNAME_RE.match(plan.parent.name)
         if parts is None:  # unreachable: _plan_files filters on the same pattern
             continue
         if int(parts.group(1)) == want_id and parts.group(2) == want_sub:
             return plan
+    return None
 
-    _err(f"no plan {want_id:03d}{want_sub} found under {plans_dir}.")
+
+def _subplan_files(plan_dir: Path) -> list[Path]:
+    """The ``<letter>-<step>.md`` files under ``plan_dir``'s ``subplans/``, sorted.
+
+    Anything else in that directory is left out, so a plan can keep notes or
+    free-form files beside its subplans.
+    """
+    directory = plan_dir / SUBPLANS_DIRNAME
+    if not directory.is_dir():
+        return []
+    return [
+        child
+        for child in sorted(directory.iterdir())
+        if child.is_file() and subplans_mod.is_subplan_filename(child.name)
+    ]
+
+
+def _subplan_by_letter(plan_dir: Path, letter: str) -> Path | None:
+    """The nested subplan ``letter`` under ``plan_dir``, or ``None``."""
+    for path in _subplan_files(plan_dir):
+        if path.name.startswith(f"{letter}-"):
+            return path
+    return None
+
+
+def _resolve_ref(plans_dir: Path, ref: str) -> _Ref:
+    """Resolve a reference (``5``, ``005``, ``005a``) to a plan or a nested subplan.
+
+    The reference names a number and an optional letter; the slug is not part of
+    it, so a retitled or re-slugged plan stays addressable by the number that
+    identifies it. Matching is on the parsed ``(number, letter)`` pair rather than
+    a string prefix, so ``5`` and ``005`` are the same plan while ``5`` never
+    matches ``050-...``.
+
+    A lettered sibling plan wins over a nested subplan with the same letter, since
+    it is the one with an identity of its own.
+
+    Exits with a CLI error when the reference is malformed or matches nothing.
+    """
+    want_id, want_sub = _parse_ref(ref)
+    label = f"{want_id:03d}{want_sub}"
+    plan = _find_plan(plans_dir, want_id, want_sub)
+    if plan is not None:
+        return _Ref(plan, None, label)
+    if want_sub:
+        umbrella = _find_plan(plans_dir, want_id, "")
+        if umbrella is not None:
+            nested = _subplan_by_letter(umbrella.parent, want_sub)
+            if nested is not None:
+                return _Ref(umbrella, nested, label)
+    _err(f"no plan {label} found under {plans_dir}.")
     raise typer.Exit(1)
+
+
+def _resolve_plan(plans_dir: Path, ref: str) -> Path:
+    """Resolve a reference to a plan's ``plan.md``, refusing a nested subplan.
+
+    For the commands that act on a plan as a whole. A nested subplan has no
+    directory, no index row, and no activation of its own, so they have nothing
+    to act on.
+    """
+    found = _resolve_ref(plans_dir, ref)
+    if found.nested is not None:
+        number, letter = found.label[:-1], found.label[-1]
+        _err(
+            f"{found.label} is a nested subplan of plan {number}, not a plan of "
+            f"its own; set its status with `planners subplans {number} --set "
+            f"{letter}=<status>`."
+        )
+        raise typer.Exit(1)
+    return found.plan
+
+
+def _load_subplans(
+    plan: Path, planned: dict[Path, str] | None = None
+) -> tuple[list[SubplanMetadata], list[str]]:
+    """Parse an umbrella's nested subplans: the readable ones, and the errors.
+
+    An unreadable file is reported and left out rather than raised, so one bad
+    subplan does not hide the state of the rest.
+
+    ``planned`` holds texts that are about to be written, keyed by path. Each is
+    read in place of what is on disk, a file that does not exist yet included, so
+    a command can see the state it is about to create before it creates any of it.
+    """
+    planned = planned or {}
+    paths = {*_subplan_files(plan.parent), *planned}
+    metas: list[SubplanMetadata] = []
+    errors: list[str] = []
+    for path in sorted(paths, key=lambda found: found.name):
+        try:
+            text = planned.get(path)
+            if text is None:
+                text = path.read_text(encoding="utf-8")
+            metas.append(SubplanMetadata.from_text(text, path.name))
+        except (SubplanError, OSError, UnicodeDecodeError) as exc:
+            errors.append(f"{path.name}: {exc}")
+    return metas, errors
+
+
+def _sync_subplans(
+    root: Path, plan: Path, planned: dict[Path, str], *, warn: bool = True
+) -> None:
+    """Write ``planned`` subplan texts and the umbrella's table, as one step.
+
+    Everything that can refuse is settled before anything is written: each
+    planned text must read as a subplan, and the table must be one this command
+    may write. A refusal therefore leaves every file as it was, where writing
+    first would leave a subplan changed, the table stale, and no commit.
+    """
+    for path, text in planned.items():
+        try:
+            SubplanMetadata.from_text(text, path.name)
+        except SubplanError as exc:
+            _err(f"{_shown(path, root)}: {exc}")
+            raise typer.Exit(1) from None
+
+    metas, errors = _load_subplans(plan, planned)
+    if warn:
+        for error in errors:
+            _warn(f"warning: {error}")
+
+    current = plan.read_text(encoding="utf-8")
+    try:
+        updated = subplans_mod.write_table(current, metas)
+    except ValueError as exc:
+        _err(f"{_shown(plan, root)}: {exc}")
+        raise typer.Exit(1) from None
+
+    for path, text in planned.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    if updated != current:
+        plan.write_text(updated, encoding="utf-8")
+        typer.echo(f"updated the subplan table in {_shown(plan, root)}")
 
 
 def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
@@ -493,6 +639,75 @@ def _finalize_self_check(
     typer.echo("self-check OK")
 
 
+def _add_nested(
+    root: Path,
+    slug: str,
+    parent: int,
+    *,
+    title: str,
+    branch: str,
+    letter: str | None,
+    allow_branch: bool,
+    no_commit: bool,
+) -> None:
+    """Scaffold ``subplans/<letter>-<slug>.md`` under umbrella ``parent``.
+
+    The subplan gets its minimal frontmatter and a back-link, and the umbrella's
+    table gets its row, in the same step. The index is not touched: a nested
+    subplan has no row there.
+
+    The commit follows the umbrella. One that is not yet ``active`` lives on the
+    mainline, so the guard applies as it does to ``add``. An ``active`` one has a
+    branch where its work is, and a subplan added during that work belongs there.
+    """
+    plans_dir = root / PLANS_DIR
+    umbrella = _find_plan(plans_dir, parent, "")
+    if umbrella is None:
+        _err(
+            f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
+            "create it first with `planners add`."
+        )
+        raise typer.Exit(1)
+    try:
+        meta = PlanMetadata.from_file(umbrella)
+    except PlanError as exc:
+        _err(f"cannot read {_shown(umbrella, root)}: {exc}")
+        raise typer.Exit(1) from None
+    if meta.status in CLOSED_STATUSES:
+        _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
+        raise typer.Exit(1)
+
+    taken = {path.name[0]: path.name for path in _subplan_files(umbrella.parent)}
+    if letter is None:
+        try:
+            letter = subplans_mod.next_letter(list(taken))
+        except ValueError as exc:
+            _err(str(exc))
+            raise typer.Exit(1) from None
+    elif not re.fullmatch(r"[a-z]", letter):
+        _err(f"--letter must be a single letter a-z, got {letter!r}.")
+        raise typer.Exit(1)
+    elif letter in taken:
+        # Letters are fixed once assigned, so a taken one is never handed out
+        # again, and nothing is renamed to make room.
+        _err(f"letter {letter!r} is already taken by {taken[letter]}.")
+        raise typer.Exit(1)
+
+    if not no_commit and meta.status != Status.active:
+        _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
+
+    path = umbrella.parent / SUBPLANS_DIRNAME / f"{letter}-{slug}.md"
+    text = subplans_mod.render_subplan(title, meta.title, branch)
+    _sync_subplans(root, umbrella, {path: text})
+    typer.echo(f"wrote {path.relative_to(root)}")
+
+    if no_commit:
+        return
+
+    _git(root, ["add", str(path.relative_to(root)), str(umbrella.relative_to(root))])
+    _git(root, ["commit", "-m", f"plan [add]: {meta.prefix}{letter} - {slug}"])
+
+
 @app.command()
 def add(
     slug: str = typer.Argument(..., help="kebab-case plan slug."),
@@ -503,7 +718,20 @@ def add(
     parent: int | None = typer.Option(
         None,
         "--parent",
-        help="Umbrella plan number; scaffold a lettered subplan (e.g. 010a) under it.",
+        help="Umbrella plan number. With --nested, scaffold a nested subplan file "
+        "under it; without, a lettered sibling plan (e.g. 010a).",
+    ),
+    nested: bool = typer.Option(
+        False,
+        "--nested",
+        help="With --parent: write subplans/<letter>-<slug>.md inside the umbrella's "
+        "directory and add its row to the umbrella's table.",
+    ),
+    letter: str | None = typer.Option(
+        None,
+        "--letter",
+        help="With --nested: the letter to take (default: the next free one from b; "
+        "a is the investigation).",
     ),
     defer: bool = typer.Option(
         False,
@@ -527,6 +755,31 @@ def add(
         raise typer.Exit(1)
 
     root = Path.cwd()
+
+    if nested and parent is None:
+        _err("--nested needs --parent <NNN>: a nested subplan lives in its umbrella.")
+        raise typer.Exit(1)
+    if letter is not None and not nested:
+        _err("--letter applies to --nested subplans only.")
+        raise typer.Exit(1)
+    if nested and defer:
+        _err(
+            "--defer cannot be combined with --nested: a nested subplan takes a "
+            "letter from its umbrella, not a number from `finalize`."
+        )
+        raise typer.Exit(1)
+    if nested and parent is not None:
+        _add_nested(
+            root,
+            slug,
+            parent,
+            title=title or "",
+            branch=branch or "",
+            letter=letter,
+            allow_branch=allow_branch,
+            no_commit=no_commit,
+        )
+        return
 
     # Guard before writing anything, so a refusal leaves no half-scaffolded plan
     # directory behind — the same ordering the unsafe-slug check above relies on.
@@ -847,7 +1100,10 @@ def activate(
         # Re-render only the frontmatter and keep the body verbatim — the same
         # mutate-preserving-body shape `finalize` uses. The plan text is the record.
         path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-        typer.echo(f"activated {_shown(path, root)} on {meta.branch}")
+        # The branch named here is the one written to the frontmatter, where the
+        # work will go. It is not where the activation is committed, which the
+        # line after the commit says, so the two are never read as one.
+        typer.echo(f"activated {_shown(path, root)}; recorded branch {meta.branch}")
 
     if no_commit:
         return
@@ -859,6 +1115,310 @@ def activate(
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
     _git(root, ["commit", "-m", f"plan [activate]: {meta.prefix} - {meta.slug}"])
+    typer.echo(f"committed the activation on {_current_branch(root)}")
+
+
+def _current_branch(root: Path) -> str:
+    """The branch HEAD is on, in words fit for a message."""
+    return base_mod.detect(root).current or "a detached HEAD"
+
+
+def _head_authored(root: Path) -> str | None:
+    """The authored date of ``HEAD`` as ISO-8601, or ``None`` when there is none."""
+    try:
+        result = proc.run(
+            root, ["git", "log", "-1", "--format=%aI"], capture_output=True
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+@app.command(name="set-pr")
+def set_pr(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    url: str = typer.Argument(..., help="The full PR URL."),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Record a plan's PR URL, refresh the index, and commit.
+
+    The index shows the PR, so the three hand steps (edit ``pr:``, regenerate,
+    commit) are one command here and the middle one cannot be forgotten. There is
+    no mainline guard: the PR exists once the branch does, so this commit belongs
+    on the branch with the work.
+
+    For a nested subplan the URL goes in the subplan's own ``pr:``, which is how a
+    step that lands through another repo's PR is recorded.
+    """
+    root = Path.cwd()
+    if not re.fullmatch(r"https?://\S+", url):
+        _err(f"not a PR URL: {url!r}; pass the full URL, not the number.")
+        raise typer.Exit(1)
+
+    plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
+    target = nested or plan
+
+    if nested is not None:
+        text = nested.read_text(encoding="utf-8")
+        updated = set_frontmatter_key(text, "pr", url)
+        slug = nested.stem[2:]
+        staged = [nested]
+    else:
+        try:
+            meta = PlanMetadata.from_file(plan)
+        except PlanError as exc:
+            _err(f"cannot read {_shown(plan, root)}: {exc}")
+            raise typer.Exit(1) from None
+        text = plan.read_text(encoding="utf-8")
+        _, body = split_frontmatter(text)
+        meta.pr = url
+        updated = meta.render_frontmatter() + body
+        slug = meta.slug
+        staged = [plan]
+
+    if updated == text and (no_commit or _is_unmodified(root, target)):
+        typer.echo(f"plan {label} already records {url}; nothing to do.")
+        return
+    if updated != text:
+        target.write_text(updated, encoding="utf-8")
+        typer.echo(f"recorded {url} in {_shown(target, root)}")
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
+
+
+@app.command()
+def retire(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    into: str | None = typer.Option(
+        None, "--into", help="The plan the work moved to, e.g. 015."
+    ),
+    note: str | None = typer.Option(
+        None, "--note", help="A sentence for the Log entry, on why it was retired."
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Close a plan as retired: frontmatter, Log entry, index, and commit.
+
+    What ``activate`` does for ``active``, for the other end of a plan that was
+    superseded or is no longer needed. ``concluded`` is the authored date of
+    ``HEAD``, the commit the decision was made against. A ``branch`` or ``pr``
+    that was never filled becomes ``null``, since the plan is closed and they are
+    confirmed absent.
+
+    A nested subplan closes the same way in its own file, with ``moved_to``
+    recording ``--into``, and the umbrella's table follows.
+    """
+    root = Path.cwd()
+    plans_dir = root / PLANS_DIR
+    plan, nested, label = _resolve_ref(plans_dir, ref)
+
+    moved = _resolve_ref(plans_dir, into).label if into is not None else ""
+    if moved and moved == label:
+        _err(f"plan {label} cannot be retired into itself.")
+        raise typer.Exit(1)
+
+    sentence = "Retired."
+    if moved:
+        sentence += f" The work moved to plan {moved}."
+    if note:
+        sentence += f" {note.strip()}"
+    entry = f"- **{_now()}** — {sentence}"
+
+    if nested is not None:
+        try:
+            text = nested.read_text(encoding="utf-8")
+            current = SubplanMetadata.from_text(text, nested.name)
+        except (SubplanError, OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read {_shown(nested, root)}: {exc}")
+            raise typer.Exit(1) from None
+        if current.status in CLOSED_STATUSES:
+            _err(f"subplan {label} is {current.status}; it is closed.")
+            raise typer.Exit(1)
+        text = set_frontmatter_key(text, "status", Status.retired.value)
+        if moved:
+            text = set_frontmatter_key(text, "moved_to", moved)
+        _sync_subplans(root, plan, {nested: append_to_section(text, "Log", entry)})
+        typer.echo(f"retired {_shown(nested, root)}")
+        staged, slug = [nested, plan], nested.stem[2:]
+    else:
+        try:
+            meta = PlanMetadata.from_file(plan)
+        except PlanError as exc:
+            _err(f"cannot read {_shown(plan, root)}: {exc}")
+            raise typer.Exit(1) from None
+        if meta.status in CLOSED_STATUSES:
+            _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
+            raise typer.Exit(1)
+        # An umbrella does not close over unfinished subplans, by either door:
+        # `close` checks it with `subplans --require-closed`, and this is the
+        # same check for the plan that is retired instead.
+        unfinished = [
+            f"{sub.letter} ({sub.status.value})"
+            for sub in _load_subplans(plan)[0]
+            if sub.status in subplans_mod.UNFINISHED_STATUSES
+        ]
+        if unfinished:
+            _err(
+                f"plan {meta.prefix} has unfinished subplans: "
+                f"{', '.join(unfinished)}. Finish each, or retire it first with "
+                f"`planners retire {meta.prefix}<letter>`."
+            )
+            raise typer.Exit(1)
+        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        meta.status = Status.retired
+        meta.concluded = _head_authored(root) or _now()
+        meta.branch = meta.branch or None
+        meta.pr = meta.pr or None
+        body = append_to_section(
+            body, "Log", entry, before=("Handoff", "Retrospective")
+        )
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"retired {_shown(plan, root)}")
+        staged, slug = [plan], meta.slug
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [retire]: {label} - {slug}"])
+
+
+def _plan_status(
+    root: Path, plan: Path, assignment: str, planned: dict[Path, str]
+) -> str:
+    """Add one ``<letter>=<status>`` to ``planned``, or exit; writes nothing.
+
+    Returns the line that reports the change, for once it has been written.
+
+    Every assignment is checked here, before any is applied, so a bad one among
+    several refuses the whole command rather than the part of it that came after.
+    """
+    letter, sep, value = assignment.partition("=")
+    letter, value = letter.strip(), value.strip()
+    if not sep or not re.fullmatch(r"[a-z]", letter):
+        _err(f"--set takes <letter>=<status>, got {assignment!r}.")
+        raise typer.Exit(1)
+    try:
+        status = Status(value)
+    except ValueError:
+        allowed = ", ".join(s.value for s in Status)
+        _err(f"invalid status {value!r}; use one of: {allowed}.")
+        raise typer.Exit(1) from None
+    path = _subplan_by_letter(plan.parent, letter)
+    if path is None:
+        _err(f"no subplan {letter!r} under {plan.parent / SUBPLANS_DIRNAME}.")
+        raise typer.Exit(1)
+    text = planned.get(path)
+    if text is None:
+        text = path.read_text(encoding="utf-8")
+    if split_frontmatter(text)[0] is None:
+        # A status can be repaired in a frontmatter that exists. One is never
+        # invented: a file without it is somebody's notes, not a subplan.
+        _err(f"{_shown(path, root)} has no frontmatter; it is not a subplan.")
+        raise typer.Exit(1)
+    planned[path] = set_frontmatter_key(text, "status", status.value)
+    return f"set {path.name} to {status.value}"
+
+
+@app.command()
+def subplans(
+    ref: str = typer.Argument(..., help="The umbrella's plan number, e.g. 005."),
+    write: bool = typer.Option(
+        False,
+        "--write",
+        help="Regenerate the Status column of the umbrella's table from the "
+        "subplan frontmatter.",
+    ),
+    set_: list[str] | None = typer.Option(
+        None,
+        "--set",
+        help="<letter>=<status>: change one subplan's status and regenerate the "
+        "table in the same step. Repeatable.",
+    ),
+    require_closed: bool = typer.Option(
+        False,
+        "--require-closed",
+        help="Exit non-zero when a subplan is draft, active, or blocked: the check "
+        "an umbrella passes before it closes.",
+    ),
+) -> None:
+    """List a plan's nested subplans, and check them against the umbrella's table.
+
+    The subplan's frontmatter is the status of record; the table is generated from
+    it. Exits non-zero when the two disagree, when a subplan cannot be read or
+    breaks a rule, or, with ``--require-closed``, when one is unfinished. Writes no
+    commit: a status change belongs in the commit of the work it describes.
+    """
+    root = Path.cwd()
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    prefix = plan.parent.name.split("-", 1)[0]
+
+    planned: dict[Path, str] = {}
+    changes = [
+        _plan_status(root, plan, assignment, planned) for assignment in set_ or []
+    ]
+    if write or planned:
+        # The listing below reports what cannot be read, so it is not warned twice.
+        _sync_subplans(root, plan, planned, warn=False)
+    for change in changes:
+        typer.echo(change)
+
+    metas, problems = _load_subplans(plan)
+
+    if not metas and not problems:
+        typer.echo(f"plan {prefix} has no nested subplans")
+    width = max((len(meta.filename) for meta in metas), default=0)
+    for meta in metas:
+        typer.echo(
+            f"{prefix}{meta.letter}  {meta.status.value:<8}  "
+            f"{meta.filename:<{width}}  branch: {meta.branch or '-'}  "
+            f"needs: {', '.join(meta.needs) or '-'}"
+        )
+        problems.extend(f"{meta.filename}: {error}" for error in meta.validate())
+
+    set_errors = subplans_mod.check_set(metas)
+    problems.extend(set_errors)
+    # The order is of the work to be run, so a retired subplan is not a node in
+    # it. Left in, one with no needs would print as a root of the chain.
+    live = [meta for meta in metas if meta.status != Status.retired]
+    if any(meta.needs for meta in live) and not set_errors:
+        order = subplans_mod.render_order(subplans_mod.phases(live))
+        typer.echo(f"order: {order}")
+
+    problems.extend(
+        subplans_mod.table_disagreements(plan.read_text(encoding="utf-8"), metas)
+    )
+
+    if require_closed:
+        problems.extend(
+            f"{meta.letter}: still {meta.status.value} ({meta.filename})"
+            for meta in metas
+            if meta.status in subplans_mod.UNFINISHED_STATUSES
+        )
+
+    if problems:
+        for problem in problems:
+            _err(f"{_shown(plan, root)}: {problem}")
+        _err(f"{len(problems)} problem(s) in plan {prefix}'s subplans")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -941,10 +1501,46 @@ def schema(
         typer.echo(f"  {doc.name:<10} {doc.type:<12} {doc.description}")
 
 
+def _subplan_violations(plan: Path) -> list[str]:
+    """Every rule the nested subplans under ``plan``'s directory break.
+
+    Stricter than :func:`_subplan_files` about names: here a markdown file that is
+    not ``<letter>-<step>.md`` is a violation, because opting in to the check is
+    saying the directory holds subplans and nothing else.
+    """
+    directory = plan.parent / SUBPLANS_DIRNAME
+    if not directory.is_dir():
+        return []
+    found: list[str] = []
+    metas: list[SubplanMetadata] = []
+    for child in sorted(directory.iterdir()):
+        if not child.is_file() or child.suffix != ".md":
+            continue
+        try:
+            meta = SubplanMetadata.from_text(
+                child.read_text(encoding="utf-8"), child.name
+            )
+        except (SubplanError, OSError, UnicodeDecodeError) as exc:
+            found.append(f"{child}: {exc}")
+            continue
+        metas.append(meta)
+        found.extend(f"{child}: {error}" for error in meta.validate())
+    found.extend(f"{directory}: {error}" for error in subplans_mod.check_set(metas))
+    return found
+
+
 @app.command()
 def validate(
-    paths: list[Path] = typer.Argument(
-        ..., help="Plan files, a plans directory, or a repo root."
+    paths: list[Path] | None = typer.Argument(
+        None,
+        help="Plan files, a plans directory, or a repo root (default: the current "
+        "directory).",
+    ),
+    subplans_: bool = typer.Option(
+        False,
+        "--subplans",
+        help="Also check the frontmatter of each plan's nested subplans. Off by "
+        "default, so a plan with free-form files under subplans/ keeps passing.",
     ),
     allow_empty: bool = typer.Option(
         False,
@@ -961,9 +1557,12 @@ def validate(
     a failure by default (the vacuous-pass bug: a script asserting on the exit
     code would otherwise green-light a repo whose plans were never examined);
     ``--allow-empty`` opts back into the old warn-and-pass.
+
+    With no argument the current directory is validated. A missing argument used
+    to be a usage error, which in a chained command reads as the check having run.
     """
     files: list[Path] = []
-    for p in paths:
+    for p in paths or [Path(".")]:
         if p.is_dir():
             found = _resolve_dir_plans(p)
             if not found:
@@ -999,6 +1598,12 @@ def validate(
         for error in errors:
             _err(f"{path}: {error}")
         failures += len(errors)
+
+    if subplans_:
+        for path in files:
+            for error in _subplan_violations(path):
+                _err(error)
+                failures += 1
 
     # The index is generated from exactly the frontmatter just validated, so a
     # disagreement between them is a violation of the same contract — and this is

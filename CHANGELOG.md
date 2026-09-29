@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Nested subplans.** A plan can be split into files under its own directory
+  (`subplans/<letter>-<step>.md`) instead of into lettered sibling plans. Each
+  subplan carries a minimal frontmatter (`status` and `branch`, with `pr`,
+  `needs`, and `moved_to` optional) and stays out of the index. The rule and the
+  skills make this the default shape whenever a plan is split; lettered sibling
+  plans stay supported, on request.
+- `planners subplans <NNN>` lists a plan's nested subplans and exits non-zero
+  when the umbrella's table disagrees with the subplan frontmatter. `--write`
+  regenerates the table's Status column between two marker comments,
+  `--set <letter>=<status>` changes one subplan and the table in the same step,
+  and `--require-closed` fails while a subplan is `draft`, `active`, or
+  `blocked`. The commands that change a subplan (`--set`, `add --nested`, and
+  `retire`) check everything that can refuse before they write, so a refusal
+  leaves every file as it was.
+- `planners add <slug> --parent <NNN> --nested` scaffolds a nested subplan and
+  adds its row to the umbrella's table. It takes the next free letter from `b`;
+  `--letter a` makes the investigation.
+- `planners set-pr <NNN> <url>` records a plan's PR, refreshes the index, and
+  commits.
+- `planners retire <NNN>` closes a plan as retired: frontmatter, Log entry,
+  index, and commit. `--into <NNN>` records where the work went. Given a nested
+  subplan (`retire 012d --into 015`), it writes `moved_to` and updates the
+  umbrella's table. It refuses an umbrella that still has a `draft`, `active`,
+  or `blocked` subplan.
+- A `blocked` status, for work that is waiting on a person. It is an open state:
+  `concluded` stays empty, and it sorts after `active` in the index.
+- `planners validate --subplans` also checks nested subplan frontmatter. It is
+  off by default, so a plan with free-form files under `subplans/` keeps passing.
+- The `implement` and `pipeline` skills carry guidance for an orchestrated run,
+  used when the user asks for subagents or a workflow, and `implement <NNN><letter>`
+  starts one nested subplan on its own.
+- The rule documents a `## Handoff` section, between Log and Retrospective, for
+  the state an effort is left in between sessions.
+- The `implement` and `close` skills run a repo's `.planners/hooks/post-worktree`
+  and `.planners/hooks/pre-worktree-remove` scripts when they exist.
+
+### Changed
+
+- `planners validate` with no argument validates the current directory. It used
+  to exit with a usage error.
+- `planners activate` prints the branch it recorded and the branch it committed
+  on as two lines, where one line named only the recorded branch.
+- `planners activate <NNN><letter>` on a nested subplan points to
+  `planners subplans <NNN> --set <letter>=<status>`.
+- The `close` skill refuses to close an umbrella with unfinished nested
+  subplans, and confirms a merge with `git merge-base --is-ancestor` before it
+  deletes the branch.
+- The `implement` skill confirms before a push that would publish unpushed
+  commits on the base, finds a base that lives in its own worktree, and creates
+  the worktree under the main repo root.
+- The length guidance applies to each file on its own: the umbrella, and every
+  subplan.
+
 ## [0.7.0] - 2026-09-12
 
 ### Changed

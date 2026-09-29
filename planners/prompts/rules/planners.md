@@ -16,6 +16,7 @@ Plans live under **`.planners/`** at the repo root (git-tracked despite the lead
     .planners/
       README.md                     # generated "# Plans" index table — do not hand-edit
       plans/<NNN>-<slug>/plan.md    # one DIRECTORY per plan (sidecar files allowed)
+      plans/<NNN>-<slug>/subplans/<letter>-<step>.md    # nested subplans, once a plan is split
 
 Identity (`id`/`slug`) validates against the **directory name**. Regenerate the index with
 `{cli} index .` after changes; never hand-edit `.planners/README.md`. Human-authored docs
@@ -23,8 +24,8 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 
 `{cli} validate` fails when the tracked index disagrees with the plan frontmatter, so an
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
-with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`) already do
-that; a hand-written `log`/`close`/`retire` edit is the case to remember — run
+with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
+`retire`) already do that; a hand-written `log`/`close` edit is the case to remember — run
 `{cli} index .` before committing. The same check catches a merge: `install` marks the
 index `merge=union` in `.gitattributes`, so a **local** merge resolves it instead of
 conflicting — at the cost of duplicating a row when both branches rewrote the same one.
@@ -76,7 +77,7 @@ Every `plan.md` starts with YAML frontmatter (field order:
     pr:
     ---
 
-A **subplan** carries one extra key, `sub:` (its letter), rendered directly after
+A **lettered subplan** carries one extra key, `sub:` (its letter), rendered directly after
 `slug` — `id, slug, sub, status, …`. Ordinary and umbrella plans omit the line
 entirely rather than writing it empty, so their frontmatter stays exactly the seven
 keys above. `{cli} schema PlanMetadata` is the authority on both.
@@ -86,9 +87,13 @@ keys above. `{cli} schema PlanMetadata` is the authority on both.
 > still keyed `completed:` fails `validate` (its `concluded` parses empty) until the key is
 > renamed; rename the first frontmatter occurrence per file when migrating.
 
-`status` is one of `draft`, `active`, `done`, `inactive`, `retired` (the shipped enum; the
-neutral terminal status is `retired`, with no failure connotation). Update it as work
+`status` is one of `draft`, `active`, `blocked`, `done`, `inactive`, `retired` (the shipped
+enum; the neutral terminal status is `retired`, with no failure connotation). Update it as work
 progresses: `draft` -> `active` -> `done` (or `retired`).
+Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
+they have. It is an open state like `active`, so `concluded` stays empty and nothing closes over
+it. It is distinct from `draft` (not started) and `inactive` (set aside). Say what it waits on:
+in the plan's Handoff section, or for a nested subplan in the Note column of the umbrella's table.
 Use `inactive` for a plan that is parked or set aside without being implemented — considered
 and deliberately shelved (e.g., it resolved to a one-line caveat, or describes a feature since
 removed upstream) — but not formally closed and **may be revisited**. An `inactive` plan keeps
@@ -105,7 +110,7 @@ For `concluded`, use the timestamp from the relevant git commit (`git log --form
 not the current time or an estimate. Fill it for `done` and `retired`; leave it empty for
 `inactive` plans (they were parked, not concluded).
 Fill `pr` with the full PR URL (e.g., `https://github.com/owner/repo/pull/1`), not just the
-number.
+number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 
 **Empty vs `null`.** An empty value (`pr:`) means "pending / not yet determined" — use it for
 a field that may still be filled (an open plan's `concluded`/`pr`, or a branch not yet
@@ -129,7 +134,26 @@ change.
 
 - **Plan** — implementation spec (required)
 - **Log** — chronological notes, commits, decisions (optional, append during work)
+- **Handoff** — the present state, for whoever picks the plan up next (optional, between Log
+  and Retrospective, rewritten in place)
 - **Retrospective** — post-completion insights (optional, add when done)
+
+### Handoff
+
+Held questions and "where to pick this up" need a home in the plan, or they end up in chat and
+are lost with the session. Handoff is that home, for an effort that spans sessions. It holds:
+
+- the state of each piece, including what is uncommitted or unpushed;
+- the open questions, numbered once and never renumbered, so "question 3" means the same
+  thing in every session, with each answer and its date written beside its question;
+- the questions that are settled or handed to another plan, marked as such and naming the
+  plan, so a later session does not raise them again;
+- what is not verified;
+- the order of the remaining work, and who each item waits on.
+
+The test of a Handoff section is that a fresh session can start from "continue plan NNN" and
+nothing else. A pick-up prompt that has to restate the state is a sign the section is missing
+something.
 
 ## Length
 
@@ -139,20 +163,74 @@ too much at once. When a plan would cross ~500 lines (or already has), **propose
 a split** rather than letting it sprawl. Splitting is a *proposal*: surface it
 and confirm — never silently restructure an existing plan.
 
+The guidance applies to **each file on its own**: the umbrella, and every subplan. What
+grows in an umbrella after a split is its Log, so whole-effort entries stay short and point
+to the subplan's Log for the detail.
+
+**A plan is not split until it needs it.** Most plans are one file and stay that way. Split
+when a plan would cross the length guidance, or when the user asks, and not before. A short
+plan with a few ordered steps keeps them as a list.
+
+When a split is due, it takes one of two forms:
+
 - **Follow-ups** — carve the forward-looking remainder into separate, sequential
   plans (`NNN`, `NNN+1`, ...) that cross-link. Best when the pieces are
   independent or land at different times.
-- **Steps (umbrella + subplans)** — keep the parent as an *umbrella* whose
-  `## Plan` is just a subplan table (scope + status per step) plus the execution
-  order, and move each step into its own `<NNN><letter>-<slug>` subplan
-  (`015a`, `015b`, ...). The parent keeps its original metadata and stays `active`
-  until the chain completes. Best when the steps are one effort done in order.
-  The canonical shape is an `015` umbrella + `015a`-`015e` subplans. (Under
-  `.planners/`, subplans use the `sub` field added in **planners
-  0.2.7**: directory `<NNN><letter>-<slug>/plan.md`, `id` = the parent integer,
-  `sub` = the letter (`015a` -> `id: 15, sub: a`); ordinary/umbrella plans omit
-  `sub:`. Requires planners >= 0.2.7 — releases <= 0.2.6 silently ignore
-  letter-suffix directories, so upgrade before migrating an umbrella repo.)
+- **Steps (umbrella + nested subplans)** — keep the parent as an *umbrella* and move each
+  step into a file under its own `subplans/` directory. Best when the steps are one effort
+  done in order. See *Nested subplans* below.
+
+## Nested subplans
+
+**Subplans are nested.** Any request for subplans gets this shape, whatever words it uses:
+
+    .planners/plans/NNN-<slug>/
+      plan.md                  # umbrella: goal, decisions, order, risks, out of scope
+      subplans/
+        a-<step>.md            # one file per step or workstream
+        b-<step>.md
+
+"Sidecar" stays the word for any other file in a plan directory (a script, a fixture, a data
+file), which a plan can hold alongside its subplans.
+
+| Shape | Use when |
+|---|---|
+| nested subplans | the default whenever a plan is split. One PR into the mainline carries the whole effort |
+| `NNN<letter>` subplans | on request only: each step has its own branch, PR, and lifecycle |
+
+Lettered sibling plans (`<NNN><letter>-<slug>/plan.md`, with `id` = the parent integer and
+`sub` = the letter) are made only when the request describes them, and stay supported for the
+plans that already use them. Building the lettered shape by mistake means folding it back by
+hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--parent` without
+`--nested` still makes a lettered sibling.
+
+- **The umbrella holds decisions, not findings.** It keeps the goal, the numbered decisions,
+  the order, the risks, and what is out of scope, with a subplan table and the execution
+  order as a one-line dependency chain, e.g. `a -> (b, c, d) -> e`. The inventory, the
+  research, and the measurements belong to the investigation subplan.
+- **A subplan has its own `## Log`, and a minimal frontmatter** of `status` and `branch`, with
+  `pr`, `needs` (the letters it depends on), and `moved_to` optional. It carries no `id` or
+  `sub`, so it stays out of the index and out of `validate` (`validate --subplans` opts in).
+- **The subplan's frontmatter is the status of record, and the umbrella's table is generated
+  from it.** Change a status with `{cli} subplans <NNN> --set <letter>=<status>`, which
+  regenerates the table in the same step, and check the two with `{cli} subplans <NNN>`. The
+  table's Status column holds only the enum. Anything else ("waiting on review") goes in a
+  Note column that stays hand-written.
+- **An empty `branch` means the umbrella's branch.** A value names a sub-branch that merges
+  into the umbrella's branch, or the branch of a step that lands in another repo through that
+  repo's own PR, with the URL in the subplan's `pr`.
+- **Letters are fixed once assigned**, as plan numbers are. `a` is reserved for the
+  investigation from the first split, whether or not one is written yet, so steps start at `b`.
+- **A subplan is one node in the order.** An order that needs part of one subplan before
+  another and the rest after it is a sign that it is two subplans. When splitting by
+  workstream and splitting by order disagree, split by order.
+- **A subplan closes when its own work is finished**, not when the effort is.
+- **An umbrella does not close over unfinished subplans.** `{cli} subplans <NNN>
+  --require-closed` fails while one is `draft`, `active`, or `blocked`, and
+  `{cli} retire <NNN>` refuses the umbrella for the same reason. Each is finished, or
+  moved: a step carried to a follow-up plan closes as `retired` with `moved_to: <NNN>`
+  (`{cli} retire <NNN><letter> --into <NNN>`), and one that was partly done closes as `done`
+  with what moved named in the Note column.
 
 ## No local or personal specifics
 
@@ -185,6 +263,10 @@ When updating a plan after implementation, **append** new sections (Log, Retrosp
 not delete or condense existing plan content. The original spec is the historical record of
 what was planned; the Log records what actually happened. Both are valuable.
 
+**Handoff is the one exception.** It is rewritten in place, because it describes the present
+and the Log keeps the history. The generated Status column of a subplan table is rewritten by
+`{cli} subplans`, never by hand.
+
 ## Commits
 
 Commit changes in logical chunks during implementation, not one large commit at the end.
@@ -211,13 +293,15 @@ unset or stale; `git remote set-head origin --auto` re-derives it.
 Activation is `{cli} activate {NNN}`, which carries the same guard — it flips the
 status, fills `branch`, refreshes the index, and commits, so the ordering is
 enforced rather than remembered. `log` and `close` updates are still hand-written
-commits and belong on the feature branch, where the work is.
+commits and belong on the feature branch, where the work is. `{cli} set-pr` and
+`{cli} retire` commit where they are run and carry no guard: a PR exists once the branch
+does, and a plan is retired wherever the decision is made.
 
 ### Plan commit subjects name the slug
 
 `plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`,
-`{cli} finalize`, and `{cli} activate` write, so the remaining hand-written subjects
-(`log`, `close`, `retire`) match them. A slug is fixed by the directory name; a title can
+`{cli} finalize`, `{cli} activate`, `{cli} set-pr`, and `{cli} retire` write, so the
+remaining hand-written subjects (`log`, `close`) match them. A slug is fixed by the directory name; a title can
 be reworded, so a title-derived subject drifts from the plan it names. (`log` is
 the exception: its subject is a brief summary of the entry.)
 
@@ -239,6 +323,10 @@ skills):
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
+
+**Print a subcommand's instructions before describing it**, not only before running it:
+`{cli} skill <subcommand>`. A lifecycle step described from memory is described wrongly, and
+the instructions change with the installed version.
 
 ## Automation levels
 

@@ -34,6 +34,10 @@ previous one landed before it starts:
 - **close** requires exactly that state to begin — `status: active` with a
   branch, worktree, and draft PR. If any piece is missing, the handoff failed:
   stop and report rather than improvising.
+- For an umbrella with **nested subplans**, the work is finished when
+  `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
+  `active`, or `blocked`, and the umbrella's table agrees with the subplan
+  frontmatter. `close` refuses until it does.
 
 Check the contract between stages; do not paper over a missing piece.
 
@@ -50,6 +54,23 @@ many plans at once — but then the handoff contract above is the *only* shared
 state, so each delegated stage must re-read the plan and re-verify the contract
 before acting. Keep this chaining convention identical to any consumer-side
 pipeline-loops convention so the loop is defined once, not twice.
+
+## Umbrellas and orchestrated runs
+
+An umbrella's subplans are worked through in their execution order, one at a
+time, in the same agent. Fan them out to subagents **only when the user asks for
+subagents or a workflow**; the guidance is *An orchestrated run* in
+`{cli} skill implement`, and it applies to the work stage of a pipeline as it
+does to a bare `implement`. Two of its points shape the pipeline itself:
+
+- **Questions are held.** Collect open questions as the run goes, write them to
+  the plan's `## Handoff` section as they arise, and ask them together at the
+  review gate, which is the run's one pause. An interrupted run then loses
+  nothing.
+- **A blocked step does not stop the run.** A step that needs a human is marked
+  `blocked`, with what it waits on in the table's Note column, and the run
+  carries on with whatever does not depend on it. It does stop the close: a
+  `blocked` subplan is finished or moved to a follow-up plan first.
 
 ## Human-input points
 

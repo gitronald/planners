@@ -68,9 +68,13 @@ These tools can be used manually via CLI commands, but they are largely intended
 planners add <slug> --title "<Title>"    # scaffold a new plan (--defer: stage it unnumbered)
 planners finalize                        # number and commit the deferred batch, in one commit
 planners activate <NNN>                  # flip a plan to active, fill branch:, and commit
+planners set-pr <NNN> <url>              # record a plan's PR, refresh the index, and commit
+planners retire <NNN>                    # close a plan as retired (--into <NNN>: where the work went)
+planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under an umbrella
+planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
-planners validate .planners/plans        # validate plan frontmatter (and that the index agrees)
+planners validate                        # validate plan frontmatter (and that the index agrees)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
 planners rule <name>                     # print a bundled convention rule body
@@ -93,6 +97,18 @@ planners permissions --level assist      # print an automation-level permission 
 > batch (`plan [add]: NNN-MMM (N plans)`), and self-checks the result. `--defer` is for top-level
 > plans only; subplans (`--parent`) are numbered against their umbrella and use a plain `add`.
 
+> **Nested subplans.** A plan that outgrows one file is split into an umbrella `plan.md` and one
+> file per step under its own `subplans/` directory (`subplans/a-<step>.md`, `b-<step>.md`, ...).
+> Each subplan carries a small frontmatter of its own (`status` and `branch`, with `pr`, `needs`,
+> and `moved_to` optional), and that frontmatter is the status of record: the umbrella's table is
+> generated from it, between two marker comments. `planners subplans <NNN>` lists the subplans and
+> exits non-zero when the table disagrees; `--write` regenerates the table's Status column and
+> leaves the hand-written columns alone; `--set <letter>=<status>` changes one subplan and the
+> table in the same step; `--require-closed` is the check an umbrella passes before it closes.
+> Nested subplans stay out of the index and out of `validate` unless `validate --subplans` opts in.
+> `--parent` without `--nested` still makes a lettered sibling plan (`010a-<slug>/`), for a step
+> that needs a branch, PR, and lifecycle of its own.
+
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
 > it with `uv add --dev planners` and run everything as `uv run planners …`; then `planners install --local`
 > writes the holder and rule into the repo's own `.claude/` rather than `~/.claude/`.
@@ -100,7 +116,7 @@ planners permissions --level assist      # print an automation-level permission 
 ## Plans
 
 Each plan is a directory under `.planners/plans/` (`{NNN}-{slug}/plan.md`) and can carry scoped
-sidecar files. The generated [`.planners/README.md`](.planners/README.md) is the plans index, which
+sidecar files, and nested subplans under `subplans/` once it is split. The generated [`.planners/README.md`](.planners/README.md) is the plans index, which
 GitHub auto-renders on folder browse.
 
 ## Convention rule
