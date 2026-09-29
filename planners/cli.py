@@ -1,6 +1,6 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``, ``set-pr``,
+Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``retire``,
 ``subplans``, ``base``, ``index``, ``schema``, and ``validate``, plus ``skill``,
 ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
@@ -22,7 +22,7 @@ from pkgskills import register
 from planners import base as base_mod
 from planners import proc
 from planners import subplans as subplans_mod
-from planners.body import set_frontmatter_key
+from planners.body import append_to_section, set_frontmatter_key
 from planners.host import HOST
 from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
@@ -1090,6 +1090,26 @@ def _current_branch(root: Path) -> str:
     return base_mod.detect(root).current or "a detached HEAD"
 
 
+def _head_authored(root: Path) -> str | None:
+    """The authored date of ``HEAD`` as ISO-8601, or ``None`` when there is none."""
+    try:
+        result = proc.run(
+            root, ["git", "log", "-1", "--format=%aI"], capture_output=True
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _ref_label(plans_dir: Path, ref: str) -> str:
+    """``ref`` in its canonical ``NNN[x]`` form, after checking that it exists."""
+    _resolve_ref(plans_dir, ref)
+    number, sub = _parse_ref(ref)
+    return f"{number:03d}{sub}"
+
+
 @app.command(name="set-pr")
 def set_pr(
     ref: str = typer.Argument(
@@ -1151,6 +1171,100 @@ def set_pr(
         staged.append(_refresh_index(root, cols="curated"))
     _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
     _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
+
+
+@app.command()
+def retire(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    into: str | None = typer.Option(
+        None, "--into", help="The plan the work moved to, e.g. 015."
+    ),
+    note: str | None = typer.Option(
+        None, "--note", help="A sentence for the Log entry, on why it was retired."
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Close a plan as retired: frontmatter, Log entry, index, and commit.
+
+    What ``activate`` does for ``active``, for the other end of a plan that was
+    superseded or is no longer needed. ``concluded`` is the authored date of
+    ``HEAD``, the commit the decision was made against. A ``branch`` or ``pr``
+    that was never filled becomes ``null``, since the plan is closed and they are
+    confirmed absent.
+
+    A nested subplan closes the same way in its own file, with ``moved_to``
+    recording ``--into``, and the umbrella's table follows.
+    """
+    root = Path.cwd()
+    plans_dir = root / PLANS_DIR
+    plan, nested = _resolve_ref(plans_dir, ref)
+    number, sub = _parse_ref(ref)
+    label = f"{number:03d}{sub}"
+
+    moved = _ref_label(plans_dir, into) if into is not None else ""
+    if moved and moved == label:
+        _err(f"plan {label} cannot be retired into itself.")
+        raise typer.Exit(1)
+
+    sentence = "Retired."
+    if moved:
+        sentence += f" The work moved to plan {moved}."
+    if note:
+        sentence += f" {note.strip()}"
+    entry = f"- **{_now()}** — {sentence}"
+
+    if nested is not None:
+        try:
+            text = nested.read_text(encoding="utf-8")
+            current = SubplanMetadata.from_text(text, nested.name)
+        except (SubplanError, OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read {_shown(nested, root)}: {exc}")
+            raise typer.Exit(1) from None
+        if current.status in CLOSED_STATUSES:
+            _err(f"subplan {label} is {current.status}; it is closed.")
+            raise typer.Exit(1)
+        text = set_frontmatter_key(text, "status", Status.retired.value)
+        if moved:
+            text = set_frontmatter_key(text, "moved_to", moved)
+        nested.write_text(append_to_section(text, "Log", entry), encoding="utf-8")
+        typer.echo(f"retired {_shown(nested, root)}")
+        metas, errors = _load_subplans(plan)
+        for error in errors:
+            _warn(f"warning: {error}")
+        _write_subplan_table(plan, metas)
+        staged, slug = [nested, plan], nested.stem[2:]
+    else:
+        try:
+            meta = PlanMetadata.from_file(plan)
+        except PlanError as exc:
+            _err(f"cannot read {_shown(plan, root)}: {exc}")
+            raise typer.Exit(1) from None
+        if meta.status in CLOSED_STATUSES:
+            _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
+            raise typer.Exit(1)
+        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        meta.status = Status.retired
+        meta.concluded = _head_authored(root) or _now()
+        meta.branch = meta.branch or None
+        meta.pr = meta.pr or None
+        body = append_to_section(
+            body, "Log", entry, before=("Handoff", "Retrospective")
+        )
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"retired {_shown(plan, root)}")
+        staged, slug = [plan], meta.slug
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [retire]: {label} - {slug}"])
 
 
 def _apply_status(plan: Path, assignment: str) -> None:
