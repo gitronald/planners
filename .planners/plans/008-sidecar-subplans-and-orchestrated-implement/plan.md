@@ -84,17 +84,22 @@ looking for:
 
 **Name.** The rule and the skills call this shape **nested subplans**, because that is what
 people ask for. "Sidecar" stays the word for any extra file in a plan directory (a script, a
-fixture, a data file), which a plan can hold alongside its subplans. A request for "nested
-subplans", or for "subplans inside the plan folder", means this shape and never lettered
-sibling plans. A request for "subplans" that names no separate branches or PRs gets this
-shape too; building the lettered one by mistake means folding it back by hand.
+fixture, a data file), which a plan can hold alongside its subplans. **Subplans are nested from now on.** Any
+request for subplans gets this shape, whatever words it uses. Lettered sibling plans are
+made only when the request describes them, each step with a branch and a PR of its own, and
+they stay supported for the plans that already use them. Building the lettered shape by
+mistake means folding it back by hand.
 
-When to pick which, for the rule and the `add` skill:
+**A plan is not split until it needs it.** Most plans are one file and stay that way. The
+skills split a plan into nested subplans when it would cross the length guidance, or when
+the user asks, and not before. A short plan with a few ordered steps keeps them as a list.
+
+The two shapes, for the rule and the `add` skill:
 
 | Shape | Use when |
 |---|---|
-| `NNN<letter>` subplans | each step has its own branch, PR, and lifecycle |
-| nested subplans | one PR into the mainline carries the whole effort, and the split is for length and focus |
+| nested subplans | the default whenever a plan is split. One PR into the mainline carries the whole effort |
+| `NNN<letter>` subplans | on request only: each step has its own branch, PR, and lifecycle |
 
 One PR for the effort does not mean every step lands through it. Two cases are normal and
 stay nested:
@@ -211,12 +216,12 @@ or a workflow:
 |---|---|
 | `planners subplans <NNN>` | List a plan's nested subplans with their `status` and `branch`, and exit non-zero when the umbrella's table disagrees with the subplan frontmatter. With `--write`, regenerate the table's Status column between two marker comments and leave the Scope and Note columns alone. With `--set <letter>=<status>`, change one subplan's status and regenerate the table in the same step, so the two cannot be updated apart |
 | `implement <NNN><letter>` | Start one nested subplan on its own, e.g. `implement 012d`. Today the skill globs for a plan directory of that name, finds none, and has no path for a subplan inside an umbrella. For a nested subplan there is nothing to activate on the mainline and no branch to create: the umbrella is already `active`, so the skill sets the subplan `active`, re-reads it against the branch, and works on the umbrella's branch |
-| `close` | Refuse to close an umbrella while a subplan is `draft` or `active`, and list them. Each one is finished, or moved |
+| `close` | Refuse to close an umbrella while a subplan is `draft`, `active`, or `blocked`, and list them. Each one is finished, or moved |
 | Moved work | A step that waits on people (a decision, a manual check, someone else's input) often outlasts the code and is carried to a follow-up plan. Its subplan closes as `retired` with `moved_to: <NNN>`. A step that was partly done closes as `done`, with what moved named in the Note column. The subplan's Log maps each open item to its place in the follow-up. The follow-up plan lists what it inherits, and sorts the inherited "not verified" items into those it will check and those it leaves open |
 | `validate` | Opt-in check of subplan frontmatter (`status` in the shipped enum). Off by default, so existing plans with free-form subplan files keep passing |
-| `add --nested <letter>-<slug> --plan <NNN>` | Scaffold a subplan with its frontmatter and a back-link to the umbrella |
+| `add <slug> --parent <NNN> --nested` | Scaffold a nested subplan with its frontmatter and a back-link to the umbrella. It reuses `--parent`, which lettered subplans already take, and assigns the next free letter from `b`. `--letter a` makes the investigation. The skills always pass `--nested`; `--parent` without it still makes a lettered sibling plan |
 | Execution order | An optional `needs:` list in subplan frontmatter, so the dependency chain is data the orchestrator reads, not prose it interprets |
-| Blocked state | A way to mark a subplan as waiting on a person, distinct from `draft` and `inactive`. Decide between a new status and a `blocked:` note field |
+| Blocked state | `blocked` joins the status enum, for work that is waiting on a person. It is distinct from `draft` (not started) and `inactive` (set aside). Like `active` it is an open state, so `concluded` stays empty and nothing closes over it. What it waits on goes in the table's Note column, and in Handoff when it is a question |
 
 ### Related improvements
 
@@ -287,7 +292,7 @@ Found while running the shapes above. Each is small and independent of the rest.
 | 1 | Document the nested shape, its name, and the choice between shapes in the rule and the `add` skill |
 | 2 | Add the orchestration guidance to the `implement` and `pipeline` skills |
 | 3 | `planners subplans`, its `--write`, and the opt-in `validate` check, with tests |
-| 4 | `add --nested`, `needs:`, the blocked state, and `moved_to`, once step 3 has settled the frontmatter |
+| 4 | `add --parent --nested`, `needs:`, the `blocked` status, and `moved_to`, once step 3 has settled the frontmatter |
 | 5 | `implement <NNN><letter>` for a nested subplan, and the `close` check for unfinished subplans |
 | 6 | The related improvements, each as its own commit |
 
@@ -331,3 +336,7 @@ Found while running the shapes above. Each is small and independent of the rest.
 - **2026-09-29T02:18:07-07:00** — Wording pass. Several examples were replaced with neutral ones or
   removed where the point stood without them, and the suggested Log headings were renamed.
   No guidance was added or dropped.
+- **2026-09-29T02:33:14-07:00** — Three choices settled. `blocked` is a status, not a field. The
+  scaffolding flag is `add <slug> --parent <NNN> --nested`, with the letter assigned.
+  Subplans are always nested from now on, and a plan is split only when it needs it or the
+  user asks. Lettered sibling plans stay supported, on request.
