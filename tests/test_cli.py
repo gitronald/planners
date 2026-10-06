@@ -1022,6 +1022,9 @@ def test_validate_no_index_skips_the_stale_check_but_keeps_the_gate(
     index = tmp_path / ".planners" / "README.md"
     index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
 
+    # control: without the flag the same tree fails on the index
+    assert runner.invoke(app, ["validate", str(plans)]).exit_code == 1
+
     result = runner.invoke(app, ["validate", "--no-index", str(plans)])
     assert result.exit_code == 0, result.output
     assert "stale" not in result.output

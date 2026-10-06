@@ -1551,9 +1551,8 @@ def validate(
     no_index: bool = typer.Option(
         False,
         "--no-index",
-        help="Check frontmatter only; skip the stale-index comparison. For a "
-        "caller that reads plans from repos it does not maintain, where "
-        "another repo's unregenerated index is not its violation to fix.",
+        help="Skip the stale-index comparison and check frontmatter alone — for "
+        "a caller validating plans in a repo whose index it cannot regenerate.",
     ),
 ) -> None:
     """Validate plan frontmatter; exit non-zero on any violation or no match.
@@ -1567,6 +1566,11 @@ def validate(
 
     With no argument the current directory is validated. A missing argument used
     to be a usage error, which in a chained command reads as the check having run.
+
+    The repo's ``.planners/README.md`` must also match a fresh render of the
+    frontmatter; ``--no-index`` skips that comparison and checks frontmatter
+    alone, for a caller validating plans in a repo whose index it cannot
+    regenerate.
     """
     files: list[Path] = []
     for p in paths or [Path(".")]:
@@ -1631,16 +1635,14 @@ def validate(
     # ``--no-index`` keeps the frontmatter gate and drops the index comparison:
     # an aggregator validating another repo's plans has no business failing on
     # that repo's index hygiene, and no way to regenerate it.
-    roots = (
-        set()
-        if no_index
-        else {root for root in map(_repo_root_of, files) if root is not None}
-    )
-    stale = sorted(
-        root
-        for root in roots
-        if (root / INDEX_PATH).is_file() and _index_is_stale(root)
-    )
+    stale: list[Path] = []
+    if not no_index:
+        roots = {root for root in map(_repo_root_of, files) if root is not None}
+        stale = sorted(
+            root
+            for root in roots
+            if (root / INDEX_PATH).is_file() and _index_is_stale(root)
+        )
     for root in stale:
         _err(
             f"{root / INDEX_PATH}: stale — it does not match a fresh render of "
