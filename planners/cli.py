@@ -1548,6 +1548,13 @@ def validate(
         help="Treat a zero-file match as a pass (warn only) instead of the "
         "default nonzero exit — for scripts that tolerate an empty plan set.",
     ),
+    no_index: bool = typer.Option(
+        False,
+        "--no-index",
+        help="Check frontmatter only; skip the stale-index comparison. For a "
+        "caller that reads plans from repos it does not maintain, where "
+        "another repo's unregenerated index is not its violation to fix.",
+    ),
 ) -> None:
     """Validate plan frontmatter; exit non-zero on any violation or no match.
 
@@ -1621,7 +1628,14 @@ def validate(
     # every plan in the repo. Filtering first made a single `validate .` quadratic
     # in the plan count and repeated `_collect_metas`'s skip-warnings once per
     # file, so one malformed plan read as many.
-    roots = {root for root in map(_repo_root_of, files) if root is not None}
+    # ``--no-index`` keeps the frontmatter gate and drops the index comparison:
+    # an aggregator validating another repo's plans has no business failing on
+    # that repo's index hygiene, and no way to regenerate it.
+    roots = (
+        set()
+        if no_index
+        else {root for root in map(_repo_root_of, files) if root is not None}
+    )
     stale = sorted(
         root
         for root in roots

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners validate --no-index` checks frontmatter only and skips the
+  stale-index comparison, for callers that read plans from repos they do not
+  maintain (an aggregator cannot regenerate another repo's index).
+
 ## [0.8.0] - 2026-09-29
 
 ### Added
