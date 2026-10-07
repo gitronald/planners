@@ -1548,6 +1548,12 @@ def validate(
         help="Treat a zero-file match as a pass (warn only) instead of the "
         "default nonzero exit — for scripts that tolerate an empty plan set.",
     ),
+    no_index: bool = typer.Option(
+        False,
+        "--no-index",
+        help="Skip the stale-index comparison and check frontmatter alone — for "
+        "a caller validating plans in a repo whose index it cannot regenerate.",
+    ),
 ) -> None:
     """Validate plan frontmatter; exit non-zero on any violation or no match.
 
@@ -1560,6 +1566,11 @@ def validate(
 
     With no argument the current directory is validated. A missing argument used
     to be a usage error, which in a chained command reads as the check having run.
+
+    The repo's ``.planners/README.md`` must also match a fresh render of the
+    frontmatter; ``--no-index`` skips that comparison and checks frontmatter
+    alone, for a caller validating plans in a repo whose index it cannot
+    regenerate.
     """
     files: list[Path] = []
     for p in paths or [Path(".")]:
@@ -1621,12 +1632,17 @@ def validate(
     # every plan in the repo. Filtering first made a single `validate .` quadratic
     # in the plan count and repeated `_collect_metas`'s skip-warnings once per
     # file, so one malformed plan read as many.
-    roots = {root for root in map(_repo_root_of, files) if root is not None}
-    stale = sorted(
-        root
-        for root in roots
-        if (root / INDEX_PATH).is_file() and _index_is_stale(root)
-    )
+    # ``--no-index`` keeps the frontmatter gate and drops the index comparison:
+    # a caller validating plans in a repo it does not maintain cannot be failed on
+    # that repo's index hygiene, and has no way to regenerate it.
+    stale: list[Path] = []
+    if not no_index:
+        roots = {root for root in map(_repo_root_of, files) if root is not None}
+        stale = sorted(
+            root
+            for root in roots
+            if (root / INDEX_PATH).is_file() and _index_is_stale(root)
+        )
     for root in stale:
         _err(
             f"{root / INDEX_PATH}: stale — it does not match a fresh render of "

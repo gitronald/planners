@@ -1010,6 +1010,34 @@ def test_validate_checks_the_index_when_handed_a_single_plan_file(
     assert "stale" in result.output
 
 
+def test_validate_no_index_skips_the_stale_check_but_keeps_the_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A caller validating plans in a repo it does not maintain wants the
+    # frontmatter gate without that repo's index hygiene.
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    # control: without the flag the same tree fails on the index
+    assert runner.invoke(app, ["validate", str(plans)]).exit_code == 1
+
+    result = runner.invoke(app, ["validate", "--no-index", str(plans)])
+    assert result.exit_code == 0, result.output
+    assert "stale" not in result.output
+
+    # the frontmatter gate itself is untouched
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace("id: 1", "id: 9"), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["validate", "--no-index", str(plans)])
+    assert result.exit_code == 1
+    assert "id 9 != directory prefix 1" in result.output
+
+
 def test_validate_does_not_invent_a_missing_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

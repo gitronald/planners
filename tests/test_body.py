@@ -3,6 +3,7 @@
 from planners.body import (
     append_to_section,
     fenced_lines,
+    insert_after_first_subsection,
     insert_before_section,
     section_span,
     set_frontmatter_key,
@@ -95,6 +96,37 @@ def test_insert_before_section_picks_the_earliest_named_section() -> None:
 
 def test_insert_before_section_at_the_top_of_the_text() -> None:
     assert insert_before_section("## Log\n", "intro", ("Log",)) == "intro\n\n## Log\n"
+
+
+def test_insert_after_first_subsection_lands_between_subsections() -> None:
+    text = (
+        "## Plan\n\n### Goal\n\nWhy.\n\n#### Detail\n\nMore.\n\n### Decided\n\n1. x\n"
+    )
+    out = insert_after_first_subsection(text, "### New\n\nbody", "Plan")
+    assert out == (
+        "## Plan\n\n### Goal\n\nWhy.\n\n#### Detail\n\nMore.\n\n"
+        "### New\n\nbody\n\n### Decided\n\n1. x\n"
+    )
+
+
+def test_insert_after_first_subsection_follows_the_lead_paragraph() -> None:
+    out = insert_after_first_subsection(_PLAN, "### New\n\nbody", "Plan")
+    assert "## Plan\n\nThe spec.\n\n### New\n\nbody\n\n## Log\n" in out
+
+
+def test_insert_after_first_subsection_into_an_empty_section() -> None:
+    out = insert_after_first_subsection("## Plan\n\n## Log\n", "body", "Plan")
+    assert out == "## Plan\n\nbody\n\n## Log\n"
+
+
+def test_insert_after_first_subsection_at_the_end_of_the_text() -> None:
+    out = insert_after_first_subsection("## Plan\n\n### Goal\n\nWhy.", "body", "Plan")
+    assert out == "## Plan\n\n### Goal\n\nWhy.\n\nbody\n"
+
+
+def test_insert_after_first_subsection_falls_back_before_a_named_section() -> None:
+    out = insert_after_first_subsection("# T\n\n## Log\n", "body", "Plan", ("Log",))
+    assert out == "# T\n\nbody\n\n## Log\n"
 
 
 def test_set_frontmatter_key_replaces_a_line_where_it_stands() -> None:
