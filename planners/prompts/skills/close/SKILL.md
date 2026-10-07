@@ -11,6 +11,22 @@ Run a final review, document what happened, set the closing frontmatter, refresh
 the index, then merge the PR branch and clean up. Parse the plan number or path
 from the request.
 
+The default close merges through the plan's PR. Two phrases in the request
+change the steps, and each is read literally rather than reinterpreted:
+
+- **"no PR"** (or "merge locally", "just merge into dev") selects the **no-PR
+  path**: the branch is merged into the base with a local `git merge --no-ff`,
+  the PR steps are skipped, and `pr: null` is recorded. *Merging the existing
+  PR* is not a no-PR close, however similar the outcome. See *The no-PR path*
+  for the steps and for the rule when a PR already exists.
+- **"minimal review"** selects the **minimal review gate** in step 2: the
+  project checks and a diff skim, with nothing posted. It replaces the
+  review → post → fix → verify loop, not the gate itself; a close never merges
+  unreviewed.
+
+Both can be combined ("no PR, minimal review, just merge into dev"). When the
+request is silent, run the default.
+
 ## Steps
 
 ### 1. Read the plan and gather context
@@ -46,10 +62,23 @@ moved:
 
 ### 2. Review gate (review → fix → verify) — MANDATORY, BEFORE MERGE
 
-Do not call `gh pr merge` until this gate has run and every finding is fixed or
-recorded as a conscious no-op. Running the review and resolving its findings is
-what gates the merge; **posting the review to the PR is best-effort** — a blocked
-post never stalls the close.
+Do not merge — `gh pr merge` or a local `git merge` alike — until this gate has
+run and every finding is fixed or recorded as a conscious no-op. Running the
+review and resolving its findings is what gates the merge; **posting the review
+to the PR is best-effort** — a blocked post never stalls the close.
+
+**Minimal review.** When the user asked for a minimal review, the gate is:
+
+1. the full check gate below (lint, format check, type check, tests), run until
+   clean;
+2. a skim of the branch's diff against the base (`git diff <base>...HEAD`) for
+   anything the checks cannot see: a leftover debug line, a path or name that
+   is machine-specific, a plan file edit that was not meant to ship.
+
+Nothing is posted and no review skill runs. Fix what the skim finds the same
+way the full gate does, and say in the final log entry that the review was
+minimal, and at whose request. The user chooses the lighter gate; it is never
+the default, and a session does not downgrade to it on its own.
 
 ```bash
 gh pr list --head "$(git branch --show-current)" --state open --json number --jq '.[0].number'
@@ -105,7 +134,9 @@ changed, key decisions, and what would help next time. Insight, not a summary.
 - `pr` = the PR URL (`gh pr list --head "$(git branch --show-current)" --state all --json url --jq '.[0].url'`);
   if merged with no dedicated PR, write `pr: null` — never the string `none`.
   `implement` records it with `{cli} set-pr` when the PR opens, so it is
-  usually filled already; check it, and fill it only when it is not.
+  usually filled already; check it, and fill it only when it is not. On the
+  no-PR path it is `pr: null`, including when a PR was opened and then closed
+  unmerged in favor of the local merge (see *The no-PR path*).
 - Set `status: done`.
 - `{cli} index .` and commit the regenerated `.planners/README.md`.
 
@@ -157,3 +188,64 @@ grep -q '\.worktrees/' .git/hooks/pre-commit 2>/dev/null \
 Never delete a mainline branch (`{cli} base --all` prints them) — only the
 feature branch just merged. Report: review run, plan closed, PR merged, branch
 and worktree cleaned up (hook re-pointed if needed).
+
+## The no-PR path
+
+Used only when the user asks for it (see the opening). Steps 1 through 5 run as
+written, with step 2 at whichever gate the user chose; what changes is step 6,
+and one check that comes before anything else.
+
+**When a PR already exists, stop and ask.** Before any step, look:
+
+```bash
+gh pr list --head "$(git branch --show-current)" --state open --json number,url
+```
+
+If that returns a PR, the request and the state disagree: "no PR" was asked for,
+and a PR is open. Do not pick for the user, and do not merge the PR as if that
+were what "no PR" meant. Ask which they want, naming both:
+
+- **merge via the existing PR** — the default close from step 2 on, with the
+  PR URL kept in `pr:`; or
+- **close the PR unmerged and merge locally** — `gh pr close <number>` with a
+  comment saying the branch is being merged locally, then the steps below, with
+  `pr: null`.
+
+Either answer is fine; the point is that the instruction and the action match.
+
+**Step 6 on the no-PR path.** In the **worktree**, on the feature branch, commit
+the closing plan edit and push the branch as usual:
+
+```bash
+git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
+git push
+[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
+```
+
+Then in the **main checkout**, where the base is checked out, merge the branch
+with a merge commit whose subject follows the repo's merge-subject convention
+(for a merge made without a PR, name the branch: `merge: <branch>`, truncated
+with a trailing `...` past the commit-length limit):
+
+```bash
+git checkout "$({cli} base)" && git pull
+git merge --no-ff <branch> -m "merge: <branch>"
+{cli} index .
+git add .planners/README.md && git commit -m "update plan index after merge"   # only when the index changed
+git push
+```
+
+The index is marked `merge=union`, so the local merge does not conflict on it —
+but union can leave a plan's row duplicated when both branches rewrote it, and
+`{cli} validate` fails on an index that disagrees with the frontmatter. The
+`{cli} index .` after the merge is that repair; skip the commit when it changed
+nothing. The repo's `post-merge` hook runs the same regeneration after a clean
+merge, so often the index is already current and only the commit remains.
+
+Then the cleanup, as in the default step 6: remove the worktree, delete the
+branch on the remote and locally after the `merge-base --is-ancestor` test, and
+re-point the pre-commit hook if the worktree had installed it.
+
+Report: review run (and at which gate), plan closed, branch merged locally with
+no PR (or: existing PR closed unmerged, then merged locally), branch and
+worktree cleaned up.

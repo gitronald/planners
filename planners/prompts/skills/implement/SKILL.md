@@ -56,7 +56,7 @@ git rev-list --left-right --count HEAD...@{upstream}
   `git remote set-head origin --auto` records the remote's default branch if
   that is what is missing.
 - Behind upstream → pull the base first so the activation commit sits on top of
-  the latest; ahead → note how many commits are unpushed, for step 3.
+  the latest, and so the report in step 3 compares against a current upstream.
 - **The base may live in a worktree of its own**, not in the main checkout. When
   the main checkout is on some other branch, find the base with
   `git worktree list` and run step 3 from that worktree, rather than checking
@@ -74,17 +74,24 @@ recorded on the mainline regardless of whether the feature branch ever lands.
 git push
 ```
 
-**Confirm before the push when the base was ahead.** `git push` publishes every
-unpushed commit on the base along with the activation. When step 2 counted any,
-list them (`git log --oneline @{upstream}..HEAD`). When every one is this plan's
-own (its `plan [add]` commits, those of its nested subplans, and edits to its
-files), say how many there are and push: a plan that was split arrives with
-several. When the list holds anything else, show it and confirm before pushing.
-When step 2 counted none, push.
+**Read `activate`'s report before the push.** `git push` publishes every
+unpushed commit on the base along with the activation, so after its commit
+`activate` counts them and sorts them, against the upstream as last fetched:
 
-`activate` prints two lines, and they name different branches: the branch it
-**recorded** in the frontmatter, where the work will go, and the branch it
-**committed on**, which is the base.
+    committed the activation on dev
+    dev is 6 ahead of origin/dev (as last fetched): 6 are plan 008's own, 0 are other
+
+A commit is the plan's own when every path it touches is under the plan's
+directory (nested subplans included) or is the index. When the report says
+`0 are other`, push: a plan that was edited or split before activation arrives
+with several of its own, and that is the usual case. When it says more, the
+commits follow, one per line, as `git log --oneline` prints them; show that
+list and confirm before pushing. The report is withheld when the base has no
+upstream, which means there is nothing to push to either.
+
+`activate` prints two lines before the report, and they name different
+branches: the branch it **recorded** in the frontmatter, where the work will
+go, and the branch it **committed on**, which is the base.
 
 One command sets `status: active`, fills `branch:` (the plan's own field if set,
 otherwise `feature/<slug>`; `--branch <name>` to choose), refreshes the index, and
