@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   repo's own hook but makes one unregenerated index abort a caller that
   validates plans across repos it does not maintain and cannot reindex.
 
+### Changed
+
+- The first nested `add` places the generated subplans table near the top of
+  the umbrella's `## Plan` section, after its first subsection (the opening
+  summary) or after the lead paragraph when there are none, instead of at the
+  end of the spec. The table summarizes the steps, so it now comes before the
+  decisions and risks it summarizes. An umbrella that already has a table, or a
+  pre-placed pair of markers, is left where it is.
+
 ## [0.8.0] - 2026-09-29
 
 ### Added
