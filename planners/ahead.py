@@ -93,7 +93,7 @@ def parse_log(text: str) -> list[Commit]:
     commits: list[Commit] = []
     for record in text.split(_RS):
         lines = record.split("\n")
-        if not lines or not lines[0].strip():
+        if not lines[0].strip():
             continue
         head = lines[0]
         sha, _, subject = head.partition(" ")
@@ -127,15 +127,29 @@ def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:
     if upstream is None or not upstream.strip():
         return None
     upstream = upstream.strip()
+    # ``core.quotepath=off`` so a path with a non-ASCII byte prints as itself
+    # rather than C-quoted with octal escapes, which no prefix would match; and
+    # ``--no-renames`` so a file moved into the plan's directory lists its old
+    # path too — the deletion outside the plan is what the push publishes.
     log = _git_out(
-        root, ["log", f"--format={_RS}%h %s", "--name-only", f"{upstream}..HEAD"]
+        root,
+        [
+            "-c",
+            "core.quotepath=off",
+            "log",
+            f"--format={_RS}%h %s",
+            "--name-only",
+            "--no-renames",
+            f"{upstream}..HEAD",
+        ],
     )
     if log is None:
         return None
-    commits = parse_log(log)
-    own = tuple(c for c in commits if c.is_own(plan_dir))
-    other = tuple(c for c in commits if not c.is_own(plan_dir))
-    return Ahead(branch=branch, upstream=upstream, own=own, other=other)
+    own: list[Commit] = []
+    other: list[Commit] = []
+    for commit in parse_log(log):
+        (own if commit.is_own(plan_dir) else other).append(commit)
+    return Ahead(branch=branch, upstream=upstream, own=tuple(own), other=tuple(other))
 
 
 def report(ahead: Ahead, prefix: str) -> list[str]:

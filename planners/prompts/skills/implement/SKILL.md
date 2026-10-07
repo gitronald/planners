@@ -87,7 +87,10 @@ directory (nested subplans included) or is the index. When the report says
 with several of its own, and that is the usual case. When it says more, the
 commits follow, one per line, as `git log --oneline` prints them; show that
 list and confirm before pushing. The report is withheld when the base has no
-upstream, which means there is nothing to push to either.
+upstream to compare against — no remote, or a base created without `-u` —
+and silence is not a count of zero: when no report prints, check
+`git status -sb` (or `git log --oneline @{upstream}..`) before pushing, and set
+the upstream first when there is none.
 
 `activate` prints two lines before the report, and they name different
 branches: the branch it **recorded** in the frontmatter, where the work will

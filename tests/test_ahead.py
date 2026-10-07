@@ -6,7 +6,6 @@ with a real (local, bare) remote, because the question is what the upstream ref
 says — the parsing is unit-tested on its own.
 """
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,7 @@ from typer.testing import CliRunner
 from planners import ahead
 from planners.cli import app
 
-from .helpers import commit_all, init_git
+from .helpers import commit_all, git_out, init_git
 
 runner = CliRunner()
 
@@ -23,10 +22,6 @@ _DRAFT_PLAN = (
     "---\nid: 5\nslug: my-thing\nstatus: draft\nbranch:\n"
     "created: 2026-06-07T12:00:00-07:00\nconcluded:\npr:\n---\n\n# My thing\n"
 )
-
-
-def _git(path: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
 
 
 def _repo_with_remote(tmp_path: Path) -> Path:
@@ -37,9 +32,9 @@ def _repo_with_remote(tmp_path: Path) -> Path:
     (repo / "README.md").write_text("# repo\n", encoding="utf-8")
     commit_all(repo, "init")
     remote = tmp_path / "origin.git"
-    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(remote))
-    _git(repo, "remote", "add", "origin", str(remote))
-    _git(repo, "push", "-q", "-u", "origin", "main")
+    git_out(tmp_path, "init", "-q", "--bare", "-b", "main", str(remote))
+    git_out(repo, "remote", "add", "origin", str(remote))
+    git_out(repo, "push", "-q", "-u", "origin", "main")
     return repo
 
 
@@ -117,7 +112,7 @@ def test_activate_reports_only_its_own_commit_when_the_base_was_in_sync(
 ) -> None:
     repo = _repo_with_remote(tmp_path)
     _seed_plan(repo)
-    _git(repo, "push", "-q")
+    git_out(repo, "push", "-q")
     monkeypatch.chdir(repo)
 
     result = runner.invoke(app, ["activate", "005"])
@@ -169,6 +164,41 @@ def test_activate_lists_the_other_commits(
     lines = result.output.splitlines()
     assert lines[-1].startswith("  ") and lines[-1].endswith(" update widget")
     assert "plan [add]: 005" not in lines[-1]
+
+
+def test_activate_reads_a_non_ascii_path_as_the_plans_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """git C-quotes such a path unless told not to; a quoted path matches no prefix."""
+    repo = _repo_with_remote(tmp_path)
+    plan = _seed_plan(repo)
+    (plan.parent / "caf\u00e9.md").write_text("# notes\n", encoding="utf-8")
+    commit_all(repo, "add a sidecar")
+    monkeypatch.chdir(repo)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "3 are plan 005's own, 0 are other" in result.output
+
+
+def test_activate_reads_a_move_into_the_plan_as_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename lists only its destination unless told not to; the old path is the
+    deletion outside the plan that the push publishes."""
+    repo = _repo_with_remote(tmp_path)
+    plan = _seed_plan(repo)
+    (repo / "notes.md").write_text("# notes\n", encoding="utf-8")
+    commit_all(repo, "add notes")
+    git_out(repo, "mv", "notes.md", str(plan.parent / "notes.md"))
+    commit_all(repo, "move notes into the plan")
+    monkeypatch.chdir(repo)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "2 are plan 005's own, 2 are other" in result.output
+    assert "add notes" in result.output
+    assert "move notes into the plan" in result.output
 
 
 def test_activate_is_quiet_without_an_upstream(

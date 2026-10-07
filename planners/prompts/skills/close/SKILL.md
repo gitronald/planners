@@ -192,8 +192,11 @@ and worktree cleaned up (hook re-pointed if needed).
 ## The no-PR path
 
 Used only when the user asks for it (see the opening). Steps 1 through 5 run as
-written, with step 2 at whichever gate the user chose; what changes is step 6,
-and one check that comes before anything else.
+written, with step 2 at whichever gate the user chose, minus the gate's PR
+steps: there is no PR to post the review to and none to mark ready, so the
+full gate on this path is review -> fix -> verify with the review surfaced
+inline, and `gh pr ready` is skipped. What changes is step 6, and one check
+that comes before anything else.
 
 **When a PR already exists, stop and ask.** Before any step, look:
 
@@ -207,18 +210,22 @@ were what "no PR" meant. Ask which they want, naming both:
 
 - **merge via the existing PR** — the default close from step 2 on, with the
   PR URL kept in `pr:`; or
-- **close the PR unmerged and merge locally** — `gh pr close <number>` with a
-  comment saying the branch is being merged locally, then the steps below, with
-  `pr: null`.
+- **close the PR unmerged and merge locally** — the steps below, with
+  `pr: null`; the PR itself is closed in step 6, once the gate has passed.
 
 Either answer is fine; the point is that the instruction and the action match.
+Ask before step 1, but do not close the PR yet: a gate that finds a blocker
+can still end the close, and a PR closed early with a "merging locally"
+comment would then say something false.
 
 **Step 6 on the no-PR path.** In the **worktree**, on the feature branch, commit
-the closing plan edit and push the branch as usual:
+the closing plan edit and push the branch as usual; then, when the user chose
+to close an existing PR unmerged, close it now:
 
 ```bash
 git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
 git push
+gh pr close <number> --comment "Closing unmerged; the branch is merged locally into $({cli} base)."   # only when a PR was open
 [ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
 ```
 

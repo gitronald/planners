@@ -1121,7 +1121,7 @@ def activate(
     # The skill pushes next, and that push carries every unpushed commit on the
     # base. Count and sort them here so the skill reads a fact instead of sorting
     # by eye; quiet when there is no upstream to compare against.
-    ahead = ahead_mod.count(root, current, str(path.parent.relative_to(root)))
+    ahead = ahead_mod.count(root, current, path.parent.relative_to(root).as_posix())
     if ahead is not None:
         for line in ahead_mod.report(ahead, meta.prefix):
             typer.echo(line)
