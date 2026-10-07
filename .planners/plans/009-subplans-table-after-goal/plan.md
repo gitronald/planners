@@ -60,3 +60,11 @@ Moving tables in umbrellas that already have one. `planners subplans --write` ke
 table where it finds it.
 
 ## Log
+
+- **2026-10-06T18:05:21-07:00** — Implemented on `feature/subplans-table-after-goal` (PR #31). Added
+  `insert_after_first_subsection` to `planners/body.py`; `write_table` now uses it with
+  `## Plan` as the section and `Log`/`Handoff`/`Retrospective` as the fallback. Five body
+  tests and five `write_table` placement tests cover the cases listed under Tests; the
+  full suite (356 tests), ruff, and pyrefly pass. Checked end to end with
+  `planners add --parent 000 --nested` in a scratch repo: the table landed between
+  `### Goal` and `### Decided`. Skill text and `CHANGELOG.md` updated.
