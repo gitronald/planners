@@ -20,6 +20,7 @@ import re
 __all__ = [
     "append_to_section",
     "fenced_lines",
+    "insert_after_first_subsection",
     "insert_before_section",
     "section_span",
     "set_frontmatter_key",
@@ -113,6 +114,41 @@ def insert_before_section(text: str, block: str, titles: tuple[str, ...]) -> str
     head = "".join(lines[:at])
     gap = "" if head == "" or head.endswith("\n\n") else "\n"
     return head + gap + block + "\n" + "".join(lines[at:])
+
+
+def insert_after_first_subsection(
+    text: str, block: str, title: str, before: tuple[str, ...] = ()
+) -> str:
+    """Insert ``block`` near the top of the level-2 section headed ``title``.
+
+    The block follows the section's first level-3 subsection when it has one (the
+    opening summary, which the block then sits right under), and otherwise goes at
+    the end of the section, after its lead paragraph. When the section is absent
+    the block lands before the first section named in ``before`` that exists, or
+    at the end of the text, as :func:`insert_before_section` places it. One blank
+    line separates it from its neighbors on each side.
+    """
+    span = section_span(text, title)
+    if span is None:
+        return insert_before_section(text, block, before)
+
+    lines = text.splitlines(keepends=True)
+    start, end = span
+    inner = [(i, lvl) for i, lvl, _ in _headings(lines) if start < i < end]
+    at = end
+    first = next((i for i, lvl in inner if lvl == 3), None)
+    if first is not None:
+        at = next((i for i, lvl in inner if i > first and lvl <= 3), end)
+    while at > start + 1 and lines[at - 1].strip() == "":
+        at -= 1
+
+    block = block.strip("\n") + "\n"
+    head = "".join(lines[:at])
+    if not _ends_with_newline(head):
+        head += "\n"
+    tail = "".join(lines[at:])
+    gap = "" if not tail or tail.startswith("\n") else "\n"
+    return head + "\n" + block + gap + tail
 
 
 def append_to_section(
