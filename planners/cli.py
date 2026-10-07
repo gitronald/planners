@@ -1634,7 +1634,7 @@ def validate(
     # file, so one malformed plan read as many.
     # ``--no-index`` keeps the frontmatter gate and drops the index comparison:
     # a caller validating plans in a repo it does not maintain cannot be failed on
-    # that repo's index hygiene, and no way to regenerate it.
+    # that repo's index hygiene, and has no way to regenerate it.
     stale: list[Path] = []
     if not no_index:
         roots = {root for root in map(_repo_root_of, files) if root is not None}

@@ -74,7 +74,7 @@ planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under 
 planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
-planners validate                        # validate plan frontmatter (and that the index agrees; --no-index: frontmatter alone)
+planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
 planners rule <name>                     # print a bundled convention rule body

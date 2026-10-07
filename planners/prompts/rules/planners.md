@@ -26,9 +26,11 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
 with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
 `retire`) already do that; a hand-written `log`/`close` edit is the case to remember — run
-`{cli} index .` before committing. The same check catches a merge: `install` marks the
-index `merge=union` in `.gitattributes`, so a **local** merge resolves it instead of
-conflicting — at the cost of duplicating a row when both branches rewrote the same one.
+`{cli} index .` before committing. (`validate --no-index` skips the index comparison, for a
+caller checking plans in a repo whose index it cannot regenerate.) The same check catches a
+merge: `install` marks the index `merge=union` in `.gitattributes`, so a **local** merge
+resolves it instead of conflicting — at the cost of duplicating a row when both branches
+rewrote the same one.
 Regenerating repairs it, and `install` wires a `post-merge` hook (`planners-index`) that
 runs the regeneration for you after a clean merge. It cannot get the result *into* the
 merge commit — git writes the merge tree before `post-merge` runs — so the refreshed

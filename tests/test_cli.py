@@ -1030,7 +1030,9 @@ def test_validate_no_index_skips_the_stale_check_but_keeps_the_gate(
     assert "stale" not in result.output
 
     # the frontmatter gate itself is untouched
-    plan.write_text(plan.read_text().replace("id: 1", "id: 9"), encoding="utf-8")
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace("id: 1", "id: 9"), encoding="utf-8"
+    )
     result = runner.invoke(app, ["validate", "--no-index", str(plans)])
     assert result.exit_code == 1
     assert "id 9 != directory prefix 1" in result.output
