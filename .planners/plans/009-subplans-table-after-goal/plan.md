@@ -5,7 +5,7 @@ status: active
 branch: feature/subplans-table-after-goal
 created: 2026-10-06T15:01:33-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/31
 ---
 
 # Place the generated subplans table at the top of the umbrella's spec
