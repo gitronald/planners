@@ -95,10 +95,12 @@ already exist. Always pass `--nested`: `--parent` without it makes a lettered
 sibling plan (see below).
 
 The first nested `add` **writes the table itself**, under a `### Subplans`
-heading of its own, at the end of the umbrella's `## Plan` section. Do not write
-a heading or a table for it beforehand, or the umbrella ends up with two. To
-place the table somewhere else, put the two marker comments there first, with
-nothing between them, and the command fills them in.
+heading of its own, after the first subsection of the umbrella's `## Plan`
+section (the opening summary), or at the top of it when there are no
+subsections yet. Do not write a heading or a table for it beforehand, or the
+umbrella ends up with two. To place the table somewhere else, put the two
+marker comments there first, with nothing between them, and the command fills
+them in.
 
 - **Letters are fixed once assigned**, as plan numbers are. The command takes
   the next free letter from `b`. `a` is reserved for the investigation from the
