@@ -1,8 +1,8 @@
 ---
 id: 2
 slug: close-no-pr-path
-status: draft
-branch:
+status: active
+branch: feature/close-no-pr-path
 created: 2026-07-13T17:27:27-07:00
 concluded:
 pr:
