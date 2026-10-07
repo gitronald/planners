@@ -1013,7 +1013,7 @@ def test_validate_checks_the_index_when_handed_a_single_plan_file(
 def test_validate_no_index_skips_the_stale_check_but_keeps_the_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An aggregator reading plans from a repo it does not maintain wants the
+    # A caller validating plans in a repo it does not maintain wants the
     # frontmatter gate without that repo's index hygiene.
     plans = tmp_path / ".planners" / "plans"
     plan = _write_plan(plans, "001-thing", _VALID_PLAN)

@@ -1633,7 +1633,7 @@ def validate(
     # in the plan count and repeated `_collect_metas`'s skip-warnings once per
     # file, so one malformed plan read as many.
     # ``--no-index`` keeps the frontmatter gate and drops the index comparison:
-    # an aggregator validating another repo's plans has no business failing on
+    # a caller validating plans in a repo it does not maintain cannot be failed on
     # that repo's index hygiene, and no way to regenerate it.
     stale: list[Path] = []
     if not no_index:
