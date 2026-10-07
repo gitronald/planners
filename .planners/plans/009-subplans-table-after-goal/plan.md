@@ -1,8 +1,8 @@
 ---
 id: 9
 slug: subplans-table-after-goal
-status: draft
-branch:
+status: active
+branch: feature/subplans-table-after-goal
 created: 2026-10-06T15:01:33-07:00
 concluded:
 pr:
