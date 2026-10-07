@@ -114,3 +114,35 @@ mostly be noise. The case worth catching is unrelated work that rides along.
 **Work.** One helper that lists the commits ahead of the upstream with the
 paths each touches, the output line, and tests for: none ahead, all the plan's
 own, some other, no upstream, and `--no-commit`.
+
+## Log
+
+- **2026-10-06T19:58:49-07:00** — Implemented both halves on
+  `feature/close-no-pr-path` (PR #33, draft).
+
+  **`activate` report** (`e2d8bb8`). New module `planners/ahead.py`: `count`
+  resolves the upstream with `rev-parse @{upstream}` (quiet when there is
+  none), reads `git log --name-only` for the commits ahead, and sorts each as
+  the plan's own when every path it touches is under the plan's directory or
+  is the index. `report` renders the one summary line and, when there are
+  others, one `git log --oneline`-style line per commit. `activate` prints it
+  after "committed the activation on …"; `--no-commit` prints nothing. One
+  decision beyond the spec: a commit that touches no paths (a merge commit, an
+  empty commit) counts as *other*, since a merge of unrelated work is exactly
+  the ride-along worth confirming. Tests in `tests/test_ahead.py` cover
+  parsing, ownership edge cases (a sibling plan sharing the number prefix,
+  the index alone, no paths), and the five run cases the spec named: in
+  sync, all own, some other, no upstream, `--no-commit`.
+
+  **Skills** (`7987ac3`). `implement` step 3 now reads the report instead of
+  sorting by eye. `close` gains an opening that reads "no PR" and "minimal
+  review" literally, a *Minimal review* block in the review gate, and a
+  *The no-PR path* section: the PR-exists check comes first and stops to ask
+  (merge via the PR, or close it unmerged and merge locally), then a local
+  `git merge --no-ff` with a `merge: <branch>` subject, `{cli} index .` after
+  the merge as the union-merge repair, and `pr: null`. `pipeline` names how a
+  no-PR request meets its always-opened draft PR. The rule file's skill list
+  carries a one-line pointer. CHANGELOG `[Unreleased]` has both entries.
+
+  Checks run locally at `7987ac3`: ruff check, ruff format --check, pyrefly,
+  pytest (372 passed, 95% coverage), `planners validate .`.
