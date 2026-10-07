@@ -1,10 +1,10 @@
 ---
 id: 9
 slug: subplans-table-after-goal
-status: active
+status: done
 branch: feature/subplans-table-after-goal
 created: 2026-10-06T15:01:33-07:00
-concluded:
+concluded: 2026-10-06T18:05:22-07:00
 pr: https://github.com/gitronald/planners/pull/31
 ---
 
@@ -68,3 +68,24 @@ table where it finds it.
   full suite (356 tests), ruff, and pyrefly pass. Checked end to end with
   `planners add --parent 000 --nested` in a scratch repo: the table landed between
   `### Goal` and `### Decided`. Skill text and `CHANGELOG.md` updated.
+- **2026-10-06T18:15:38-07:00** — Review gate (`/code-review PR 31 medium`): two finders, one
+  verifier, one plausible finding. **Review follow-up:** the trailing-blank-line trim loop
+  in `insert_after_first_subsection` repeats the pattern in `append_to_section`. Conscious
+  no-op: the three body helpers assemble head, gap, and block differently, so only the
+  two-line loop is shareable, and a helper for it would add indirection without removing
+  real duplication. Edge probes (a level-4 heading before the first level-3, a heading
+  inside a code fence, no blank line after `## Plan`) all produced well-formed output. CI
+  green on 3.11 through 3.14; the review was posted to the PR.
+
+## Retrospective
+
+- The plan's three-case placement rule (first subsection, lead paragraph, no spec) mapped
+  one to one onto the helper's branches and onto the tests, so implementation held to the
+  spec with no redesign.
+- Putting the placement rule in `body.py` beside `insert_before_section`, rather than
+  inside `write_table`, kept `subplans.py` to a one-line change and made the rule testable
+  on bare markdown.
+- Reusing the existing marker lookup meant hand-placed tables and marker pairs needed no
+  new code, only tests that pinned the behavior.
+- The one review finding was shared blank-line trimming across helpers. If a fourth body
+  edit arrives, that is the point to extract a line-level insert helper; three was not.
