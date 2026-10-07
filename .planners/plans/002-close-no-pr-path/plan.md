@@ -1,10 +1,10 @@
 ---
 id: 2
 slug: close-no-pr-path
-status: active
+status: done
 branch: feature/close-no-pr-path
 created: 2026-07-13T17:27:27-07:00
-concluded:
+concluded: 2026-10-07T02:16:25-07:00
 pr: https://github.com/gitronald/planners/pull/33
 ---
 
@@ -146,3 +146,49 @@ own, some other, no upstream, and `--no-commit`.
 
   Checks run locally at `7987ac3`: ruff check, ruff format --check, pyrefly,
   pytest (372 passed, 95% coverage), `planners validate .`.
+
+- **2026-10-07T02:16:25-07:00** — Review gate at close (`/code-review`, medium;
+  posted to PR #33). Checks clean before and after: ruff, ruff format, pyrefly,
+  pytest (374 passed, 95% coverage), `planners validate .`.
+
+  **Review follow-up** (`f2d0446`). Raised and actioned, each with a test:
+  `git log --name-only` C-quotes non-ASCII paths, so a plan's own commit
+  touching one read as *other* — the log now runs with `core.quotepath=off`;
+  default rename detection lists only a move's destination, so a `git mv` from
+  outside the plan into it read as the plan's own while its deletion outside
+  shipped unconfirmed — now `--no-renames`. Without a test: `plan_dir` passed
+  as posix (Windows only); one partition pass and a dead branch in
+  `parse_log`; the test file's local git helper replaced by `helpers.git_out`.
+  In the skills: the no-PR path now says the gate's PR steps (post, `gh pr
+  ready`) are skipped; `gh pr close` moved from before step 1 to step 6 so a
+  gate that blocks the close cannot leave the PR closed with a false comment;
+  and `implement` no longer reads a withheld report as "nothing to push to",
+  since a base with a remote but no tracking upstream is silent too. Conscious
+  no-ops: the private `_git_out` twin in `base.py` (differs on strip; a
+  refactor outside this plan), the draft-plan literal duplicated across three
+  test files (pre-existing pattern), silence on any git failure (by design),
+  and `git checkout "$(planners base)"` failing when the base lives in its own
+  worktree (pre-existing in the default step 6). Then merged `origin/dev` in
+  (plan 010 had landed) and regenerated the index: the union merge had kept
+  both versions of this plan's row.
+
+## Retrospective
+
+- The spec's "no PR" conflict rule held up: the original misreading (merge the
+  existing PR when asked for none) is now a question the skill must ask, and
+  pipeline names where that question lands.
+- The two real bugs the review found were both in how `git log --name-only`
+  is read, not in the sorting logic — path quoting and rename detection. Any
+  helper that parses porcelain-ish git output should start from `-c
+  core.quotepath=off` and an explicit rename stance, and a test with a
+  non-ASCII name costs one line.
+- Writing the first version of the no-PR path as "steps 1–5 as written" hid a
+  contradiction with the gate's PR steps; a path that removes a thing has to
+  say which later steps touched it.
+- Closing the PR before the gate was the same mistake the plan set out to fix,
+  in miniature: an action taken before the decision it depends on. Irreversible
+  or outward-facing steps belong after the gate.
+- The index duplicated its row on the local merge from dev exactly as plan 004
+  predicted; the post-merge hook repaired it and the only work left was the
+  commit. The GitHub-side conflict on the same file is why the merge was done
+  locally first.
