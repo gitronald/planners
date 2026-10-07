@@ -5,7 +5,7 @@ status: active
 branch: feature/close-no-pr-path
 created: 2026-07-13T17:27:27-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/33
 ---
 
 # Support a no-PR close path in the close skill
