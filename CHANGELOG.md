@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners validate --no-index` skips the stale-index comparison and checks
+  frontmatter alone. Since 0.6.0 `validate` has also failed when a repo's
+  `.planners/README.md` disagrees with its frontmatter, which is right for the
+  repo's own hook but makes one unregenerated index abort a caller that
+  validates plans across repos it does not maintain and cannot reindex.
+
 ## [0.8.0] - 2026-09-29
 
 ### Added
