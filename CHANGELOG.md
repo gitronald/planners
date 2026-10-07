@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners activate` reports the base's unpushed commits after its commit:
+  how many sit ahead of the upstream as last fetched, how many are the plan's
+  own (every path under the plan's directory or the index), and how many are
+  other, listed one per line. The `implement` skill reads that line to decide
+  whether the push that follows needs confirming, instead of sorting the
+  commits by eye. The report is withheld when the base has no upstream, and
+  `--no-commit` prints none.
+- The `close` skill has an explicit no-PR path: "no PR" merges the branch into
+  the base with a local `git merge --no-ff`, records `pr: null`, and
+  regenerates the index after the merge. When a PR already exists for the
+  branch, the skill stops and asks whether to merge through it or close it
+  unmerged, rather than reading "no PR" as "merge the PR". "minimal review"
+  selects a lighter review gate (the project checks plus a diff skim, nothing
+  posted) in place of the full review loop. `pipeline` names how a no-PR
+  request meets its always-opened draft PR.
+
 ## [0.9.0] - 2026-10-06
 
 ### Added

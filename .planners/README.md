@@ -2,8 +2,8 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 002 | [Support a no-PR close path in the close skill](plans/002-close-no-pr-path/plan.md) | active | — | — |
 | 010 | [Follow-ups from the validate --no-index review](plans/010-validate-follow-ups/plan.md) | draft | — | — |
+| 002 | [Support a no-PR close path in the close skill](plans/002-close-no-pr-path/plan.md) | done | 2026-10-07 02:16 PT | [#33](https://github.com/gitronald/planners/pull/33) |
 | 009 | [Place the generated subplans table at the top of the umbrella's spec](plans/009-subplans-table-after-goal/plan.md) | done | 2026-10-06 18:05 PT | [#31](https://github.com/gitronald/planners/pull/31) |
 | 008 | [Support nested subplans and an orchestrated implement run](plans/008-sidecar-subplans-and-orchestrated-implement/plan.md) | done | 2026-09-29 03:19 PT | [#28](https://github.com/gitronald/planners/pull/28) |
 | 007 | [Adopt pkgskills for prompt packaging and install](plans/007-adopt-pkgskills/plan.md) | done | 2026-09-12 12:57 PT | [#24](https://github.com/gitronald/planners/pull/24) |

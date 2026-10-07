@@ -20,6 +20,7 @@ from typing import NamedTuple
 import typer
 from pkgskills import register
 
+from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import proc
 from planners import subplans as subplans_mod
@@ -1115,7 +1116,15 @@ def activate(
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
     _git(root, ["commit", "-m", f"plan [activate]: {meta.prefix} - {meta.slug}"])
-    typer.echo(f"committed the activation on {_current_branch(root)}")
+    current = _current_branch(root)
+    typer.echo(f"committed the activation on {current}")
+    # The skill pushes next, and that push carries every unpushed commit on the
+    # base. Count and sort them here so the skill reads a fact instead of sorting
+    # by eye; quiet when there is no upstream to compare against.
+    ahead = ahead_mod.count(root, current, path.parent.relative_to(root).as_posix())
+    if ahead is not None:
+        for line in ahead_mod.report(ahead, meta.prefix):
+            typer.echo(line)
 
 
 def _current_branch(root: Path) -> str:

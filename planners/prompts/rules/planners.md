@@ -321,7 +321,9 @@ skills):
 - `/planners implement` — check git status, activate on the mainline, branch from
   that commit, start coding
 - `/planners update` — activate, log, close, or retire a plan
-- `/planners close` — close end-to-end: log, retrospective, merge PR, clean up branch
+- `/planners close` — close end-to-end: log, retrospective, merge PR, clean up branch.
+  "no PR" merges locally instead (`pr: null`) and asks first when a PR already exists;
+  "minimal review" swaps the review loop for checks plus a diff skim
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs

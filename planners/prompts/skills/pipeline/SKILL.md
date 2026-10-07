@@ -34,6 +34,12 @@ previous one landed before it starts:
 - **close** requires exactly that state to begin — `status: active` with a
   branch, worktree, and draft PR. If any piece is missing, the handoff failed:
   stop and report rather than improvising.
+- A pipeline run always opens a draft PR, so a request for a **no-PR close**
+  ("no PR, just merge into dev") meets `close`'s conflict rule at the gate: the
+  PR exists, and the request says there should be none. `close` asks which the
+  user wants rather than reinterpreting; that question joins the review-gate
+  pause rather than adding a second one. Say so up front when the request
+  names both a pipeline and no PR.
 - For an umbrella with **nested subplans**, the work is finished when
   `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
   `active`, or `blocked`, and the umbrella's table agrees with the subplan
@@ -75,9 +81,9 @@ does to a bare `implement`. Two of its points shape the pipeline itself:
 ## Human-input points
 
 `close` stops at a **mandatory review gate** (review the PR diff, post it
-best-effort, fix or consciously no-op every finding) before it merges. The
-pipeline **pauses** at that gate — it does not abort and does not merge
-unreviewed. Surface the review, wait for approval, then resume `close` from the
+best-effort, fix or consciously no-op every finding; or the minimal gate when
+the user asked for "minimal review") before it merges. The pipeline **pauses**
+at that gate — it does not abort and does not merge unreviewed. Surface the review, wait for approval, then resume `close` from the
 gate (final log, retrospective, closing frontmatter, merge, cleanup). This is
 the one expected pause in an otherwise unattended run.
 
