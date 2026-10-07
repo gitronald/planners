@@ -307,21 +307,68 @@ def test_write_table_pads_a_short_row() -> None:
     assert "| a | look | done |  |\n" in out
 
 
-def test_write_table_creates_the_table_at_the_end_of_the_spec() -> None:
+_FRESH_TABLE = (
+    "### Subplans\n\n"
+    f"{TABLE_START}\n"
+    "| Subplan | Scope | Status | Note |\n"
+    "|---|---|---|---|\n"
+    "| [a](subplans/a-step-a.md) | Look | done |  |\n"
+    "| [b](subplans/b-step-b.md) | Build | draft |  |\n"
+    f"{TABLE_END}\n"
+)
+_FRESH_SUBS = [_sub("b", title="Build"), _sub("a", "done", title="Look")]
+
+
+def test_write_table_creates_the_table_after_the_lead_paragraph() -> None:
     text = "# Umbrella\n\n## Plan\n\nThe goal.\n\n## Log\n\n- entry\n"
-    subs = [_sub("b", title="Build"), _sub("a", "done", title="Look")]
-    out = write_table(text, subs)
+    out = write_table(text, _FRESH_SUBS)
     assert out == (
-        "# Umbrella\n\n## Plan\n\nThe goal.\n\n### Subplans\n\n"
-        f"{TABLE_START}\n"
+        f"# Umbrella\n\n## Plan\n\nThe goal.\n\n{_FRESH_TABLE}\n## Log\n\n- entry\n"
+    )
+    assert table_disagreements(out, _FRESH_SUBS) == []
+    assert write_table(out, _FRESH_SUBS) == out
+
+
+def test_write_table_creates_the_table_after_the_first_subsection() -> None:
+    text = (
+        "# Umbrella\n\n## Plan\n\n### Goal\n\nWhy.\n\n### Decided\n\n1. x\n\n"
+        "## Log\n\n- entry\n"
+    )
+    out = write_table(text, _FRESH_SUBS)
+    assert out == (
+        f"# Umbrella\n\n## Plan\n\n### Goal\n\nWhy.\n\n{_FRESH_TABLE}\n"
+        "### Decided\n\n1. x\n\n## Log\n\n- entry\n"
+    )
+    assert write_table(out, _FRESH_SUBS) == out
+
+
+def test_write_table_without_a_spec_section_goes_before_the_log() -> None:
+    text = "# Umbrella\n\nA line.\n\n## Log\n\n- entry\n"
+    out = write_table(text, _FRESH_SUBS)
+    assert out == f"# Umbrella\n\nA line.\n\n{_FRESH_TABLE}\n## Log\n\n- entry\n"
+
+
+def test_write_table_leaves_an_existing_table_at_the_end_of_the_spec() -> None:
+    text = (
+        "## Plan\n\n### Goal\n\nWhy.\n\n### Subplans\n\n"
+        f"{TABLE_START}\n| Subplan | Status |\n|---|---|\n| b | draft |\n{TABLE_END}\n"
+        "\n## Log\n"
+    )
+    out = write_table(text, [_sub("b", "done")])
+    assert out == text.replace("| b | draft |", "| b | done |")
+
+
+def test_write_table_fills_a_marker_pair_placed_by_hand() -> None:
+    text = f"## Plan\n\n{TABLE_START}\n{TABLE_END}\n\n### Goal\n\nWhy.\n"
+    out = write_table(text, _FRESH_SUBS)
+    assert out == (
+        f"## Plan\n\n{TABLE_START}\n"
         "| Subplan | Scope | Status | Note |\n"
         "|---|---|---|---|\n"
         "| [a](subplans/a-step-a.md) | Look | done |  |\n"
         "| [b](subplans/b-step-b.md) | Build | draft |  |\n"
-        f"{TABLE_END}\n\n## Log\n\n- entry\n"
+        f"{TABLE_END}\n\n### Goal\n\nWhy.\n"
     )
-    assert table_disagreements(out, subs) == []
-    assert write_table(out, subs) == out
 
 
 def test_write_table_without_subplans_or_a_table_is_a_no_op() -> None:

@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from planners.body import fenced_lines, insert_before_section
+from planners.body import fenced_lines, insert_after_first_subsection
 from planners.metadata import Status, extract_title
 from planners.utils import parse_frontmatter, split_frontmatter
 
@@ -63,8 +63,10 @@ TABLE_START = "<!-- planners:subplans:start -->"
 TABLE_END = "<!-- planners:subplans:end -->"
 TABLE_HEADER = ("Subplan", "Scope", "Status", "Note")
 
-# The sections a generated table is placed ahead of when the umbrella has no
-# table yet: the end of the spec, before the record of what happened.
+# Where a generated table goes when the umbrella has no table yet: near the top
+# of the spec, after its opening subsection. An umbrella with no spec section at
+# all gets it ahead of the record of what happened.
+_SPEC = "Plan"
 _AFTER_SPEC = ("Log", "Handoff", "Retrospective")
 
 _PLAN_REF_RE = re.compile(r"^\d+[a-z]?$")
@@ -448,8 +450,10 @@ def write_table(text: str, subplans: list[SubplanMetadata]) -> str:
     Only a row whose status is wrong is rewritten, so every other row keeps its
     bytes. A subplan with no row gains one at the end of the table. A row with no
     subplan is left alone: it was written by hand, and deleting it would lose
-    whatever its Scope and Note say. An umbrella with no table gains one at the
-    end of its spec.
+    whatever its Scope and Note say. An umbrella with no table gains one near the
+    top of its ``## Plan`` section: after the first subsection, or at the end of
+    the section when it has none. Without a ``## Plan`` the table goes before
+    ``## Log``.
 
     Raises ``ValueError`` when the table exists but has no Status column, since
     there is then no column this function is allowed to write.
@@ -462,7 +466,7 @@ def write_table(text: str, subplans: list[SubplanMetadata]) -> str:
         block = "\n".join(
             ["### Subplans", "", TABLE_START, *_fresh_table(ordered), TABLE_END]
         )
-        return insert_before_section(text, block, _AFTER_SPEC)
+        return insert_after_first_subsection(text, block, _SPEC, _AFTER_SPEC)
 
     lines = list(table.lines)
     if table.header is None:
