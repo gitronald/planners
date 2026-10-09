@@ -34,13 +34,18 @@ prints an evidence report for each one. It never edits a file, commits, or
 changes a branch.
 
 - `--status/-s`, repeatable, one of `all`, `active`, `draft`, `done`,
-  `retired`, `blocked`, or `inactive`. The default is `active`, `draft`, and `blocked`, the open statuses
-  (question 1).
-  `all` is shorthand for every value in the enum and cannot be combined with
-  the others.
+  `retired`, `blocked`, or `inactive`. The default is `active`, `draft`,
+  and `blocked`, the open statuses (question 1). `all` is shorthand for
+  every value in the enum and cannot be combined with the others.
 - A positional plan ref (`011`, `012d`) reviews one plan, whatever its status.
 - `--json` emits the same report in machine-readable form for the skill, so
-  the prompt does not parse prose.
+  the prompt does not parse prose. It includes a `now` field, the command's
+  own `date -Iseconds`, for the skill to stamp Log entries with.
+- `--stale-days N` (default 14) sets the idle threshold for active and
+  blocked plans in section 3.
+- A repo still on the legacy `docs/plans/` + `TODO.md` layout is refused
+  with a non-zero exit and a pointer to the migration. `review` reads only
+  `.planners/`.
 - For each plan, the evidence is:
   - frontmatter, title, and `created`;
   - the repo's commits since `created` on the mainline, excluding the
@@ -74,10 +79,16 @@ changes a branch.
   date the most recent of them was closed. It is empty by default: a status
   whose plans have no `concluded` (every open status, and `inactive`) leaves
   the cell blank, and `--json` gives it as `null`. `last_date` is the
-  authored date of the newest of those commits. Rows follow the index's status order, a status
-  with no plans is omitted, and a `total` row closes the table. The summary
-  covers every status, whatever `--status` selects, so the review shows what
-  it left out. `--json` carries it as a `summary` list of row objects.
+  authored date of the newest of those commits. Rows follow the index's
+  status order, a status with no plans is omitted, and a `total` row closes
+  the table. The summary covers every status, whatever `--status` selects,
+  so the review shows what it left out. `--json` carries it as a `summary`
+  list of row objects.
+
+  The table counts top-level plans only; nested subplans are not rows. A
+  note under the table names each umbrella with an open subplan (`draft`,
+  `active`, or `blocked`), for example `012: 2 of 4 subplans open`, since
+  those are invisible in the umbrella's own status.
 
 **2. The `review` skill** (`planners/prompts/skills/review/SKILL.md`). It runs
 the CLI, then checks each plan's claims against the code itself: grep, read
@@ -106,6 +117,16 @@ timestamp as the start of the evidence window in place of `created`, and
 reports it as `last_reviewed`. The marker lives in the Log, not the
 frontmatter, so the seven-key schema is unchanged. The `review` CLI does not
 write markers; the skill writes them with the Log entries.
+
+Every timestamp the skill writes, in a Log entry or a marker, is the report's
+`now` or a fresh `date -Iseconds`. The skill never types a timestamp from
+memory or estimates one.
+
+For a run of more than about ten plans, the skill checks them in batches and
+may hand each batch to a subagent on a smaller model, each returning its
+verdicts and draft Log entries as text. The main loop merges them into the
+one verdict table; only the main loop writes files or commits.
+
 Retirement is only ever proposed. The skill presents the proposals in a single
 table and retires only the ones the user confirms. A review never activates or
 closes a plan, and never edits a plan's `## Plan` section; the scope change
@@ -127,7 +148,8 @@ pushed yet. The mainline is the wrong place to judge it from. The rules:
   with <commit or plan>, confirm with the owner", and it is phrased as a
   question.
 - **Flag, don't fix.** Staleness signals are reported as observations, never
-  as a reason to act. Examples: no commits on the branch for N days, a branch
+  as a reason to act. Examples: no commits on the branch for `--stale-days`
+  days (default 14), a branch
   that no longer exists, an active plan with no branch, or a merged PR on a
   plan still marked active.
 - `blocked` gets the same treatment, since its wait may be resolving outside
@@ -143,16 +165,31 @@ closed plan.
 plans go in one commit on the mainline, made by the skill after the user sees
 the verdict table. The CLI writes nothing.
 
+The commit is made by a small CLI step, `planners review --commit`, so it
+gets the same treatment as the other lifecycle writes: the mainline guard
+that `add` and `activate` use (refuse off the mainline, `--allow-branch` to
+override), an index refresh, and a tool-written subject,
+`plan [review]: <N> plans`. It stages only the plan files whose Log changed
+and refuses if any of them is an active or blocked plan. Confirmed
+retirements go through `planners retire` as separate commits, as they do
+today.
+
 ### Implementation order
 
 1. Evidence gathering in a new `planners/review.py`, with tests against the
    fixture repos the existing tests build: status selection, the summary
-   table's counts and dates, the commits-since window, code-reference extraction, and branch and worktree
-   state, including a dirty worktree.
-2. The `review` command in `cli.py`: text and `--json` output and status
-   validation.
+   table's counts and dates, the subplan note, the commits-since window,
+   code-reference extraction, branch and worktree state (including a dirty
+   worktree), `--stale-days`, and the legacy-layout refusal. One test
+   rebuilds the summary table independently from `git log` and the
+   frontmatter and checks the command's output against it.
+2. The `review` command in `cli.py`: text and `--json` output, status
+   validation, and `--commit` with its mainline guard and active-plan
+   refusal.
 3. The `review` skill, registered with the others, and the rule summary's
-   skill list.
+   skill list. Add `planners review` (read-only) to the `assist` permission
+   profile, and `planners review --commit` alongside the other self-authored
+   lifecycle commits.
 4. README, CHANGELOG `[Unreleased]`, and a dry run on this repo's own plans.
 
 ### Open questions
@@ -202,5 +239,13 @@ the verdict table. The CLI writes nothing.
 - **2026-10-09T12:37:34-07:00** — Added a `creation_date` column to the
   summary table: the earliest frontmatter `created` among each status's
   plans.
-- **2026-10-09T12:37:54-07:00** — Added a `closed_date` column to the summary table: the latest
-  frontmatter `concluded` among each status's plans, blank when none has one.
+- **2026-10-09T12:37:54-07:00** — Added a `closed_date` column to the summary
+  table: the latest frontmatter `concluded` among each status's plans, blank
+  when none has one.
+- **2026-10-09T12:40:18-07:00** — Filled gaps found on a re-read: the
+  `review --commit` step with the mainline guard and a `plan [review]:` subject; `--stale-days` (default
+  14); a `now` field in `--json` so the skill never writes a timestamp from
+  memory; refusal of the legacy layout; `review` in the `assist` permission
+  profile; top-level-only summary rows with a note on open subplans; batched
+  checking for large runs; and a test that rebuilds the summary table
+  independently.
