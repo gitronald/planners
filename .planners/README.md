@@ -3,6 +3,8 @@
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
 | 011 | [Add a review subcommand that checks plans against the repo](plans/011-plan-review/plan.md) | done | 2026-10-09 13:00 PT | [#35](https://github.com/gitronald/planners/pull/35) |
+| 011 | [Add a review subcommand that checks plans against the repo](plans/011-plan-review/plan.md) | active | — | — |
+| 012 | [Add a review status and a standard activation log entry](plans/012-review-status-and-activation-log/plan.md) | draft | — | — |
 | 010 | [Follow-ups from the validate --no-index review](plans/010-validate-follow-ups/plan.md) | done | 2026-10-09 12:49 PT | [#34](https://github.com/gitronald/planners/pull/34) |
 | 002 | [Support a no-PR close path in the close skill](plans/002-close-no-pr-path/plan.md) | done | 2026-10-07 02:16 PT | [#33](https://github.com/gitronald/planners/pull/33) |
 | 009 | [Place the generated subplans table at the top of the umbrella's spec](plans/009-subplans-table-after-goal/plan.md) | done | 2026-10-06 18:05 PT | [#31](https://github.com/gitronald/planners/pull/31) |
