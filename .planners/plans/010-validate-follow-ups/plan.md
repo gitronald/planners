@@ -5,7 +5,7 @@ status: active
 branch: feature/validate-follow-ups
 created: 2026-10-06T20:28:54-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/34
 ---
 
 # Follow-ups from the validate --no-index review
