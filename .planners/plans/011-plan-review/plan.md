@@ -55,6 +55,23 @@ changes a branch.
     that worktree is dirty, and the PR state when `gh` is available.
 - Missing `gh`, a missing remote, or a shallow clone downgrades the matching
   field to `unknown`. None of them is an error.
+- The report opens with a short summary table, with status as the index:
+
+  | status | plans | commits | last_date |
+  |---|---|---|---|
+  | active | 1 | 4 | 2026-10-09 |
+  | draft | 7 | 9 | 2026-10-09 |
+  | done | 12 | 61 | 2026-10-09 |
+  | retired | 3 | 6 | 2026-10-09 |
+  | total | 23 | 80 | 2026-10-09 |
+
+  `plans` is the count of plans with that status. `commits` is the number of
+  distinct commits that touched those plans' directories
+  (`git log --format=%H -- <plan dirs>`). `last_date` is the authored date of
+  the newest of those commits. Rows follow the index's status order, a status
+  with no plans is omitted, and a `total` row closes the table. The summary
+  covers every status, whatever `--status` selects, so the review shows what
+  it left out. `--json` carries it as a `summary` list of row objects.
 
 **2. The `review` skill** (`planners/prompts/skills/review/SKILL.md`). It runs
 the CLI, then checks each plan's claims against the code itself: grep, read
@@ -112,8 +129,8 @@ the verdict table. The CLI writes nothing.
 ### Implementation order
 
 1. Evidence gathering in a new `planners/review.py`, with tests against the
-   fixture repos the existing tests build: status selection, the
-   commits-since window, code-reference extraction, and branch and worktree
+   fixture repos the existing tests build: status selection, the summary
+   table's counts and dates, the commits-since window, code-reference extraction, and branch and worktree
    state, including a dirty worktree.
 2. The `review` command in `cli.py`: text and `--json` output and status
    validation.
@@ -133,6 +150,11 @@ the verdict table. The CLI writes nothing.
    `reviewed:` line in the Log entry) so the next review can diff from it? The
    proposal is to rely on the last Log entry's timestamp and add nothing to
    the frontmatter.
+4. What should the summary's `commits` count? Proposed: commits that touched
+   the plan directories, which is cheap and defined for every status. The
+   alternative is the commits on each plan's `branch`. That measures the
+   implementation work, but it is undefined for drafts and for plans merged
+   with no branch.
 
 ### Out of scope
 
