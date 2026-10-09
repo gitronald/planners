@@ -75,3 +75,45 @@ mention it as a second reason to use it in bulk checks.
 
 - Changing what the pre-commit hook runs (`host.py`); it should keep checking
   the index.
+
+## Log
+
+- **2026-10-09T12:45:12-07:00** — Both items investigated; both resolve to no
+  code change.
+  - **Item 1 (distinct stale-only exit code): not adopted.** The consumers of
+    `validate`'s exit code are the `planners-validate` pre-commit hook
+    (`planners/host.py`), `scripts/install.sh` (`|| die`), and the skills'
+    prose, which only says `validate` "fails". All of them treat any non-zero
+    exit as failure. A search of the other local repos that use planners found
+    one script calling `validate`, an eval checker that passes only on exit 0.
+    No caller needs frontmatter failures told apart from a stale index, and
+    `--no-index` covers the one caller that wanted to skip the stale check, so
+    the code stays 1.
+  - **Item 2 (stale check cost): measured, small.** `bench_validate.sh` (in
+    this directory) builds a synthetic repo with N plans and a fresh index,
+    then reports the best of 5 wall-clock runs via `uv run planners validate`.
+    Run at `e63f662`:
+
+    | plans | dir, index | dir, `--no-index` | files, index | files, `--no-index` |
+    |---|---|---|---|---|
+    | 50 | 78 ms | 77 ms | 79 ms | 76 ms |
+    | 300 | 95 ms | 82 ms | 93 ms | 83 ms |
+    | 1000 | 131 ms | 103 ms | 132 ms | 102 ms |
+
+    The stale check costs about 13 ms at 300 plans and 30 ms at 1000. Startup
+    (`uv run` plus import) dominates. Passing files one by one, which is how
+    the hook calls it, costs the same as passing a directory, so the
+    per-root deduplication holds. That is too little for the `--no-index` help
+    text to mention speed. To repeat:
+    `.planners/plans/010-validate-follow-ups/bench_validate.sh <new-scratch-dir> 300 5`.
+  - **`--no-index` with `--subplans`:** left untested. The plan made adding
+    that test depend on item 1 touching the summary logic, and it did not.
+
+## Handoff
+
+- **State:** nothing outstanding in code. The branch carries only the timing
+  script and this log. The work is pushed, and draft PR #34 is open.
+- **Next:** `/planners close 010`. Both items resolved without a change, so
+  close as `done` (the investigation was the deliverable) or `retired`.
+  That choice is the user's to make at close.
+- **Open questions:** none.
