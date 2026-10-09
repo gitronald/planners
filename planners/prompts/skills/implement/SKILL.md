@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Start implementing a plan — activate it on the base, branch from that commit, begin coding, and open a draft PR.
+description: Start implementing a plan — activate it on the base, branch from that commit, begin coding, open a draft PR, and mark it implemented when the work is pushed.
 metadata:
   version: "1.0.0"
 ---
@@ -8,7 +8,8 @@ metadata:
 # implement — start work on a plan
 
 Flip the plan to `active` on the base and commit it there, branch (and worktree)
-from that activation commit, start building, and open a draft PR. Parse the plan
+from that activation commit, start building, open a draft PR, and mark the plan
+`implemented` once the work is pushed. Parse the plan
 number (e.g. `021`) or path from the request; if ambiguous, glob
 `.planners/plans/{NNN}-*/plan.md`.
 
@@ -97,8 +98,11 @@ branches: the branch it **recorded** in the frontmatter, where the work will
 go, and the branch it **committed on**, which is the base.
 
 One command sets `status: active`, fills `branch:` (the plan's own field if set,
-otherwise `feature/<slug>`; `--branch <name>` to choose), refreshes the index, and
-commits as `plan [activate]: {NNN} - <slug>`. It carries the same mainline guard as
+otherwise `feature/<slug>`; `--branch <name>` to choose), appends the activation
+entry to the plan's Log (branch, base and commit, worktree, PR), refreshes the
+index, and commits as `plan [activate]: {NNN} - <slug>`. The entry records the
+worktree step 4 creates, `.worktrees/<branch-suffix>`; pass `--worktree <path>`
+(repo-relative) or `--no-worktree` when the work will be somewhere else. It carries the same mainline guard as
 `{cli} add` and refuses here if you are already on a feature branch — which is the
 check step 2 exists to pass, now enforced rather than remembered.
 
@@ -190,15 +194,38 @@ gh pr create --draft --base <base> \
   --body "Implements [.planners/plans/{NNN}-<slug>/plan.md](https://github.com/$repo/blob/<base>/.planners/plans/{NNN}-<slug>/plan.md)"
 ```
 
-Record the PR URL with one command, which writes `pr:`, refreshes the index, and
-commits as `plan [pr]: {NNN} - <slug>`:
+Record the PR URL with one command, which writes `pr:`, appends a `PR opened`
+Log entry, refreshes the index, and commits as `plan [pr]: {NNN} - <slug>`:
 
 ```bash
 {cli} set-pr {NNN} <url>
 ```
 
 Keep pushing as you work so the draft PR stays current; it stays a draft until
-`/planners close`.
+the work is implemented.
+
+### 7. Mark it implemented
+
+Once the plan's work is finished, committed, and pushed, and its checks pass:
+
+```bash
+{cli} implemented {NNN}
+git push
+```
+
+It flips `active` to `implemented`, appends an `Implemented: <n> commits ahead
+of <base>` Log entry, refreshes the index, commits `plan [implemented]: {NNN} -
+<slug>` on the feature branch, and takes the PR out of draft with `gh pr ready`.
+It refuses while the branch has uncommitted changes or unpushed commits, and
+says which, so the status always matches what the reviewer sees. Push its
+commit so the PR shows it. A failing `gh pr ready` is reported as a warning
+with the commit kept; run it by hand.
+
+`implemented` closes nothing. The merge, Retrospective, and `concluded` stay
+with `/planners close`, which runs only when the user asks for it. Review that
+asks for more work returns the plan with `{cli} activate {NNN}`, run on the
+feature branch, which logs `Reactivated`; mark it implemented again when the
+follow-up is pushed.
 
 When the plan is closed (`/planners close`) and its branch is merged, remove the
 worktree: `git worktree remove .worktrees/<branch-suffix>`. Worktrees share the
@@ -242,7 +269,11 @@ to create.
    any other (`- **{timestamp}** — ...`), and the headings the `add` skill
    suggests go inside it. Mark it done only when
    its checks ran and passed. A step waiting on a person is `blocked`, with what
-   it waits on in the table's Note column.
+   it waits on in the table's Note column. A step that lands through a PR of its
+   own (its `pr:` is set) is marked `{cli} implemented 012d` when that PR is
+   ready for review, which writes its status and Log entry, regenerates the
+   umbrella's table, and takes that PR out of draft; it is set `done` once the
+   PR merges.
 
 ## An orchestrated run
 

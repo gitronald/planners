@@ -14,6 +14,8 @@ infer the action from the user's words or the plan's current state.
 | Action | Triggers | Effect |
 |--------|----------|--------|
 | **activate** | "start", "activate", "begin" | `{cli} activate {NNN}` — on the mainline |
+| **implemented** | "implemented", "ready for review", "work is done" | `{cli} implemented {NNN}` — on the feature branch |
+| **reactivate** | "back to work", "more changes", "review asked for" | `{cli} activate {NNN}` on an `implemented` plan — on the feature branch |
 | **log** | "log", "note", "update" | Append a dated entry to the `## Log` section |
 | **close** | "close", "finish", "done", "complete" | Hand off to `/planners close` (review gate, merge, cleanup) |
 | **block** | "block", "waiting on", "stuck on" | `status: blocked`; say what it waits on |
@@ -41,18 +43,35 @@ That changes the subplan's frontmatter, which is the status of record, and
 regenerates the umbrella's table in the same step. Several `--set` options are
 applied together or not at all, and a file with no frontmatter is refused
 rather than given one. Its log entries go in the
-subplan's own `## Log`. `retire` and `set-pr` take the lettered reference
-directly (`{cli} retire 012d --into 015`).
+subplan's own `## Log`. `retire`, `set-pr`, and `implemented` take the lettered
+reference directly (`{cli} retire 012d --into 015`).
 
 ### 2. Apply the action
 
 **Activate** — run `{cli} activate {NNN}` (`--branch <name>` to override the
 derived `feature/<slug>`). It sets `status: active`, fills `branch` if empty,
-refreshes the index, and commits `plan [activate]: {NNN} - <slug>`. **It commits on
+appends the activation entry to the Log (branch, base and commit, worktree, PR;
+`--worktree <path>` or `--no-worktree` when the work is not in
+`.worktrees/<branch-suffix>`), refreshes the index, and commits
+`plan [activate]: {NNN} - <slug>`. **It commits on
 the mainline**, before the branch or worktree exists, and refuses if HEAD is
 elsewhere — `{cli} base --all` prints the branches that qualify, so switch to one
 first rather than reaching for `--allow-branch`. Do not hand-edit the frontmatter
 for this; the CLI owns it.
+
+**Implemented** — once the work is finished, committed, and pushed, run
+`{cli} implemented {NNN}` on the feature branch, then `git push`. It sets
+`status: implemented`, appends `Implemented: <n> commits ahead of <base>` to the
+Log, refreshes the index, commits `plan [implemented]: {NNN} - <slug>`, and
+takes the PR out of draft. It refuses a plan that is not `active`, and a branch
+with uncommitted or unpushed work, naming which. It closes nothing; that stays
+with `/planners close`.
+
+**Reactivate** — when review asks for more work on an `implemented` plan, run
+`{cli} activate {NNN}` on the feature branch. The return from `implemented` is
+not guarded, and it logs a short `Reactivated` entry rather than a second
+activation entry. A nested subplan returns with
+`{cli} subplans {NNN} --set <letter>=active`.
 
 **Log** — append under `## Log` (create it before `## Retrospective` or at the
 end if absent), using a real timestamp from `date -Iseconds`:
@@ -98,7 +117,7 @@ so from a feature branch it is not there yet. The order is:
 2. Merge the base into the feature branch (`git merge --no-ff <base>`), from the
    feature branch's worktree.
 3. Retire with `--into`, from that worktree. It refuses an umbrella that still has a `draft`,
-`active`, or `blocked` nested subplan: finish each, or retire it first
+`active`, `implemented`, or `blocked` nested subplan: finish each, or retire it first
 (`{cli} retire {NNN}<letter>`).
 
 **Handoff** — for an effort that spans sessions, keep a `## Handoff` section
@@ -118,5 +137,5 @@ not verified, and the order of the remaining work with who each item waits on.
 ```
 
 Commit the regenerated `.planners/README.md` if the status change moved the row.
-`activate`, `retire`, and `set-pr` refresh and commit the index themselves, so
+`activate`, `implemented`, `retire`, and `set-pr` refresh and commit the index themselves, so
 this step is for the hand-written actions.

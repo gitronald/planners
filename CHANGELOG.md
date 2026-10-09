@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- An `implemented` status: the implementation is finished and pushed, and
+  its PR waits on review. It is open, sorts after `active` in the index, and
+  an umbrella cannot close or retire over a subplan in it.
+- `planners implemented <NNN>` flips an active plan or nested subplan to
+  `implemented`, logs how many commits the branch carries past its base,
+  commits on the feature branch, and takes the PR out of draft. It refuses
+  while the branch has uncommitted or unpushed work.
+- `planners activate` appends a standard Log entry naming the branch, the
+  base and commit, the worktree, and the PR. `--worktree <path>` records a
+  repo-relative worktree, and `--no-worktree` the main checkout.
+- `planners set-pr` appends a `PR opened` Log entry.
+
+### Changed
+
+- `planners activate` returns an `implemented` plan to `active` on its
+  feature branch, without the mainline guard, and logs `Reactivated`.
+- `planners review` includes `implemented` plans by default and treats them
+  as work in progress, like `active` and `blocked`.
+- The `implement` and `pipeline` skills end with `planners implemented`, and
+  `close` accepts an `implemented` or `active` plan.
+
 ### Fixed
 
 - `planners review` passes a plan's branch or PR to `gh pr view` after

@@ -29,11 +29,15 @@ of each stage rather than trusting in-memory state.
 The stages hand off through the plan's on-disk state, so each can verify the
 previous one landed before it starts:
 
-- **implement** leaves: `status: active`, `branch:` filled, a `.worktrees/`
-  worktree on that branch, and an open **draft** PR.
-- **close** requires exactly that state to begin — `status: active` with a
-  branch, worktree, and draft PR. If any piece is missing, the handoff failed:
-  stop and report rather than improvising.
+- **implement** leaves: `status: implemented` (its last step runs
+  `{cli} implemented {NNN}` once the work is committed and pushed), `branch:`
+  filled, a `.worktrees/` worktree on that branch, and an open PR taken out of
+  draft, ready for review.
+- **close** requires exactly that state to begin — `status: implemented` with a
+  branch, worktree, and ready PR. If any piece is missing, the handoff failed:
+  stop and report rather than improvising. A plan still `active` means the
+  implement stage did not finish: `{cli} implemented` refused (uncommitted or
+  unpushed work, which it names) or was never run.
 - A pipeline run always opens a draft PR, so a request for a **no-PR close**
   ("no PR, just merge into dev") meets `close`'s conflict rule at the gate: the
   PR exists, and the request says there should be none. `close` asks which the
@@ -42,7 +46,7 @@ previous one landed before it starts:
   names both a pipeline and no PR.
 - For an umbrella with **nested subplans**, the work is finished when
   `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
-  `active`, or `blocked`, and the umbrella's table agrees with the subplan
+  `active`, `implemented`, or `blocked`, and the umbrella's table agrees with the subplan
   frontmatter. `close` refuses until it does.
 
 Check the contract between stages; do not paper over a missing piece.
@@ -92,6 +96,8 @@ the one expected pause in an otherwise unattended run.
 1. Read the plan; if `status` is already `done` or `retired`, stop — it is closed.
 2. Run **implement** (`{cli} skill implement`) and follow it to a draft PR.
 3. Do the implementation work, committing and pushing in logical chunks.
-4. Run **close** (`{cli} skill close`); pause at the review gate for approval.
-5. On approval, finish `close` through merge and cleanup.
-6. Confirm the plan's `status` is `done` (or `retired`) and report what shipped.
+4. Mark it implemented: `{cli} implemented {NNN}`, then `git push`. That takes
+   the PR out of draft for the review gate.
+5. Run **close** (`{cli} skill close`); pause at the review gate for approval.
+6. On approval, finish `close` through merge and cleanup.
+7. Confirm the plan's `status` is `done` (or `retired`) and report what shipped.
