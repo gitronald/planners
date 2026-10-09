@@ -42,6 +42,15 @@ work is.
   their last step once the work is committed and pushed. `ready` works for
   nested subplans as well (`ready 012b`), writing the subplan's frontmatter and
   regenerating the umbrella's table.
+- **`ready` does not close.** It does not merge, write a Retrospective, fill
+  `concluded`, or remove a branch or worktree. Those stay in `close`, which
+  runs only when the user invokes it. The one duty that moves is taking the PR
+  out of draft: the `implement` skill now says the PR stays a draft until
+  `close`, and under this plan it leaves draft at `ready`, because `review`
+  means the PR is open for review.
+- `ready` refuses when the branch has uncommitted changes or commits not
+  pushed to its upstream, and says which (question 2). A plan marked ready
+  for review must match what the reviewer sees on the PR.
 - **Back to work.** Review feedback that needs more work flips `review` back
   to `active` through `planners activate`. That transition happens on the
   feature branch, so the mainline guard applies only to activating a `draft`,
@@ -74,7 +83,8 @@ work is.
 - `set-pr` and `ready` each append a one-line entry of the same form
   (`PR opened: <url>`, `Ready for review: <n> commits ahead of <base>`). They
   do not edit the activation entry. Together the entries give a timeline that
-  reads at a glance: activated, PR opened, ready, closed.
+  reads at a glance: activated, PR opened, ready. `close` adds the last
+  entry when the user runs it later.
 - Re-running `activate` on an already-active plan writes no second entry
   (it stays idempotent). Returning from `review` writes a short `Reactivated`
   entry.
@@ -92,9 +102,11 @@ work is.
 1. The status name `review` matches the name of plan 011's `planners review`
    subcommand, which is a different thing (an evidence report on stale
    plans). Keep `review` as the user asked, or use `in-review` to avoid
-   confusion? Default: `review`.
+   confusion? Default: `review`. A third option is `ready`, which matches
+   the command that sets it (`planners ready` sets `status: ready`) and
+   GitHub's "ready for review". Still open.
 2. Should `ready` refuse when the branch has uncommitted or unpushed work?
-   Default: yes, and say which.
+   Default: yes, and say which. **Answered 2026-10-09: yes.**
 
 ### Out of scope
 
