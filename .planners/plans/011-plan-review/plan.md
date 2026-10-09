@@ -5,7 +5,7 @@ status: active
 branch: feature/plan-review
 created: 2026-10-09T12:14:51-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/35
 ---
 
 # Add a review subcommand that checks plans against the repo
