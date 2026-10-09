@@ -2,7 +2,6 @@
 
 import json
 import os
-import stat
 import subprocess
 from pathlib import Path
 
@@ -11,7 +10,15 @@ from typer.testing import CliRunner, Result
 
 from planners.cli import app
 from planners.finish import PullRequest, Stop, is_ancestor, merge_subject
-from tests.helpers import commit_all, git_out, init_git
+from tests.helpers import (
+    bare_remote,
+    commit_all,
+    git,
+    git_out,
+    init_git,
+    set_identity,
+    write_script,
+)
 
 runner = CliRunner()
 
@@ -32,10 +39,6 @@ def _plan_text(status: str, pr: str | None = "", concluded: str = "") -> str:
     return _PLAN.format(
         status=status, pr=shown, concluded=f" {concluded}" if concluded else ""
     )
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
 def _index(cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,11 +75,10 @@ class Scene:
         (self.root / ".gitignore").write_text(".worktrees/\n", encoding="utf-8")
         _index(self.root, monkeypatch)
         commit_all(self.root, "plan [activate]: 005 - my-thing")
-        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True)
-        _git(self.root, "remote", "add", "origin", str(self.remote))
-        _git(self.root, "push", "-qu", "origin", "main")
+        bare_remote(self.root, self.remote)
+        git(self.root, "push", "-qu", "origin", "main")
 
-        _git(self.root, "worktree", "add", "-q", str(self.worktree), "-b", _BRANCH)
+        git(self.root, "worktree", "add", "-q", str(self.worktree), "-b", _BRANCH)
         (self.worktree / "work.txt").write_text("work\n", encoding="utf-8")
         commit_all(self.worktree, "work")
         closed = self.worktree / ".planners" / "plans" / "005-my-thing" / "plan.md"
@@ -86,7 +88,7 @@ class Scene:
         if reindex_branch:
             _index(self.worktree, monkeypatch)
         commit_all(self.worktree, "plan [close]: 005 - my-thing")
-        _git(self.worktree, "push", "-qu", "origin", _BRANCH)
+        git(self.worktree, "push", "-qu", "origin", _BRANCH)
 
         # The clone the fake gh merges in, standing in for GitHub's merge.
         merger = self.state / "merger"
@@ -95,14 +97,14 @@ class Scene:
             check=True,
             capture_output=True,
         )
-        init_git_identity(merger)
+        set_identity(merger)
         self.set_view(_pr())
         (self.state / "merged.json").write_text(
             json.dumps(_pr("MERGED")), encoding="utf-8"
         )
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
-        _script(
+        write_script(
             self.bin / "gh",
             f'd="{self.state}"\n'
             'echo "$@" >> "$d/calls"\n'
@@ -154,16 +156,6 @@ class Scene:
             ).returncode
             == 0
         )
-
-
-def init_git_identity(path: Path) -> None:
-    _git(path, "config", "user.email", "test@example.com")
-    _git(path, "config", "user.name", "Test")
-
-
-def _script(path: Path, body: str) -> None:
-    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
 def _pr(state: str = "OPEN", *, fork: bool = False) -> dict[str, object]:
@@ -240,7 +232,7 @@ def test_finish_without_a_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
-    _git(scene.root, "worktree", "remove", str(scene.worktree))
+    git(scene.root, "worktree", "remove", str(scene.worktree))
     scene.merge_on_github()
     result = scene.finish()
     assert result.exit_code == 0, result.output
@@ -326,13 +318,13 @@ def test_finish_stops_on_a_branch_the_base_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
-    _git(scene.root, "worktree", "remove", str(scene.worktree))
+    git(scene.root, "worktree", "remove", str(scene.worktree))
     scene.merge_on_github()
     # A commit on the local branch that the PR never carried.
-    _git(scene.root, "checkout", "-q", _BRANCH)
+    git(scene.root, "checkout", "-q", _BRANCH)
     (scene.root / "stray.txt").write_text("stray\n", encoding="utf-8")
     commit_all(scene.root, "stray")
-    _git(scene.root, "checkout", "-q", "main")
+    git(scene.root, "checkout", "-q", "main")
     result = scene.finish()
     assert result.exit_code == 1
     assert f"{_BRANCH} holds commits main does not" in result.output
@@ -378,8 +370,8 @@ def test_finish_after_a_local_merge(
     )
     _assert_untouched(scene)
 
-    _git(scene.root, "merge", "--no-ff", _BRANCH, "-m", f"merge: {_BRANCH}")
-    _git(scene.root, "push", "-q")
+    git(scene.root, "merge", "--no-ff", _BRANCH, "-m", f"merge: {_BRANCH}")
+    git(scene.root, "push", "-q")
     result = scene.finish(*args)
     assert result.exit_code == 0, result.output
     assert f"{_BRANCH} is merged into main by a local merge" in result.output
@@ -394,12 +386,12 @@ def test_finish_repoints_a_hook_installed_from_the_worktree(
     scene.merge_on_github()
     hooks = scene.root / ".git" / "hooks"
     python = scene.worktree / ".venv" / "bin" / "python"
-    _script(hooks / "pre-commit", f"INSTALL_PYTHON={python}\nexit 0\n")
-    _script(hooks / "post-merge", "INSTALL_PYTHON=/usr/bin/python3\nexit 0\n")
+    write_script(hooks / "pre-commit", f"INSTALL_PYTHON={python}\nexit 0\n")
+    write_script(hooks / "post-merge", "INSTALL_PYTHON=/usr/bin/python3\nexit 0\n")
     # A backup is not a hook type pre-commit can install, so it is left alone.
-    _script(hooks / "pre-commit.legacy", f"INSTALL_PYTHON={python}\nexit 0\n")
+    write_script(hooks / "pre-commit.legacy", f"INSTALL_PYTHON={python}\nexit 0\n")
     uv_calls = tmp_path / "uv-calls"
-    _script(scene.bin / "uv", f'echo "$@" >> "{uv_calls}"\n')
+    write_script(scene.bin / "uv", f'echo "$@" >> "{uv_calls}"\n')
     result = scene.finish()
     assert result.exit_code == 0, result.output
     assert uv_calls.read_text(encoding="utf-8").splitlines() == [
@@ -413,8 +405,8 @@ def test_finish_with_the_branch_in_the_main_checkout(
 ) -> None:
     # Worked without a worktree: the main checkout is not a worktree to remove.
     scene = Scene(tmp_path, monkeypatch)
-    _git(scene.root, "worktree", "remove", str(scene.worktree))
-    _git(scene.root, "checkout", "-q", _BRANCH)
+    git(scene.root, "worktree", "remove", str(scene.worktree))
+    git(scene.root, "checkout", "-q", _BRANCH)
     scene.merge_on_github()
     result = scene.finish()
     assert result.exit_code == 0, result.output
@@ -429,8 +421,8 @@ def test_finish_after_github_deleted_the_branch(
     # Auto-delete of head branches: the worktree's upstream is pruned away.
     scene = Scene(tmp_path, monkeypatch)
     scene.merge_on_github()
-    _git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
-    _git(scene.root, "fetch", "-q", "--prune")
+    git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
+    git(scene.root, "fetch", "-q", "--prune")
     result = scene.finish()
     assert result.exit_code == 0, result.output
     assert "removed the worktree" in result.output
@@ -445,9 +437,9 @@ def test_finish_after_gh_deleted_the_branch_and_worktree(
     # has the closed plan, and the local base is not pulled yet.
     scene = Scene(tmp_path, monkeypatch)
     scene.merge_on_github()
-    _git(scene.root, "worktree", "remove", str(scene.worktree))
-    _git(scene.root, "branch", "-q", "-D", _BRANCH)
-    _git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
+    git(scene.root, "worktree", "remove", str(scene.worktree))
+    git(scene.root, "branch", "-q", "-D", _BRANCH)
+    git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
     result = scene.finish()
     assert result.exit_code == 0, result.output
     assert "pulled main" in result.output
@@ -459,7 +451,7 @@ def test_finish_stops_on_a_hand_edited_index(
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
     scene.merge_on_github()
-    _git(scene.root, "pull", "-q", "--ff-only")
+    git(scene.root, "pull", "-q", "--ff-only")
     index = scene.root / ".planners" / "README.md"
     index.write_text(index.read_text(encoding="utf-8") + "hand edit\n", "utf-8")
     result = scene.finish()
@@ -467,6 +459,19 @@ def test_finish_stops_on_a_hand_edited_index(
     assert ".planners/README.md has uncommitted changes" in result.output
     assert "hand edit" in index.read_text(encoding="utf-8")
     _assert_untouched(scene)
+
+
+def test_finish_fast_forwards_a_base_with_no_upstream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Pushed without -u: no pull is possible, so origin/<base> is the merged base.
+    scene = Scene(tmp_path, monkeypatch)
+    git(scene.root, "branch", "--unset-upstream", "main")
+    scene.merge_on_github()
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert "fast-forwarded main to origin/main" in result.output
+    _assert_finished(scene)
 
 
 def test_is_ancestor_stops_on_a_missing_ref(tmp_path: Path) -> None:

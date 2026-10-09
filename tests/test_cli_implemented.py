@@ -1,7 +1,6 @@
 """CLI tests for ``implemented``."""
 
 import os
-import stat
 import subprocess
 from pathlib import Path
 
@@ -9,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from planners.cli import app
-from tests.helpers import commit_all, git_out, init_git
+from tests.helpers import bare_remote, commit_all, git_out, init_git, write_script
 
 runner = CliRunner()
 
@@ -47,8 +46,7 @@ def _repo(root: Path, *, status: str = "active", pr: str = "", work: int = 2) ->
 
 
 def _with_remote(root: Path, remote: Path, *, push: bool = True) -> None:
-    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
-    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=root)
+    bare_remote(root, remote)
     if push:
         subprocess.run(
             ["git", "push", "-qu", "origin", "feature/my-thing"],
@@ -63,13 +61,11 @@ def _fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int) -> Path
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     calls = tmp_path / "gh-calls.txt"
-    gh = bin_dir / "gh"
-    gh.write_text(
-        f'#!/bin/sh\necho "$@" >> "{calls}"\n'
+    write_script(
+        bin_dir / "gh",
+        f'echo "$@" >> "{calls}"\n'
         f'[ {code} -eq 0 ] || echo "gh says no" >&2\nexit {code}\n',
-        encoding="utf-8",
     )
-    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     return calls
 
@@ -284,8 +280,7 @@ def test_implemented_finishes_a_run_whose_commit_failed(
     root = tmp_path / "repo"
     path = _repo(root)
     hook = root / ".git" / "hooks" / "pre-commit"
-    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    hook.chmod(hook.stat().st_mode | stat.S_IEXEC)
+    write_script(hook, "exit 1\n")
     monkeypatch.chdir(root)
 
     assert runner.invoke(app, ["implemented", "005"]).exit_code == 1

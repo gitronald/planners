@@ -1553,17 +1553,25 @@ def _closed_plan(root: Path, plan: Path, branch: str, base: str) -> PlanMetadata
 
 
 def _sync_base(root: Path, base: str, say: finish_mod.Say) -> None:
-    """Check ``base`` out in ``root`` and fast-forward it to its upstream.
+    """Check ``base`` out in ``root`` and fast-forward it to the merged base.
 
+    That is its upstream, or ``origin/<base>`` for a base with no upstream set:
+    the branch deletions that follow test against the local base, and a base
+    left behind the merge would read the merged branch as holding unmerged work.
     The caller has fetched already, once, at the start of ``finish``.
     """
     if _current_branch(root) != base:
         finish_mod.must(root, ["git", "checkout", base])
         say(f"checked out {base}")
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is None:
+    if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is not None:
+        finish_mod.must(root, ["git", "pull", "--ff-only"])
+        say(f"pulled {base}")
         return
-    finish_mod.must(root, ["git", "pull", "--ff-only"])
-    say(f"pulled {base}")
+    tracking = f"refs/remotes/origin/{base}"
+    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is None:
+        return
+    finish_mod.must(root, ["git", "merge", "--ff-only", tracking])
+    say(f"fast-forwarded {base} to origin/{base}")
 
 
 def _remote_or_local(root: Path, branch: str) -> str:
