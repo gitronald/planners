@@ -1,11 +1,11 @@
 ---
 id: 10
 slug: validate-follow-ups
-status: active
+status: done
 branch: feature/validate-follow-ups
 created: 2026-10-06T20:28:54-07:00
-concluded:
-pr:
+concluded: 2026-10-09T12:49:11-07:00
+pr: https://github.com/gitronald/planners/pull/34
 ---
 
 # Follow-ups from the validate --no-index review
@@ -75,3 +75,77 @@ mention it as a second reason to use it in bulk checks.
 
 - Changing what the pre-commit hook runs (`host.py`); it should keep checking
   the index.
+
+## Log
+
+- **2026-10-09T12:45:12-07:00** — Both items investigated; both resolve to no
+  code change.
+  - **Item 1 (distinct stale-only exit code): not adopted.** The consumers of
+    `validate`'s exit code are the `planners-validate` pre-commit hook
+    (`planners/host.py`), `scripts/install.sh` (`|| die`), and the skills'
+    prose, which only says `validate` "fails". All of them treat any non-zero
+    exit as failure. A search of the other local repos that use planners found
+    one script calling `validate`, an eval checker that passes only on exit 0.
+    No caller needs frontmatter failures told apart from a stale index, and
+    `--no-index` covers the one caller that wanted to skip the stale check, so
+    the code stays 1.
+  - **Item 2 (stale check cost): measured, small.** `bench_validate.sh` (in
+    this directory) builds a synthetic repo with N plans and a fresh index,
+    then reports the best of 5 wall-clock runs via `uv run planners validate`.
+    Run at `e63f662`:
+
+    | plans | dir, index | dir, `--no-index` | files, index | files, `--no-index` |
+    |---|---|---|---|---|
+    | 50 | 78 ms | 77 ms | 79 ms | 76 ms |
+    | 300 | 95 ms | 82 ms | 93 ms | 83 ms |
+    | 1000 | 131 ms | 103 ms | 132 ms | 102 ms |
+
+    The stale check costs about 13 ms at 300 plans and 30 ms at 1000. Startup
+    (`uv run` plus import) dominates. Passing files one by one, which is how
+    the hook calls it, costs the same as passing a directory, so the
+    per-root deduplication holds. That is too little for the `--no-index` help
+    text to mention speed. To repeat:
+    `.planners/plans/010-validate-follow-ups/bench_validate.sh <new-scratch-dir> 300 5`.
+  - **`--no-index` with `--subplans`:** left untested. The plan made adding
+    that test depend on item 1 touching the summary logic, and it did not.
+
+- **2026-10-09T12:48:51-07:00** — Review follow-up (`/code-review` low, PR #34).
+  - **Fixed:** `bench_validate.sh` timed a failing `validate` as a success.
+    `best()` ignored the exit status, and a `$(...)` inside an `echo` argument
+    escapes `set -e`. Plan-count 0 printed 75-340 ms for a run that failed on
+    zero matches. `best()` now stops on a failure, and the results are
+    assigned before they are printed. Probed by swapping the timed command
+    for `false`: the script exits 1 with `Error: command failed`.
+  - **Fixed:** plan-count and runs are now checked as positive integers. Before,
+    `runs=0` printed blank results and exited 0. Probed with `0` and `x`: both
+    exit 1.
+  - **Fixed:** the header now says the script needs GNU `date` (`%N`).
+  - **Caveat on item 2's figures:** differences under about 5 ms are noise,
+    as the 50-plan row shows, and synthetic minimal plans parse faster than
+    real ones. Read the 13 ms and 30 ms figures as lower bounds. The
+    conclusion holds at that scale.
+  - **No-op:** the cross-repo caller survey names no repos, because plans
+    carry no machine-specific paths. The in-repo consumers it lists can be
+    re-checked with `grep -rn validate planners/prompts planners/host.py scripts/`.
+
+## Handoff
+
+- **State:** closed as `done`. Both items resolved without a code change;
+  the deliverable is the Log and `bench_validate.sh`.
+- **Open questions:** none.
+- **Not verified:** `--no-index` with `--subplans` remains untested (see Log).
+
+## Retrospective
+
+- Both items ended as "no change", as the plan expected. The plan stated a
+  default outcome for each item up front, which made each close a check
+  against that default instead of a fresh debate.
+- Startup costs more than the stale check. At 1000 plans `uv run` plus import
+  is about 100 ms and the check about 30 ms, so a speed-up would have to
+  target startup first.
+- Review caught a benchmark that could time a failing command and report the
+  number as a cost. A measurement script should fail on a failed command
+  before it reports a timing.
+- A cross-repo caller survey can't be recorded in a plan that bans local
+  paths. Keep such surveys as supporting evidence and rest decisions on the
+  in-repo consumers.
