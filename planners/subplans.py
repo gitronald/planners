@@ -56,8 +56,11 @@ FILENAME_RE = re.compile(r"^([a-z])-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 FIRST_STEP_LETTER = "b"
 
 # The statuses an umbrella cannot close over: work that has not started, is in
-# progress, or is waiting on someone. `inactive` is set aside, not unfinished.
-UNFINISHED_STATUSES = frozenset({Status.draft, Status.active, Status.blocked})
+# progress, is waiting on review, or is waiting on someone. `inactive` is set
+# aside, not unfinished.
+UNFINISHED_STATUSES = frozenset(
+    {Status.draft, Status.active, Status.implemented, Status.blocked}
+)
 
 TABLE_START = "<!-- planners:subplans:start -->"
 TABLE_END = "<!-- planners:subplans:end -->"

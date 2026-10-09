@@ -17,11 +17,12 @@ reconcile.
 `status` is one of, in the index's sort order:
 
 1. `active` — in progress (open)
-2. `blocked` — waiting on a person (open)
-3. `draft` — proposed, not started (open)
-4. `done` — finished (closed; fill `concluded` + `pr`)
-5. `inactive` — parked, may resume (keep `concluded`/`branch`/`pr` empty)
-6. `retired` — neutrally dead: superseded or no longer needed (closed; fill
+2. `implemented` — finished and pushed, PR awaiting review (open)
+3. `blocked` — waiting on a person (open)
+4. `draft` — proposed, not started (open)
+5. `done` — finished (closed; fill `concluded` + `pr`)
+6. `inactive` — parked, may resume (keep `concluded`/`branch`/`pr` empty)
+7. `retired` — neutrally dead: superseded or no longer needed (closed; fill
    `concluded` = the date it was retired)
 
 Closure is always `retired` — there is no separate failed status. Closed states

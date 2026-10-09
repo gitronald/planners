@@ -219,9 +219,11 @@ def test_blocked_sorts_between_active_and_draft() -> None:
         PlanMetadata(id=2, slug="b", status=Status.blocked, created="2026-01-01"),
         PlanMetadata(id=3, slug="c", status=Status.active, created="2026-01-01"),
         PlanMetadata(id=4, slug="d", status=Status.done, created="2026-01-01"),
+        PlanMetadata(id=5, slug="e", status=Status.implemented, created="2026-01-01"),
     ]
     assert [m.status for m in sort_plans(metas)] == [
         Status.active,
+        Status.implemented,
         Status.blocked,
         Status.draft,
         Status.done,

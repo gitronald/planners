@@ -24,7 +24,7 @@ from pkgskills import register
 
 from planners import ahead as ahead_mod
 from planners import base as base_mod
-from planners import proc
+from planners import entries, proc
 from planners import review as review_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
@@ -1026,6 +1026,17 @@ def activate(
         help="Branch name to record; defaults to feature/<slug>. An already-filled "
         "branch: field is left alone.",
     ),
+    worktree: str | None = typer.Option(
+        None,
+        "--worktree",
+        help="Repo-relative worktree path to record in the Log entry; defaults to "
+        ".worktrees/<branch-suffix>.",
+    ),
+    no_worktree: bool = typer.Option(
+        False,
+        "--no-worktree",
+        help="Record that the work happens in the main checkout, not a worktree.",
+    ),
     allow_branch: bool = typer.Option(
         False,
         "--allow-branch",
@@ -1036,7 +1047,7 @@ def activate(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
-    """Flip a plan to active, fill its branch, refresh the index, and commit.
+    """Flip a plan to active, fill its branch, log where the work is, and commit.
 
     The activation commit belongs on the mainline, *before* the feature branch
     exists, so the plan is recorded there even if the branch never lands. That
@@ -1044,8 +1055,24 @@ def activate(
     frontmatter — which is why the ``plan [activate]`` subjects in this repo's own
     history disagree with each other, and why no guard could cover the step. Both
     problems are the same problem: there was no code to put them in.
+
+    The activation appends a standard entry to the plan's Log naming the branch,
+    the base and the commit it starts from, the worktree, and the PR, so the plan
+    file says where its work lives without anyone rebuilding it from git.
+
+    A plan in ``implemented`` that review sends back is reactivated the same way,
+    on its feature branch: that return is not guarded, and it logs a short
+    ``Reactivated`` entry instead.
     """
     root = Path.cwd()
+    if worktree is not None and no_worktree:
+        _err("--worktree and --no-worktree cannot be combined.")
+        raise typer.Exit(1)
+    if worktree is not None:
+        problem = entries.worktree_error(worktree)
+        if problem is not None:
+            _err(f"error: {problem}.")
+            raise typer.Exit(1)
 
     # Resolve and validate before the branch guard, the ordering `add` uses for its
     # slug check. A closed plan is closed on every branch, so leading with the branch
@@ -1069,6 +1096,17 @@ def activate(
     new_branch = meta.branch or branch or f"feature/{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
 
+    # The worktree is recorded only in the first activation's entry, so the flags
+    # mean nothing to a plan that is already active or is coming back from review.
+    if (worktree is not None or no_worktree) and meta.status in (
+        Status.active,
+        Status.implemented,
+    ):
+        _warn(
+            f"warning: plan {meta.prefix} is {meta.status}, so no activation entry "
+            "is written; --worktree and --no-worktree are not recorded."
+        )
+
     # Idempotent rather than an error: re-running activate destroys nothing (unlike
     # `add`, which refuses in order to protect a body), and a no-op keeps the command
     # safe inside a pipeline that may retry it. But *already active* is not the same
@@ -1086,8 +1124,10 @@ def activate(
 
     # Guard before writing, so a refusal leaves the plan exactly as it was — the
     # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit:
+    # no commit, so there is nothing for a branch to strand. A plan coming back
+    # from `implemented` is on its feature branch by design, where review sent it.
+    returning = meta.status == Status.implemented
+    if not no_commit and not returning:
         _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
 
     if unchanged:
@@ -1099,8 +1139,21 @@ def activate(
         )
     else:
         _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        # An already-active plan that only gains its branch was activated before,
+        # so it gets no second entry; that keeps a re-run idempotent.
+        entry = None
+        if returning:
+            entry = entries.reactivation_entry(_now())
+        elif meta.status != Status.active:
+            entry = _activation_entry(
+                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
+            )
         meta.status = Status.active
         meta.branch = new_branch
+        if entry is not None:
+            body = append_to_section(
+                body, "Log", entry, before=("Handoff", "Retrospective")
+            )
         # Re-render only the frontmatter and keep the body verbatim — the same
         # mutate-preserving-body shape `finalize` uses. The plan text is the record.
         path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
@@ -1128,6 +1181,35 @@ def activate(
     if ahead is not None:
         for line in ahead_mod.report(ahead, meta.prefix):
             typer.echo(line)
+
+
+def _activation_entry(
+    root: Path,
+    meta: PlanMetadata,
+    branch: str,
+    *,
+    worktree: str | None,
+    no_worktree: bool,
+) -> str:
+    """The activation Log entry for ``meta``, read from HEAD as it stands now.
+
+    Called before the activation commit is made, so the commit it records is the
+    one the activation sits on, which is where the feature branch will start.
+    """
+    mainline = base_mod.detect(root)
+    sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
+    if no_worktree:
+        recorded = entries.NO_WORKTREE
+    else:
+        recorded = worktree or entries.default_worktree(branch)
+    return entries.activation_entry(
+        _now(),
+        branch=branch,
+        base=mainline.current,
+        sha=sha.strip() if sha else None,
+        worktree=recorded,
+        pr=meta.pr or None,
+    )
 
 
 def _current_branch(root: Path) -> str:
@@ -1158,7 +1240,7 @@ def set_pr(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
-    """Record a plan's PR URL, refresh the index, and commit.
+    """Record a plan's PR URL, log it, refresh the index, and commit.
 
     The index shows the PR, so the three hand steps (edit ``pr:``, regenerate,
     commit) are one command here and the middle one cannot be forgotten. There is
@@ -1198,6 +1280,14 @@ def set_pr(
         typer.echo(f"plan {label} already records {url}; nothing to do.")
         return
     if updated != text:
+        # The entry goes in only with a change of URL, so a re-run that finishes
+        # an interrupted commit does not log the same PR twice.
+        updated = append_to_section(
+            updated,
+            "Log",
+            entries.pr_entry(_now(), url),
+            before=("Handoff", "Retrospective"),
+        )
         target.write_text(updated, encoding="utf-8")
         typer.echo(f"recorded {url} in {_shown(target, root)}")
 
@@ -1208,6 +1298,229 @@ def set_pr(
         staged.append(_refresh_index(root, cols="curated"))
     _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
     _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
+
+
+def _unpublished_work(
+    root: Path, mainline: base_mod.Mainline, *, ignore: tuple[Path, ...] = ()
+) -> list[str]:
+    """What the branch at ``root`` holds that a reviewer of its PR cannot see.
+
+    Uncommitted changes, commits not pushed to the upstream, and a branch with no
+    upstream at all in a repo that has a remote. A repo with no remote has nothing
+    to publish to, so only its uncommitted changes count. Outside a repo there is
+    nothing to check, and the commit that follows reports that on its own.
+
+    ``ignore`` names files whose changes are not counted: the ones an earlier run
+    wrote and then failed to commit, which this run is about to commit itself.
+    """
+    status = _git_status_porcelain(root)
+    if status is None:
+        return []
+    problems: list[str] = []
+    skipped = {str(path.relative_to(root)) for path in ignore}
+    # Split rather than slice: the helper strips its output, which takes the
+    # leading space off the first line's status column.
+    changed = sum(
+        1 for line in status.splitlines() if line.split(maxsplit=1)[-1] not in skipped
+    )
+    if changed:
+        problems.append(f"{changed} uncommitted change(s); commit them first")
+    upstream = proc.git_out(
+        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+    )
+    if upstream is None:
+        if (
+            mainline.current is not None
+            and (proc.git_out(root, ["remote"]) or "").strip()
+        ):
+            branch = mainline.current
+            problems.append(
+                f"{branch} has no upstream; push it with `git push -u origin {branch}`"
+            )
+        return problems
+    unpushed = int(
+        proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"]) or 0
+    )
+    if unpushed > 0:
+        problems.append(
+            f"{unpushed} commit(s) not pushed to {upstream.strip()}; push first"
+        )
+    return problems
+
+
+def _ahead_of(root: Path, base: str) -> int | None:
+    """How many commits HEAD has that ``base`` lacks, or ``None`` when unknown.
+
+    ``origin/<base>`` is tried first, since that is what the PR is compared with
+    and a local base can lag it; a repo with no remote copy falls back to the
+    local branch.
+    """
+    for ref in (f"origin/{base}", base):
+        out = proc.git_out(root, ["rev-list", "--count", f"{ref}..HEAD"])
+        if out is not None:
+            return int(out)
+    return None
+
+
+def _mark_pr_ready(root: Path, url: str) -> None:
+    """Take the PR at ``url`` out of draft, warning rather than failing.
+
+    The status change is already committed by the time this runs, so a gh that is
+    missing, unauthenticated, or offline is reported for the user to finish by
+    hand instead of undoing a commit that is correct.
+    """
+    try:
+        result = proc.run(root, ["gh", "pr", "ready", url], capture_output=True)
+    except OSError:
+        _warn(f"warning: gh is not available; run `gh pr ready {url}` by hand.")
+        return
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        _warn(
+            f"warning: `gh pr ready {url}` failed"
+            + (f": {detail}" if detail else "")
+            + "; run it by hand."
+        )
+        return
+    typer.echo(f"marked {url} ready for review")
+
+
+def _implemented_entry(
+    root: Path,
+    text: str,
+    plan: Path,
+    nested: Path | None,
+    mainline: base_mod.Mainline,
+) -> str:
+    """The Log entry ``implemented`` writes, counting the work past its base.
+
+    The base is the one the activation entry recorded: in the subplan for a step
+    on a sub-branch of its own, else in the umbrella, else the detected mainline.
+    """
+    base = entries.recorded_base(text)
+    if base is None and nested is not None:
+        base = entries.recorded_base(plan.read_text(encoding="utf-8"))
+    if base is None and mainline.resolved:
+        base = mainline.branches[0]
+    ahead = _ahead_of(root, base) if base is not None else None
+    return entries.implemented_entry(_now(), ahead, base)
+
+
+@app.command()
+def implemented(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    no_commit: bool = typer.Option(
+        False,
+        "--no-commit",
+        help="Write only: no index refresh, no commit, and the PR stays a draft.",
+    ),
+) -> None:
+    """Mark an active plan implemented: its work is done and its PR awaits review.
+
+    Flips ``active`` to ``implemented``, appends a Log entry counting the commits
+    the branch carries past its base, refreshes the index, and commits on the
+    feature branch. When the plan has a PR it is then taken out of draft, since
+    ``implemented`` means it is open for review.
+
+    Refuses unless the plan is ``active``, and unless the branch is fully
+    committed and pushed, so the plan never says implemented about work the
+    reviewer cannot see. It closes nothing: merging, the Retrospective, and
+    ``concluded`` stay with ``close``. Review that asks for more work returns the
+    plan with ``planners activate``.
+
+    For a nested subplan the subplan's own file changes and the umbrella's table
+    follows; only a PR recorded in the subplan itself is taken out of draft.
+    """
+    root = Path.cwd()
+    plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
+    target = nested or plan
+
+    meta: PlanMetadata | None = None
+    try:
+        text = target.read_text(encoding="utf-8")
+        if nested is not None:
+            sub_meta = SubplanMetadata.from_text(text, nested.name)
+            status, pr, slug = sub_meta.status, sub_meta.pr, sub_meta.step
+        else:
+            meta = PlanMetadata.from_text(text, plan.parent.name)
+            status, pr, slug = meta.status, meta.pr, meta.slug
+    except (PlanError, SubplanError, OSError, UnicodeDecodeError) as exc:
+        _err(f"cannot read {_shown(target, root)}: {exc}")
+        raise typer.Exit(1) from None
+
+    kind = "subplan" if nested is not None else "plan"
+    # An earlier run that wrote the status and then failed to commit (a rejecting
+    # hook, say) left the plan reading `implemented` with its change uncommitted.
+    # That run is finished here rather than refused, as `activate` and `set-pr` do.
+    resuming = (
+        status == Status.implemented
+        and not no_commit
+        and not _is_unmodified(root, target)
+    )
+    if status != Status.active and not resuming:
+        _err(
+            f"{kind} {label} is {status.value}; only an active {kind} can be marked "
+            "implemented."
+        )
+        raise typer.Exit(1)
+
+    # The status change belongs on the feature branch, beside the work it
+    # describes; on the mainline it would say implemented about unmerged work.
+    mainline = base_mod.detect(root)
+    if not no_commit and (mainline.detached or mainline.on_mainline):
+        where = (
+            "HEAD is detached"
+            if mainline.detached
+            else f"HEAD is on the mainline branch '{mainline.current}'"
+        )
+        _err(
+            f"error: {kind} {label} is not marked implemented: {where}. "
+            "Run it on the plan's feature branch."
+        )
+        raise typer.Exit(1)
+
+    ignore = (target, plan, root / INDEX_PATH) if resuming else ()
+    problems = _unpublished_work(root, mainline, ignore=ignore)
+    if problems:
+        _err(f"{kind} {label} is not marked implemented: the branch has")
+        for problem in problems:
+            _err(f"  - {problem}")
+        raise typer.Exit(1)
+
+    if resuming:
+        staged = [target, plan] if nested is not None else [plan]
+        typer.echo(f"committing the earlier change to {_shown(target, root)}")
+    else:
+        entry = _implemented_entry(root, text, plan, nested, mainline)
+        if meta is None:
+            updated = set_frontmatter_key(text, "status", Status.implemented.value)
+            updated = append_to_section(
+                updated, "Log", entry, before=("Handoff", "Retrospective")
+            )
+            _sync_subplans(root, plan, {target: updated})
+            staged = [target, plan]
+        else:
+            _, body = split_frontmatter(text)
+            meta.status = Status.implemented
+            body = append_to_section(
+                body, "Log", entry, before=("Handoff", "Retrospective")
+            )
+            plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+            staged = [plan]
+        typer.echo(f"marked {_shown(target, root)} implemented")
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [implemented]: {label} - {slug}"])
+    if pr:
+        _mark_pr_ready(root, pr)
+    typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
 
 
 @app.command()
@@ -1368,7 +1681,8 @@ def subplans(
     require_closed: bool = typer.Option(
         False,
         "--require-closed",
-        help="Exit non-zero when a subplan is draft, active, or blocked: the check "
+        help="Exit non-zero when a subplan is draft, active, implemented, or blocked: "
+        "the check "
         "an umbrella passes before it closes.",
     ),
 ) -> None:
@@ -1457,8 +1771,8 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
 
     Stages the top-level plan files whose ``## Log`` changed against ``HEAD``.
     Refuses when one of them changed anywhere else (a review never edits a plan's
-    spec or frontmatter) or is an active or blocked plan (whose file a review
-    never edits, since its owner may be working on it elsewhere).
+    spec or frontmatter) or is an active, implemented, or blocked plan (whose file
+    a review never edits, since its owner may be working on it elsewhere).
     """
     diff = proc.git_out(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
     if diff is None:
@@ -1527,7 +1841,8 @@ def review(
         "--status",
         "-s",
         help="Statuses to review (repeatable): all, active, draft, done, retired, "
-        "blocked, or inactive. Default: active, draft, and blocked.",
+        "implemented, blocked, or inactive. Default: active, implemented, draft, and "
+        "blocked.",
     ),
     json_: bool = typer.Option(
         False, "--json", help="Emit the report as JSON, for the review skill."
@@ -1536,7 +1851,8 @@ def review(
         14,
         "--stale-days",
         min=0,
-        help="Idle days after which an active or blocked plan's branch is flagged.",
+        help="Idle days after which an active, implemented, or blocked plan's branch "
+        "is flagged.",
     ),
     commit: bool = typer.Option(
         False,
@@ -1554,9 +1870,9 @@ def review(
 
     For each selected plan: the commits and tags since it was created (or last
     reviewed), the code paths and ``module.function`` names it mentions and
-    whether they still exist, the plans it names, and for an active or blocked
-    plan the state of its branch, worktree, and PR. The ``review`` skill turns
-    this into a verdict and a Log entry per plan; ``--commit`` then commits
+    whether they still exist, the plans it names, and for an active, implemented,
+    or blocked plan the state of its branch, worktree, and PR. The ``review`` skill
+    turns this into a verdict and a Log entry per plan; ``--commit`` then commits
     those entries, and is the only form that writes.
     """
     root = Path.cwd()

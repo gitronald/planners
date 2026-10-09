@@ -1,5 +1,6 @@
 """CLI tests for ``set-pr``."""
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -32,7 +33,14 @@ def _repo(root: Path, *, git: bool = False) -> Path:
     return plan_dir
 
 
-def test_set_pr_no_commit_writes_only_the_field(
+def _entry(url: str) -> re.Pattern[str]:
+    """The one Log entry ``set-pr`` appends, with any timestamp."""
+    return re.compile(
+        rf"\n\n## Log\n\n- \*\*[^*]+\*\* — PR opened: {re.escape(url)}\n$"
+    )
+
+
+def test_set_pr_no_commit_writes_the_field_and_a_log_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     plan_dir = _repo(tmp_path)
@@ -40,7 +48,10 @@ def test_set_pr_no_commit_writes_only_the_field(
     result = runner.invoke(app, ["set-pr", "5", _URL, "--no-commit"])
     assert result.exit_code == 0, result.output
     text = (plan_dir / "plan.md").read_text(encoding="utf-8")
-    assert text == _PLAN.replace("pr:\n", f"pr: {_URL}\n")
+    # The field changes and a Log is started; the body before it is untouched.
+    expected = _PLAN.replace("pr:\n", f"pr: {_URL}\n")
+    assert text.startswith(expected)
+    assert _entry(_URL).fullmatch(text[len(expected) - 1 :])
     assert not (tmp_path / ".planners" / "README.md").exists()
 
     again = runner.invoke(app, ["set-pr", "5", _URL, "--no-commit"])
@@ -130,9 +141,11 @@ def test_set_pr_on_a_nested_subplan_writes_its_own_field(
     result = runner.invoke(app, ["set-pr", "005d", url])
     assert result.exit_code == 0, result.output
     sub = (plan_dir / "subplans" / "d-step.md").read_text(encoding="utf-8")
-    assert sub == _SUBPLAN.replace(
+    expected = _SUBPLAN.replace(
         "branch: other-repo-branch\n", f"branch: other-repo-branch\npr: {url}\n"
     )
+    assert sub.startswith(expected)
+    assert _entry(url).fullmatch(sub[len(expected) - 1 :])
     # The umbrella's own pr: is a different field and stays pending.
     assert (plan_dir / "plan.md").read_text(encoding="utf-8") == _PLAN
     assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (

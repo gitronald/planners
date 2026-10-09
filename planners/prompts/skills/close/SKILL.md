@@ -32,6 +32,10 @@ request is silent, run the default.
 ### 1. Read the plan and gather context
 
 Read the plan's `# Title`, `status`, `branch`, and existing Log/Retrospective.
+The status is normally `implemented`, set by `{cli} implemented` when the work
+was pushed and the PR left draft. An `active` plan is accepted too: it skipped
+that step, and the gate below takes its PR out of draft. Any other status is not
+ready to close; stop and say which it is.
 Run `git log --oneline` for recent commits and `git diff --stat HEAD`; if there
 are uncommitted changes, stop and tell the user.
 
@@ -42,8 +46,8 @@ subplans, run:
 {cli} subplans {NNN} --require-closed
 ```
 
-It exits non-zero and lists every subplan that is `draft`, `active`, or
-`blocked`, and any row where the umbrella's table disagrees with the subplan
+It exits non-zero and lists every subplan that is `draft`, `active`,
+`implemented`, or `blocked`, and any row where the umbrella's table disagrees with the subplan
 frontmatter. Refuse to close while it fails. Each listed subplan is finished, or
 moved:
 
@@ -105,7 +109,9 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check &&
   uv run pytest` (the `ruff format --check` is easy to omit locally and is the
   usual reason CI fails a run that passed on the machine).
-- `gh pr ready <number>` — also a self-authored write, so the classifier can
+- `gh pr ready <number>` — usually done already by `{cli} implemented`; run it
+  for a plan that skipped that step (still `active`), and it is harmless on a PR
+  that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
   PR is still a draft and stop before the merge (a draft can't be merged). The
   same `Bash(gh pr ready:*)` allow-rule pre-authorizes it, or the user can mark

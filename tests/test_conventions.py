@@ -24,10 +24,11 @@ def test_no_abandoned_in_skill_bodies() -> None:
         assert "abandoned" not in HOST.read(source), name
 
 
-def test_status_enum_has_exactly_six_members_without_abandoned() -> None:
+def test_status_enum_has_exactly_seven_members_without_abandoned() -> None:
     assert [s.value for s in Status] == [
         "draft",
         "active",
+        "implemented",
         "blocked",
         "done",
         "inactive",
@@ -40,6 +41,7 @@ def test_documented_status_order_matches_index_generator() -> None:
     # The index sort order, as documented in the plan and the index/backfill skills.
     assert STATUS_ORDER == [
         Status.active,
+        Status.implemented,
         Status.blocked,
         Status.draft,
         Status.done,
