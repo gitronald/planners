@@ -550,10 +550,12 @@ def _pr_state(root: Path, target: str, *, enabled: bool) -> PrState | None:
     """The PR's state from ``gh``, or ``None`` when it cannot be asked."""
     if not enabled:
         return None
+    # ``--`` ends the flags, so a frontmatter branch or PR value that starts with
+    # ``-`` is read as the target, never as an option.
     try:
         result = proc.run(
             root,
-            ["gh", "pr", "view", target, "--json", "state,url"],
+            ["gh", "pr", "view", "--json", "state,url", "--", target],
             capture_output=True,
         )
     except OSError:

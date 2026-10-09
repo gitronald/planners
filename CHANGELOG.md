@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `planners review` passes a plan's branch or PR to `gh pr view` after
+  `--`, so a value starting with `-` is read as the target, not a flag.
+
 ## [0.10.0] - 2026-10-09
 
 ### Added

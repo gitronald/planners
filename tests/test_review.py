@@ -656,3 +656,18 @@ def test_cli_commit_is_guarded_off_the_mainline(cli_repo: Path) -> None:
     assert "not a mainline branch" in result.output
     allowed = runner.invoke(app, ["review", "--commit", "--allow-branch"])
     assert allowed.exit_code == 0, allowed.output
+
+
+def test_pr_state_passes_the_target_after_end_of_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(root: Path, args: list[str], **_: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, '{"state": "OPEN", "url": "u"}', "")
+
+    monkeypatch.setattr(review_mod.proc, "run", fake_run)
+    state = review_mod._pr_state(tmp_path, "--web", enabled=True)
+    assert state is not None and state.state == "open"
+    assert calls[0][-2:] == ["--", "--web"]
