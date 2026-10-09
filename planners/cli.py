@@ -1,18 +1,20 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
 Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``retire``,
-``subplans``, ``base``, ``index``, ``schema``, and ``validate``, plus ``skill``,
-``rule``, ``install``, and ``permissions``, which
+``subplans``, ``review``, ``base``, ``index``, ``schema``, and ``validate``, plus
+``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
 subprocess (git) work is confined to this module and the ``add`` helpers; the
 schema/index transforms stay pure. Every shell-out goes through
 :mod:`planners.proc`, which pins it to an explicit repo root.
 """
 
+import json
 import re
 import secrets
 import shutil
 import sys
+from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
 from typing import NamedTuple
@@ -23,8 +25,9 @@ from pkgskills import register
 from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import proc
+from planners import review as review_mod
 from planners import subplans as subplans_mod
-from planners.body import append_to_section, set_frontmatter_key
+from planners.body import append_to_section, section_span, set_frontmatter_key
 from planners.host import HOST
 from planners.index import INDEX_PATH, render_index, render_plans_table
 from planners.metadata import (
@@ -1428,6 +1431,206 @@ def subplans(
             _err(f"{_shown(plan, root)}: {problem}")
         _err(f"{len(problems)} problem(s) in plan {prefix}'s subplans")
         raise typer.Exit(1)
+
+
+def _outside_log(text: str) -> tuple[str | None, str]:
+    """``text``'s frontmatter and its body with the ``## Log`` section cut out.
+
+    Two versions of a plan that agree on this differ only in their Log, which is
+    the one part of a plan ``review --commit`` may carry.
+    """
+    fm, body = split_frontmatter(text)
+    span = section_span(body, "Log")
+    if span is None:
+        return fm, body
+    lines = body.splitlines(keepends=True)
+    return fm, "".join(lines[: span[0]] + lines[span[1] :])
+
+
+def _log_of(text: str) -> str:
+    _, body = split_frontmatter(text)
+    span = section_span(body, "Log")
+    if span is None:
+        return ""
+    return "".join(body.splitlines(keepends=True)[span[0] : span[1]])
+
+
+def _review_commit(root: Path, *, allow_branch: bool) -> None:
+    """Commit the Log entries a review wrote, and nothing else.
+
+    Stages the top-level plan files whose ``## Log`` changed against ``HEAD``.
+    Refuses when one of them changed anywhere else (a review never edits a plan's
+    spec or frontmatter) or is an active or blocked plan (whose file a review
+    never edits, since its owner may be working on it elsewhere).
+    """
+    diff = _git_capture(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
+    if diff is None:
+        _err("cannot read the working tree's changes; is this a git repo with commits?")
+        raise typer.Exit(1)
+    pattern = re.compile(rf"^{re.escape(PLANS_DIR.as_posix())}/[^/]+/{PLAN_FILENAME}$")
+    candidates = [line for line in diff.splitlines() if pattern.match(line)]
+
+    staged: list[str] = []
+    problems: list[str] = []
+    for rel in candidates:
+        path = root / rel
+        if not path.is_file():
+            problems.append(f"{rel}: deleted; a review never removes a plan")
+            continue
+        current = path.read_text(encoding="utf-8")
+        before = _git_capture(root, ["show", f"HEAD:{rel}"])
+        if before is None:
+            continue
+        if _outside_log(current) != _outside_log(before):
+            problems.append(f"{rel}: changed outside its Log")
+            continue
+        if _log_of(current) == _log_of(before):
+            continue
+        try:
+            meta = PlanMetadata.from_text(current, dirname=path.parent.name)
+        except PlanError as exc:
+            problems.append(f"{rel}: {exc}")
+            continue
+        if meta.status in review_mod.CAREFUL_STATUSES:
+            problems.append(
+                f"{rel}: plan {meta.prefix} is {meta.status.value}; a review never "
+                "edits it, so its suggested entry goes where the work lives"
+            )
+            continue
+        staged.append(rel)
+
+    if problems:
+        for problem in problems:
+            _err(f"error: {problem}")
+        _err("nothing committed; `review --commit` carries Log entries only.")
+        raise typer.Exit(1)
+    if not staged:
+        _err("no plan has a changed Log; nothing to commit.")
+        raise typer.Exit(1)
+
+    _guard_base_branch(root, "plan [review]", allow_branch=allow_branch)
+    readme = _refresh_index(root, cols="curated")
+    _git(root, ["add", *staged, str(readme.relative_to(root))])
+    noun = "plan" if len(staged) == 1 else "plans"
+    _git(root, ["commit", "-m", f"plan [review]: {len(staged)} {noun}"])
+    typer.echo(f"committed review notes for {len(staged)} {noun}")
+
+
+def _git_capture(root: Path, args: list[str]) -> str | None:
+    """Stdout of a read-only git command in ``root``, or ``None`` on any failure."""
+    try:
+        result = proc.run(root, ["git", *args], capture_output=True)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+@app.command()
+def review(
+    ref: str | None = typer.Argument(
+        None, help="One plan to review, whatever its status, e.g. 011 (or 012a)."
+    ),
+    status: list[str] | None = typer.Option(
+        None,
+        "--status",
+        "-s",
+        help="Statuses to review (repeatable): all, active, draft, done, retired, "
+        "blocked, or inactive. Default: active, draft, and blocked.",
+    ),
+    json_: bool = typer.Option(
+        False, "--json", help="Emit the report as JSON, for the review skill."
+    ),
+    stale_days: int = typer.Option(
+        14,
+        "--stale-days",
+        min=0,
+        help="Idle days after which an active or blocked plan's branch is flagged.",
+    ),
+    commit: bool = typer.Option(
+        False,
+        "--commit",
+        help="Commit the Log entries a review wrote (draft, done, retired, and "
+        "inactive plans only), with a refreshed index.",
+    ),
+    allow_branch: bool = typer.Option(
+        False,
+        "--allow-branch",
+        help="With --commit: commit even though HEAD is off the repo's mainline.",
+    ),
+) -> None:
+    """Report what changed in the repo around each plan. Reads only.
+
+    For each selected plan: the commits and tags since it was created (or last
+    reviewed), the code paths and ``module.function`` names it mentions and
+    whether they still exist, the plans it names, and for an active or blocked
+    plan the state of its branch, worktree, and PR. The ``review`` skill turns
+    this into a verdict and a Log entry per plan; ``--commit`` then commits
+    those entries, and is the only form that writes.
+    """
+    root = Path.cwd()
+    if commit:
+        if ref is not None or status or json_:
+            _err(
+                "--commit takes no plan, --status, or --json; it commits what changed."
+            )
+            raise typer.Exit(1)
+        _review_commit(root, allow_branch=allow_branch)
+        return
+    if allow_branch:
+        _err("--allow-branch applies to --commit only.")
+        raise typer.Exit(1)
+
+    plans_dir = root / PLANS_DIR
+    statuses = review_mod.DEFAULT_STATUSES
+    if status:
+        values = [value.strip() for value in status]
+        if "all" in values:
+            if len(values) > 1:
+                _err("--status all cannot be combined with other statuses.")
+                raise typer.Exit(1)
+            statuses = tuple(Status)
+        else:
+            try:
+                statuses = tuple(dict.fromkeys(Status(value) for value in values))
+            except ValueError:
+                allowed = ", ".join(["all", *(s.value for s in Status)])
+                _err(f"invalid --status {status!r}; use one of: {allowed}.")
+                raise typer.Exit(1) from None
+
+    only: str | None = None
+    if ref is not None:
+        if status:
+            _err("pass a plan or --status, not both.")
+            raise typer.Exit(1)
+        found = _resolve_ref(plans_dir, ref)
+        if found.nested is not None:
+            _warn(
+                f"note: {found.label} is a nested subplan; reviewing its umbrella, "
+                "whose evidence covers it."
+            )
+        only = found.plan.parent.name.split("-", 1)[0]
+
+    mainline = base_mod.detect(root)
+    try:
+        report = review_mod.gather(
+            root,
+            plans_dir,
+            statuses=statuses,
+            only=only,
+            stale_days=stale_days,
+            now=_now(),
+            mainline=mainline.branches[0] if mainline.resolved else None,
+        )
+    except review_mod.ReviewError as exc:
+        _err(f"error: {exc}")
+        raise typer.Exit(1) from None
+
+    if json_:
+        typer.echo(json.dumps(asdict(report), indent=2))
+    else:
+        typer.echo(review_mod.render_text(report), nl=False)
 
 
 @app.command()
