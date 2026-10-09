@@ -1,10 +1,10 @@
 ---
 id: 10
 slug: validate-follow-ups
-status: active
+status: done
 branch: feature/validate-follow-ups
 created: 2026-10-06T20:28:54-07:00
-concluded:
+concluded: 2026-10-09T12:49:11-07:00
 pr: https://github.com/gitronald/planners/pull/34
 ---
 
@@ -109,11 +109,43 @@ mention it as a second reason to use it in bulk checks.
   - **`--no-index` with `--subplans`:** left untested. The plan made adding
     that test depend on item 1 touching the summary logic, and it did not.
 
+- **2026-10-09T12:48:51-07:00** — Review follow-up (`/code-review` low, PR #34).
+  - **Fixed:** `bench_validate.sh` timed a failing `validate` as a success.
+    `best()` ignored the exit status, and a `$(...)` inside an `echo` argument
+    escapes `set -e`. Plan-count 0 printed 75-340 ms for a run that failed on
+    zero matches. `best()` now stops on a failure, and the results are
+    assigned before they are printed. Probed by swapping the timed command
+    for `false`: the script exits 1 with `Error: command failed`.
+  - **Fixed:** plan-count and runs are now checked as positive integers. Before,
+    `runs=0` printed blank results and exited 0. Probed with `0` and `x`: both
+    exit 1.
+  - **Fixed:** the header now says the script needs GNU `date` (`%N`).
+  - **Caveat on item 2's figures:** differences under about 5 ms are noise,
+    as the 50-plan row shows, and synthetic minimal plans parse faster than
+    real ones. Read the 13 ms and 30 ms figures as lower bounds. The
+    conclusion holds at that scale.
+  - **No-op:** the cross-repo caller survey names no repos, because plans
+    carry no machine-specific paths. The in-repo consumers it lists can be
+    re-checked with `grep -rn validate planners/prompts planners/host.py scripts/`.
+
 ## Handoff
 
-- **State:** nothing outstanding in code. The branch carries only the timing
-  script and this log. The work is pushed, and draft PR #34 is open.
-- **Next:** `/planners close 010`. Both items resolved without a change, so
-  close as `done` (the investigation was the deliverable) or `retired`.
-  That choice is the user's to make at close.
+- **State:** closed as `done`. Both items resolved without a code change;
+  the deliverable is the Log and `bench_validate.sh`.
 - **Open questions:** none.
+- **Not verified:** `--no-index` with `--subplans` remains untested (see Log).
+
+## Retrospective
+
+- Both items ended as "no change", as the plan expected. The plan stated a
+  default outcome for each item up front, which made each close a check
+  against that default instead of a fresh debate.
+- Startup costs more than the stale check. At 1000 plans `uv run` plus import
+  is about 100 ms and the check about 30 ms, so a speed-up would have to
+  target startup first.
+- Review caught a benchmark that could time a failing command and report the
+  number as a cost. A measurement script should fail on a failed command
+  before it reports a timing.
+- A cross-repo caller survey can't be recorded in a plan that bans local
+  paths. Keep such surveys as supporting evidence and rest decisions on the
+  in-repo consumers.
