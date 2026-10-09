@@ -58,18 +58,19 @@ changes a branch.
   field to `unknown`. None of them is an error.
 - The report opens with a short summary table, with status as the index:
 
-  | status | plans | commits | last_date |
-  |---|---|---|---|
-  | active | 1 | 4 | 2026-10-09 |
-  | draft | 7 | 9 | 2026-10-09 |
-  | done | 12 | 61 | 2026-10-09 |
-  | retired | 3 | 6 | 2026-10-09 |
-  | total | 23 | 80 | 2026-10-09 |
+  | status | plans | commits | creation_date | last_date |
+  |---|---|---|---|---|
+  | active | 1 | 4 | 2026-10-09 | 2026-10-09 |
+  | draft | 7 | 9 | 2026-06-10 | 2026-10-09 |
+  | done | 12 | 61 | 2026-01-25 | 2026-10-09 |
+  | retired | 3 | 6 | 2026-03-02 | 2026-10-09 |
+  | total | 23 | 80 | 2026-01-25 | 2026-10-09 |
 
   `plans` is the count of plans with that status. `commits` is the number of
   distinct commits that touched those plans' directories
-  (`git log --format=%H -- <plan dirs>`). `last_date` is the authored date of
-  the newest of those commits. Rows follow the index's status order, a status
+  (`git log --format=%H -- <plan dirs>`). `creation_date` is the earliest
+  `created` in those plans' frontmatter, the date the oldest of them was
+  opened. `last_date` is the authored date of the newest of those commits. Rows follow the index's status order, a status
   with no plans is omitted, and a `total` row closes the table. The summary
   covers every status, whatever `--status` selects, so the review shows what
   it left out. `--json` carries it as a `summary` list of row objects.
@@ -194,3 +195,6 @@ the verdict table. The CLI writes nothing.
   question). Spec changes: the default status set adds `blocked`, and section
   2 defines a `Review: <verdict>.` Log marker that `planners review` reads as
   the start of its evidence window.
+- **2026-10-09T12:41:58-07:00** — Added a `creation_date` column to the
+  summary table: the earliest frontmatter `created` among each status's
+  plans.
