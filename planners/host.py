@@ -30,19 +30,21 @@ from pkgskills import (
 
 from planners.index import INDEX_PATH
 
-# The seven plan-lifecycle subcommands, in lifecycle order. `pipeline` follows
-# `close` because it chains implement -> work -> close as one driven run.
+# The eight plan-lifecycle subcommands, in lifecycle order. `pipeline` follows
+# `close` because it chains implement -> work -> close as one driven run, and
+# `review` follows it as the pass over plans that have gone stale.
 SKILL_NAMES = (
     "add",
     "implement",
     "update",
     "close",
     "pipeline",
+    "review",
     "index",
     "backfill",
 )
 
-# The single dispatcher's description must absorb the union of all seven
+# The single dispatcher's description must absorb the union of all eight
 # subcommands' triggers so /planners still auto-fires across the whole plan flow.
 HOLDER_DESCRIPTION = (
     "Manage this repo's plan-file lifecycle end to end. Use whenever the user "
@@ -50,11 +52,12 @@ HOLDER_DESCRIPTION = (
     "implement, or begin work on a plan (implement); activate, log, update, "
     "finish, close, complete, ship, or abandon/retire a plan (update, close); "
     "drive a plan from implementation through close in one run (pipeline); "
+    "review plans against the repo to find stale, done, or moot ones (review); "
     "regenerate or refresh the plan index / README table (index); or "
     "backfill missing plan frontmatter from git history and PRs (backfill). "
     'Triggers on "let\'s plan", "spec this out", "write up a plan", '
     '"start/close this plan", "take this plan to done", "update the plan status", '
-    'or "refresh the index".'
+    '"review the plans", "which drafts are stale", or "refresh the index".'
 )
 
 HOOKS = (
