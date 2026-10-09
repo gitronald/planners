@@ -325,6 +325,8 @@ skills):
   "no PR" merges locally instead (`pr: null`) and asks first when a PR already exists;
   "minimal review" swaps the review loop for checks plus a diff skim
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
+- `/planners review` — check plans against the repo: a verdict and a dated Log
+  entry per plan, retirements proposed (`planners review` itself only reads)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
 
