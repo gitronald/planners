@@ -1,6 +1,7 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``retire``,
+Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``implemented``,
+``finish``, ``retire``,
 ``subplans``, ``review``, ``base``, ``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
@@ -10,6 +11,7 @@ schema/index transforms stay pure. Every shell-out goes through
 """
 
 import json
+import os
 import re
 import secrets
 import shutil
@@ -25,6 +27,7 @@ from pkgskills import register
 from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import entries, proc
+from planners import finish as finish_mod
 from planners import review as review_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
@@ -1521,6 +1524,232 @@ def implemented(
     if pr:
         _mark_pr_ready(root, pr)
     typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
+
+
+def _closed_plan(root: Path, plan: Path, branch: str) -> PlanMetadata:
+    """The plan as its branch has it, where the closing commit was made.
+
+    The branch's copy is read first, then its remote copy, and the checkout's
+    own copy last: before the merge the base still has the activated plan,
+    without the PR and the ``done`` status the branch recorded, and after it the
+    branch may be gone and the base has both.
+    """
+    rel = plan.relative_to(root).as_posix()
+    text: str | None = None
+    for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"):
+        text = proc.git_out(root, ["show", f"{ref}:{rel}"])
+        if text is not None:
+            break
+    if text is None:
+        text = plan.read_text(encoding="utf-8")
+    try:
+        return PlanMetadata.from_text(text, plan.parent.name)
+    except PlanError as exc:
+        raise finish_mod.Stop(f"cannot read {rel} on {branch}: {exc}") from None
+
+
+def _sync_base(root: Path, base: str, say: finish_mod.Say) -> None:
+    """Check ``base`` out in ``root`` and fast-forward it to its upstream."""
+    finish_mod.must(root, ["git", "fetch", "--prune"])
+    if _current_branch(root) != base:
+        finish_mod.must(root, ["git", "checkout", base])
+        say(f"checked out {base}")
+    if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is None:
+        return
+    finish_mod.must(root, ["git", "pull", "--ff-only"])
+    say(f"pulled {base}")
+
+
+def _push_if_ahead(root: Path, say: finish_mod.Say) -> None:
+    """Push the current branch when it has commits its upstream lacks."""
+    ahead = proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"])
+    if ahead is None or int(ahead) == 0:
+        return
+    finish_mod.must(root, ["git", "push"])
+    say(f"pushed {_current_branch(root)}")
+
+
+def _finish(
+    root: Path,
+    ref: str,
+    *,
+    no_pr: bool,
+    timeout: float,
+    interval: float,
+    say: finish_mod.Say,
+) -> None:
+    """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    parts = DIRNAME_RE.match(plan.parent.name)
+    label = f"{parts.group(1)}{parts.group(2)}" if parts else ref
+    try:
+        on_base = PlanMetadata.from_file(plan)
+    except PlanError as exc:
+        raise finish_mod.Stop(f"cannot read {_shown(plan, root)}: {exc}") from None
+    branch = on_base.branch
+    mainline = base_mod.detect(root)
+    if not branch:
+        raise finish_mod.Stop(f"plan {label} records no branch; nothing to finish")
+    if branch in mainline.branches:
+        raise finish_mod.Stop(
+            f"plan {label} records the mainline branch {branch}; finish never "
+            "deletes a mainline branch"
+        )
+
+    meta = _closed_plan(root, plan, branch)
+    if meta.status != Status.done:
+        raise finish_mod.Stop(
+            f"plan {label} is {meta.status.value} on {branch}; close it "
+            "(status done), commit, and push before finishing"
+        )
+    no_pr = no_pr or meta.pr is None
+    if not no_pr and not meta.pr:
+        raise finish_mod.Stop(
+            f"plan {label} records no PR; record it with `planners set-pr {label} "
+            "<url>`, or pass --no-pr to merge locally"
+        )
+
+    # Everything that can stop the run is checked before anything is removed, so
+    # a stop leaves the worktree in place for the fix.
+    worktree = finish_mod.find_worktree(root, branch)
+    if worktree is not None:
+        if Path.cwd().resolve().is_relative_to(worktree.resolve()):
+            raise finish_mod.Stop(
+                f"this is the worktree being removed; run finish from the main "
+                f"checkout ({root})"
+            )
+        problems = _unpublished_work(worktree, base_mod.detect(worktree))
+        if problems:
+            raise finish_mod.Stop(
+                f"the worktree {_shown(worktree, root)} has\n"
+                + "\n".join(f"  - {problem}" for problem in problems)
+            )
+
+    pr: finish_mod.PullRequest | None = None
+    if no_pr:
+        base = entries.recorded_base(plan.read_text(encoding="utf-8"))
+        if base is None:
+            if not mainline.resolved:
+                raise finish_mod.Stop("cannot tell which branch is the base")
+            base = mainline.branches[0]
+    else:
+        assert meta.pr  # narrowed above
+        pr = finish_mod.wait_ready(
+            root, meta.pr, timeout=timeout, interval=interval, say=say
+        )
+        base = pr.base
+    say(f"plan {label}: {branch} into {base}" + (f", PR #{pr.number}" if pr else ""))
+
+    if worktree is None:
+        say(f"no worktree has {branch} checked out")
+    else:
+        hook = worktree / ".planners" / "hooks" / "pre-worktree-remove"
+        if hook.is_file() and os.access(hook, os.X_OK):
+            finish_mod.must(worktree, [str(hook)])
+            say("ran the pre-worktree-remove hook")
+        finish_mod.must(root, ["git", "worktree", "remove", str(worktree)])
+        say(f"removed the worktree {_shown(worktree, root)}")
+
+    if pr is not None:
+        if pr.state == "MERGED":
+            say(f"PR #{pr.number} is already merged")
+        else:
+            subject = finish_mod.merge_subject(pr.label, pr.number)
+            finish_mod.must(
+                root,
+                ["gh", "pr", "merge", str(pr.number), "--merge", "--subject", subject],
+            )
+            if finish_mod.view_pr(root, str(pr.number)).state != "MERGED":
+                raise finish_mod.Stop(
+                    f"`gh pr merge` succeeded but PR #{pr.number} is not merged "
+                    "yet (a merge queue or auto-merge?); re-run finish once it is"
+                )
+            say(f"merged PR #{pr.number}: {subject}")
+        _sync_base(root, base, say)
+    else:
+        _sync_base(root, base, say)
+        source = next(
+            (
+                ref
+                for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
+                if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+            ),
+            None,
+        )
+        if source is None or finish_mod.is_ancestor(root, source, "HEAD"):
+            say(f"{base} already holds {branch}")
+        else:
+            subject = finish_mod.merge_subject(branch)
+            code = proc.run(
+                root,
+                ["git", "merge", "--no-ff", source, "-m", subject],
+                capture_output=True,
+            )
+            if code.returncode != 0:
+                proc.run(root, ["git", "merge", "--abort"], capture_output=True)
+                detail = (code.stderr or code.stdout).strip()
+                raise finish_mod.Stop(
+                    f"merging {branch} into {base} failed and was aborted:\n{detail}"
+                )
+            say(f"merged {branch} into {base}: {subject}")
+        _push_if_ahead(root, say)
+
+    finish_mod.delete_remote_branch(root, branch, base, say)
+    finish_mod.delete_local_branch(root, branch, base, say)
+
+    if _index_is_stale(root):
+        _refresh_index(root, cols="curated")
+    if not _is_unmodified(root, root / INDEX_PATH):
+        finish_mod.must(root, ["git", "add", INDEX_PATH.as_posix()])
+        finish_mod.must(root, ["git", "commit", "-m", "update plan index after merge"])
+        say("committed the regenerated plan index")
+        _push_if_ahead(root, say)
+
+    finish_mod.repoint_hooks(root, say)
+    say(f"finished plan {label}")
+
+
+@app.command()
+def finish(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    no_pr: bool = typer.Option(
+        False,
+        "--no-pr",
+        help="Merge the branch locally with --no-ff instead of through a PR. "
+        "Implied when the plan records `pr: null`.",
+    ),
+    timeout: float = typer.Option(
+        600.0,
+        "--timeout",
+        help="Seconds to wait for checks and mergeability before stopping.",
+    ),
+    interval: float = typer.Option(
+        10.0, "--interval", help="Seconds between polls of the PR.", hidden=True
+    ),
+) -> None:
+    """Merge a closed plan and clean up after it, from the main checkout.
+
+    The last step of a close, run once the closing commit is pushed. In order:
+    checks the branch's worktree is committed and pushed and its PR can be
+    merged (waiting out pending checks and mergeability), removes the worktree,
+    merges the PR, pulls the base, deletes the branch on the remote and locally,
+    commits the plan index if the merge left it stale, and re-installs any hook
+    whose interpreter was in a worktree.
+
+    Stops with exit 1 on a real issue: a dirty or unpushed worktree, a draft PR,
+    a failing check, a conflict, a branch holding commits the base lacks, or a
+    refused git or gh call. A step already done is skipped, so a re-run after a
+    stop picks up where the last one ended.
+    """
+    toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
+    root = Path(toplevel.strip()) if toplevel else Path.cwd()
+    try:
+        _finish(
+            root, ref, no_pr=no_pr, timeout=timeout, interval=interval, say=typer.echo
+        )
+    except finish_mod.Stop as exc:
+        _err(f"stopped: {exc}")
+        raise typer.Exit(1) from None
 
 
 @app.command()
