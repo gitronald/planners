@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   branch on the remote and locally when the base contains it, commits a stale
   plan index, and re-installs any hook whose `INSTALL_PYTHON` points into
   `.worktrees/`. It stops on a branch that is not merged yet (printing the
-  merge command), a dirty or unpushed worktree, a branch with commits the base
-  lacks, or a refused call, and a re-run skips the steps already done. The
+  merge command), a worktree with uncommitted changes or commits the base
+  lacks, a hand-edited plan index, or a refused call, and a re-run skips the steps already done. The
   merge itself stays the session's own `gh pr merge` or `git merge`, so the
   automation level still governs it.
 

@@ -182,12 +182,14 @@ Below it, the merge goes to the permission prompt or the classifier.
 
 `finish` does the rest in order, and prints a line for each step:
 
-1. It confirms the PR reads `MERGED`. If it does not, it stops and prints the
+1. It fetches with `--prune` and confirms the PR reads `MERGED`. If it does not, it stops and prints the
    merge command.
-2. It checks that the worktree has nothing uncommitted or unpushed. It runs
+2. It checks that the worktree has nothing uncommitted and no commit the merged
+   base lacks (not its upstream, which GitHub may have deleted). It runs
    `.planners/hooks/pre-worktree-remove` when the repo defines one (the
    counterpart of the setup step in `implement`), then removes the worktree.
-3. It fetches with `--prune`, checks the base out, and fast-forwards it.
+3. It checks the base out and fast-forwards it. The main checkout is never
+   treated as a worktree; a branch checked out there is replaced by the base.
 4. It deletes the branch on the remote, and then locally, each only when the
    base contains it. It never uses `-D` and never deletes a mainline branch.
 5. It commits the plan index when the merge left it stale. It does not push;
@@ -197,9 +199,9 @@ Below it, the merge goes to the permission prompt or the classifier.
    `.venv`, and the generated script skips quietly once the venv is gone.
 
 **When `finish` stops.** It exits 1 and leaves the state as it was when there is
-something to look at: a branch that is not merged, a dirty or unpushed
-worktree, a branch that holds commits the base lacks, or a `git` or `gh` call
-that was refused. Deal with what it names, then run `{cli} finish {NNN}` again.
+something to look at: a branch that is not merged, a worktree with uncommitted
+changes or commits the base lacks, a branch that holds such commits, an
+uncommitted edit to the plan index, or a `git` or `gh` call that was refused. Deal with what it names, then run `{cli} finish {NNN}` again.
 Each step that is already done is skipped, so the re-run picks up where the last
 one ended.
 
