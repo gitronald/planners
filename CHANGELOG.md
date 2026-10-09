@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `planners review` reports what changed in the repo around each plan, and
+  writes nothing. For each open plan (`active`, `draft`, and `blocked` by
+  default; `--status/-s` selects others or `all`, and a plan number selects
+  one) it lists the commits and tags since the plan was created or last
+  reviewed, the backticked paths and `module.function` names the plan
+  mentions with whether each still exists and what changed it, the other
+  plans it names with their status, and for an active or blocked plan its
+  branch, worktree, and PR state, judged at the branch tip. A summary table
+  by status opens the report. `--json` emits it for the new `review` skill,
+  with a `now` timestamp to stamp Log entries with; `--stale-days` sets when
+  an idle branch is flagged. Missing `gh`, a missing remote, or a shallow
+  clone reports the affected fields as unknown. A repo on the legacy
+  `docs/plans/` layout is refused.
+- `planners review --commit` commits the Log entries a review wrote, as
+  `plan [review]: <N> plans`, on the mainline only (`--allow-branch`
+  overrides). It refuses when a changed plan file differs outside its Log or
+  is an active or blocked plan.
+- A `review` skill (`/planners review`): it checks each plan's claims against
+  the code, gives a verdict (still open, narrowed, accounted for, moot, or
+  unclear), appends a dated `Review: <verdict>.` Log entry that the next
+  review starts its window from, and proposes retirements for the user to
+  confirm. Active and blocked plans are only reported on, never edited.
 - `planners activate` reports the base's unpushed commits after its commit:
   how many sit ahead of the upstream as last fetched, how many are the plan's
   own (every path under the plan's directory or the index), and how many are

@@ -72,6 +72,7 @@ planners set-pr <NNN> <url>              # record a plan's PR, refresh the index
 planners retire <NNN>                    # close a plan as retired (--into <NNN>: where the work went)
 planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under an umbrella
 planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees
+planners review                          # report what changed around each open plan (-s all, --json); reads only
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
 planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check)
@@ -108,6 +109,16 @@ planners permissions --level assist      # print an automation-level permission 
 > Nested subplans stay out of the index and out of `validate` unless `validate --subplans` opts in.
 > `--parent` without `--nested` still makes a lettered sibling plan (`010a-<slug>/`), for a step
 > that needs a branch, PR, and lifecycle of its own.
+
+> **Reviewing plans (`review`).** `planners review` reports, for each open plan (`active`, `draft`,
+> `blocked`; `-s <status>` or `-s all` for others, or one plan by number), the commits and tags since
+> it was created or last reviewed, the backticked paths and `module.function` names it mentions and
+> whether they still exist, the plans it names, and for an active or blocked plan its branch,
+> worktree, and PR state. A summary table by status opens the report. It never writes: the
+> `/planners review` skill reads the evidence, gives each plan a verdict (still open, narrowed,
+> accounted for, moot, unclear), and appends a `Review: <verdict>.` Log entry, which the next review
+> uses as the start of its window. `planners review --commit` then commits those Log entries alone,
+> on the mainline, and refuses active or blocked plans, whose files a review never edits.
 
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
 > it with `uv add --dev planners` and run everything as `uv run planners …`; then `planners install --local`
