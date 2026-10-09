@@ -1,10 +1,10 @@
 ---
 id: 13
 slug: harden-close-cleanup
-status: active
+status: done
 branch: feature/harden-close-cleanup
 created: 2026-10-09T15:26:29-07:00
-concluded:
+concluded: 2026-10-09T16:52:02-07:00
 pr: https://github.com/gitronald/planners/pull/38
 ---
 
@@ -181,11 +181,39 @@ Scratch repos with a bare remote and a fake `gh` on `PATH`, as
   - Found along the way: the git rule's example truncated subject
     (`...-hook-fro...`) is 61 characters, one past its own limit. Left alone
     (the user's rule files are out of scope).
+- **2026-10-09T16:52:44-07:00** — Closed.
+  - **Review follow-up.** `/code-review` at medium on PR #38 (two finders and
+    two verifiers on sonnet), posted to the PR. It found 4 confirmed defects
+    and 3 plausible ones, all in `finish`. `23dcebc` fixed them, each with a
+    regression test:
+    - The worktree check used `_unpublished_work`, so a pruned upstream read
+      as "no upstream; push it" on a merged branch. It now checks for
+      uncommitted changes and for commits the merged base lacks.
+    - `find_worktree` matched the main checkout. It now skips it.
+    - After `gh pr merge --delete-branch`, `_closed_plan` read the unpulled
+      base's activated plan. It now reads `origin/<base>` too, after one
+      up-front fetch. That fetch also removed a duplicate fetch on the no-PR
+      path.
+    - A hand edit to the index was committed under the index subject. A dirty
+      index is now a stop up front.
+    - `is_ancestor` read a git error as "not contained". It now stops,
+      quoting git.
+    - `stale_hooks` passed a `pre-commit.legacy` to `--hook-type`. It is now
+      limited to pre-commit's hook types.
+    - Remote deletion tests against `origin/<base>`.
+  - `50932ef` updated the CHANGELOG, the `finish` help, and close step 6 to
+    match.
+  - Conscious no-ops, as refactors outside this diff: sharing the porcelain
+    parser with `review._worktrees`, and moving the test git and bare-remote
+    helpers into `tests/helpers.py`.
+  - Checks: ruff, ruff format, pyrefly, and pytest (494 passed, 93.83%).
+    The new regression tests were not run against the pre-fix code.
 
 ## Handoff
 
-- **State.** All work is committed and pushed on `feature/harden-close-cleanup`;
-  PR #38 is a draft. Not yet marked `implemented`.
+- **State.** Closed. Every commit is pushed on `feature/harden-close-cleanup`,
+  and PR #38 is ready. The merge and `finish` run after this commit, from the
+  main checkout.
 - **Open questions** (numbered as in the spec):
   1. Name: `finish`. Settled 2026-10-09 (the default).
   2. Should `finish` merge? Answered 2026-10-09 by the user: no. The session
@@ -194,6 +222,25 @@ Scratch repos with a bare remote and a fake `gh` on `PATH`, as
 - **Not verified.** `finish` has not run against a real GitHub PR. The tests use
   a fake `gh` and a bare local remote. The installed rule and skill stubs are
   not reinstalled, so they still carry the old close text until
-  `planners install --force` runs on a release that includes this.
-- **Next.** Review, then close this plan with the new step 6. That close is
-  the first real run of `finish`.
+  `planners install --force` runs on a release that includes this. Still
+  open, and left as a known gap: the local-branch deletion tests against the
+  local base, which stays stale when the base has no upstream.
+- **Next.** None in this plan. This close is the first real run of `finish`,
+  and its outcome is reported with the merge, not recorded here.
+
+## Retrospective
+
+- The spec's open question 2 assumed a permission level would gate a merge
+  made inside `finish`. Tracing the permission model showed a rule sees only
+  the outer command, so the merge moved out. Check where a gate actually bites
+  before designing around it.
+- The review earned its place: every confirmed bug was a state the happy-path
+  tests never set up (a pruned upstream, a branch in the main checkout, a
+  deleted branch, a dirty index). For cleanup code, list the states the world
+  can be in after a merge before writing the steps.
+- Reusing `_unpublished_work` looked like reuse but carried the wrong question.
+  "Pushed to upstream" is the test before a merge. After a merge, the test is
+  "contained in the base".
+- During this close, the session briefly ran a bare `cd` into the worktree,
+  the exact habit the plan warns against, and corrected it. The rule text
+  alone does not prevent the slip.
