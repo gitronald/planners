@@ -70,6 +70,7 @@ planners finalize                        # number and commit the deferred batch,
 planners activate <NNN>                  # flip a plan to active, fill branch:, log where the work is, and commit
 planners set-pr <NNN> <url>              # record a plan's PR, log it, refresh the index, and commit
 planners implemented <NNN>               # mark pushed work implemented, log it, and take the PR out of draft
+planners finish <NNN>                    # after the merge: remove the worktree, pull, delete the branch, re-point hooks
 planners retire <NNN>                    # close a plan as retired (--into <NNN>: where the work went)
 planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under an umbrella
 planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees

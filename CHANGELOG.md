@@ -21,9 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   base and commit, the worktree, and the PR. `--worktree <path>` records a
   repo-relative worktree, and `--no-worktree` the main checkout.
 - `planners set-pr` appends a `PR opened` Log entry.
+- `planners finish <NNN>` runs the cleanup after a closed plan's branch is
+  merged, from the main checkout. It removes the worktree (running
+  `.planners/hooks/pre-worktree-remove` first), pulls the base, deletes the
+  branch on the remote and locally when the base contains it, commits a stale
+  plan index, and re-installs any hook whose `INSTALL_PYTHON` points into
+  `.worktrees/`. It stops on a branch that is not merged yet (printing the
+  merge command), a dirty or unpushed worktree, a branch with commits the base
+  lacks, or a refused call, and a re-run skips the steps already done. The
+  merge itself stays the session's own `gh pr merge` or `git merge`, so the
+  automation level still governs it.
 
 ### Changed
 
+- The `close` skill's last step is now: commit and push the closing edit, merge,
+  then `planners finish`. The `close` and `pipeline` skills and the rule say
+  that the session runs every cleanup step itself, and hands one to the user
+  only after a call to it was refused.
 - `planners activate` returns an `implemented` plan to `active` on its
   feature branch, without the mainline guard, and logs `Reactivated`.
 - `planners review` includes `implemented` plans by default and treats them
