@@ -1368,7 +1368,8 @@ def subplans(
     require_closed: bool = typer.Option(
         False,
         "--require-closed",
-        help="Exit non-zero when a subplan is draft, active, or blocked: the check "
+        help="Exit non-zero when a subplan is draft, active, implemented, or blocked: "
+        "the check "
         "an umbrella passes before it closes.",
     ),
 ) -> None:
@@ -1457,8 +1458,8 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
 
     Stages the top-level plan files whose ``## Log`` changed against ``HEAD``.
     Refuses when one of them changed anywhere else (a review never edits a plan's
-    spec or frontmatter) or is an active or blocked plan (whose file a review
-    never edits, since its owner may be working on it elsewhere).
+    spec or frontmatter) or is an active, implemented, or blocked plan (whose file
+    a review never edits, since its owner may be working on it elsewhere).
     """
     diff = proc.git_out(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
     if diff is None:
@@ -1527,7 +1528,8 @@ def review(
         "--status",
         "-s",
         help="Statuses to review (repeatable): all, active, draft, done, retired, "
-        "blocked, or inactive. Default: active, draft, and blocked.",
+        "implemented, blocked, or inactive. Default: active, implemented, draft, and "
+        "blocked.",
     ),
     json_: bool = typer.Option(
         False, "--json", help="Emit the report as JSON, for the review skill."
@@ -1536,7 +1538,8 @@ def review(
         14,
         "--stale-days",
         min=0,
-        help="Idle days after which an active or blocked plan's branch is flagged.",
+        help="Idle days after which an active, implemented, or blocked plan's branch "
+        "is flagged.",
     ),
     commit: bool = typer.Option(
         False,
@@ -1554,9 +1557,9 @@ def review(
 
     For each selected plan: the commits and tags since it was created (or last
     reviewed), the code paths and ``module.function`` names it mentions and
-    whether they still exist, the plans it names, and for an active or blocked
-    plan the state of its branch, worktree, and PR. The ``review`` skill turns
-    this into a verdict and a Log entry per plan; ``--commit`` then commits
+    whether they still exist, the plans it names, and for an active, implemented,
+    or blocked plan the state of its branch, worktree, and PR. The ``review`` skill
+    turns this into a verdict and a Log entry per plan; ``--commit`` then commits
     those entries, and is the only form that writes.
     """
     root = Path.cwd()

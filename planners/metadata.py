@@ -42,13 +42,16 @@ def is_plan_dirname(name: str) -> bool:
 
 
 class Status(StrEnum):
-    """The six plan statuses. ``done`` and ``retired`` close a plan; ``retired`` is
-    neutral (superseded or no longer needed), and there is no separate
-    failed/cancelled state. ``blocked`` is open work that is waiting on a person,
-    distinct from ``draft`` (not started) and ``inactive`` (set aside)."""
+    """The seven plan statuses. ``done`` and ``retired`` close a plan; ``retired``
+    is neutral (superseded or no longer needed), and there is no separate
+    failed/cancelled state. ``blocked`` is open work that is waiting on a person
+    for something the work needs, distinct from ``draft`` (not started) and
+    ``inactive`` (set aside). ``implemented`` is open work whose implementation is
+    finished and whose PR waits on a person to review it."""
 
     draft = "draft"
     active = "active"
+    implemented = "implemented"
     blocked = "blocked"
     done = "done"
     inactive = "inactive"
@@ -57,7 +60,13 @@ class Status(StrEnum):
 
 # Open or parked: nullable fields stay empty (pending), never YAML null.
 OPEN_STATUSES = frozenset(
-    {Status.draft, Status.active, Status.blocked, Status.inactive}
+    {
+        Status.draft,
+        Status.active,
+        Status.implemented,
+        Status.blocked,
+        Status.inactive,
+    }
 )
 # Terminal: concluded is required; a genuinely-absent branch/pr renders as null.
 CLOSED_STATUSES = frozenset({Status.done, Status.retired})
@@ -115,7 +124,10 @@ class PlanMetadata(_Serializable):
         metadata={"description": "kebab-case; MUST equal the directory's slug"}
     )
     status: Status = field(
-        metadata={"description": "draft | active | blocked | done | inactive | retired"}
+        metadata={
+            "description": "draft | active | implemented | blocked | done | "
+            "inactive | retired"
+        }
     )
     branch: str | None = field(
         default="",

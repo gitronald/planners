@@ -150,17 +150,23 @@ def test_subplans_require_closed_lists_the_unfinished(
             "d-later.md": _subplan("draft"),
             "e-moved.md": _subplan("retired", "moved_to: 015\n"),
             "f-parked.md": _subplan("inactive"),
+            "g-review.md": _subplan("implemented"),
         },
     )
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["subplans", "012", "--write"]).exit_code == 0
     result = runner.invoke(app, ["subplans", "012", "--require-closed"])
     assert result.exit_code == 1
-    for line in ("b: still active", "c: still blocked", "d: still draft"):
+    for line in (
+        "b: still active",
+        "c: still blocked",
+        "d: still draft",
+        "g: still implemented",
+    ):
         assert line in result.output
     for letter in ("a", "e", "f"):
         assert f"{letter}: still" not in result.output
-    assert "3 problem(s)" in result.output
+    assert "4 problem(s)" in result.output
 
 
 def test_subplans_reports_unreadable_and_invalid_subplans(
