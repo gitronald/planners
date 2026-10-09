@@ -91,7 +91,10 @@ after a stop picks up where the last one ended.
 - Reach the worktree with subshells (`(cd .worktrees/<name> && ...)`) or
   pathspecs, not a bare `cd` in the persistent shell. The session's working
   directory should stay on the main checkout.
-- Update the generated rule's close summary to match.
+- Update the generated rule's close summary to match. The rule also gets
+  the habit itself, so it holds in every repo and every session, not only
+  inside the skills: routine close-out steps are the session's to run.
+  Before a session reports that it is blocked, it tries the command.
 
 **4. Tests.**
 
