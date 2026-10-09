@@ -1096,6 +1096,17 @@ def activate(
     new_branch = meta.branch or branch or f"feature/{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
 
+    # The worktree is recorded only in the first activation's entry, so the flags
+    # mean nothing to a plan that is already active or is coming back from review.
+    if (worktree is not None or no_worktree) and meta.status in (
+        Status.active,
+        Status.implemented,
+    ):
+        _warn(
+            f"warning: plan {meta.prefix} is {meta.status}, so no activation entry "
+            "is written; --worktree and --no-worktree are not recorded."
+        )
+
     # Idempotent rather than an error: re-running activate destroys nothing (unlike
     # `add`, which refuses in order to protect a body), and a no-op keeps the command
     # safe inside a pipeline that may retry it. But *already active* is not the same
@@ -1289,35 +1300,50 @@ def set_pr(
     _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
 
 
-def _unpublished_work(root: Path) -> list[str]:
+def _unpublished_work(
+    root: Path, mainline: base_mod.Mainline, *, ignore: tuple[Path, ...] = ()
+) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
     Uncommitted changes, commits not pushed to the upstream, and a branch with no
     upstream at all in a repo that has a remote. A repo with no remote has nothing
     to publish to, so only its uncommitted changes count. Outside a repo there is
     nothing to check, and the commit that follows reports that on its own.
+
+    ``ignore`` names files whose changes are not counted: the ones an earlier run
+    wrote and then failed to commit, which this run is about to commit itself.
     """
-    status = proc.git_out(root, ["status", "--porcelain"])
+    status = _git_status_porcelain(root)
     if status is None:
         return []
     problems: list[str] = []
-    changed = len(status.splitlines())
+    skipped = {str(path.relative_to(root)) for path in ignore}
+    # Split rather than slice: the helper strips its output, which takes the
+    # leading space off the first line's status column.
+    changed = sum(
+        1 for line in status.splitlines() if line.split(maxsplit=1)[-1] not in skipped
+    )
     if changed:
         problems.append(f"{changed} uncommitted change(s); commit them first")
     upstream = proc.git_out(
         root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
     if upstream is None:
-        if (proc.git_out(root, ["remote"]) or "").strip():
-            branch = _current_branch(root)
+        if (
+            mainline.current is not None
+            and (proc.git_out(root, ["remote"]) or "").strip()
+        ):
+            branch = mainline.current
             problems.append(
                 f"{branch} has no upstream; push it with `git push -u origin {branch}`"
             )
         return problems
-    unpushed = proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"])
-    if unpushed and int(unpushed) > 0:
+    unpushed = int(
+        proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"]) or 0
+    )
+    if unpushed > 0:
         problems.append(
-            f"{int(unpushed)} commit(s) not pushed to {upstream.strip()}; push first"
+            f"{unpushed} commit(s) not pushed to {upstream.strip()}; push first"
         )
     return problems
 
@@ -1325,10 +1351,11 @@ def _unpublished_work(root: Path) -> list[str]:
 def _ahead_of(root: Path, base: str) -> int | None:
     """How many commits HEAD has that ``base`` lacks, or ``None`` when unknown.
 
-    A clone that never checked the base out locally still has its remote copy, so
-    ``origin/<base>`` is tried when the local branch is missing.
+    ``origin/<base>`` is tried first, since that is what the PR is compared with
+    and a local base can lag it; a repo with no remote copy falls back to the
+    local branch.
     """
-    for ref in (base, f"origin/{base}"):
+    for ref in (f"origin/{base}", base):
         out = proc.git_out(root, ["rev-list", "--count", f"{ref}..HEAD"])
         if out is not None:
             return int(out)
@@ -1356,6 +1383,27 @@ def _mark_pr_ready(root: Path, url: str) -> None:
         )
         return
     typer.echo(f"marked {url} ready for review")
+
+
+def _implemented_entry(
+    root: Path,
+    text: str,
+    plan: Path,
+    nested: Path | None,
+    mainline: base_mod.Mainline,
+) -> str:
+    """The Log entry ``implemented`` writes, counting the work past its base.
+
+    The base is the one the activation entry recorded: in the subplan for a step
+    on a sub-branch of its own, else in the umbrella, else the detected mainline.
+    """
+    base = entries.recorded_base(text)
+    if base is None and nested is not None:
+        base = entries.recorded_base(plan.read_text(encoding="utf-8"))
+    if base is None and mainline.resolved:
+        base = mainline.branches[0]
+    ahead = _ahead_of(root, base) if base is not None else None
+    return entries.implemented_entry(_now(), ahead, base)
 
 
 @app.command()
@@ -1403,44 +1451,65 @@ def implemented(
         raise typer.Exit(1) from None
 
     kind = "subplan" if nested is not None else "plan"
-    if status != Status.active:
+    # An earlier run that wrote the status and then failed to commit (a rejecting
+    # hook, say) left the plan reading `implemented` with its change uncommitted.
+    # That run is finished here rather than refused, as `activate` and `set-pr` do.
+    resuming = (
+        status == Status.implemented
+        and not no_commit
+        and not _is_unmodified(root, target)
+    )
+    if status != Status.active and not resuming:
         _err(
             f"{kind} {label} is {status.value}; only an active {kind} can be marked "
             "implemented."
         )
         raise typer.Exit(1)
 
-    problems = _unpublished_work(root)
+    # The status change belongs on the feature branch, beside the work it
+    # describes; on the mainline it would say implemented about unmerged work.
+    mainline = base_mod.detect(root)
+    if not no_commit and (mainline.detached or mainline.on_mainline):
+        where = (
+            "HEAD is detached"
+            if mainline.detached
+            else f"HEAD is on the mainline branch '{mainline.current}'"
+        )
+        _err(
+            f"error: {kind} {label} is not marked implemented: {where}. "
+            "Run it on the plan's feature branch."
+        )
+        raise typer.Exit(1)
+
+    ignore = (target, plan, root / INDEX_PATH) if resuming else ()
+    problems = _unpublished_work(root, mainline, ignore=ignore)
     if problems:
         _err(f"{kind} {label} is not marked implemented: the branch has")
         for problem in problems:
             _err(f"  - {problem}")
         raise typer.Exit(1)
 
-    # The base the work came from, as the activation entry recorded it: in the
-    # subplan for a step on a sub-branch of its own, else in the umbrella.
-    umbrella_text = plan.read_text(encoding="utf-8")
-    base = entries.recorded_base(text) or entries.recorded_base(umbrella_text)
-    if base is None:
-        branches = base_mod.detect(root).branches
-        base = branches[0] if branches else None
-    ahead = _ahead_of(root, base) if base is not None else None
-    entry = entries.implemented_entry(_now(), ahead, base)
-
-    if meta is None:
-        updated = set_frontmatter_key(text, "status", Status.implemented.value)
-        updated = append_to_section(updated, "Log", entry)
-        _sync_subplans(root, plan, {target: updated})
-        staged = [target, plan]
+    if resuming:
+        staged = [target, plan] if nested is not None else [plan]
+        typer.echo(f"committing the earlier change to {_shown(target, root)}")
     else:
-        _, body = split_frontmatter(text)
-        meta.status = Status.implemented
-        body = append_to_section(
-            body, "Log", entry, before=("Handoff", "Retrospective")
-        )
-        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-        staged = [plan]
-    typer.echo(f"marked {_shown(target, root)} implemented")
+        entry = _implemented_entry(root, text, plan, nested, mainline)
+        if meta is None:
+            updated = set_frontmatter_key(text, "status", Status.implemented.value)
+            updated = append_to_section(
+                updated, "Log", entry, before=("Handoff", "Retrospective")
+            )
+            _sync_subplans(root, plan, {target: updated})
+            staged = [target, plan]
+        else:
+            _, body = split_frontmatter(text)
+            meta.status = Status.implemented
+            body = append_to_section(
+                body, "Log", entry, before=("Handoff", "Retrospective")
+            )
+            plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+            staged = [plan]
+        typer.echo(f"marked {_shown(target, root)} implemented")
 
     if no_commit:
         return

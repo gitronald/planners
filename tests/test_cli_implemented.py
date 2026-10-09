@@ -247,3 +247,125 @@ def test_implemented_on_a_nested_subplan(
         "plan [implemented]: 005b - build"
     )
     assert git_out(root, "status", "--porcelain") == ""
+
+
+def test_implemented_refuses_the_mainline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, work=0)
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=root, check=True)
+    before = path.read_text(encoding="utf-8")
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "HEAD is on the mainline branch 'main'" in result.output
+    assert path.read_text(encoding="utf-8") == before
+    assert "plan [implemented]" not in git_out(root, "log", "--format=%s")
+
+
+def test_implemented_refuses_a_detached_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    _repo(root)
+    _with_remote(root, tmp_path / "remote.git")
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=root, check=True)
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "HEAD is detached" in result.output
+    assert "origin a detached HEAD" not in result.output
+
+
+def test_implemented_finishes_a_run_whose_commit_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root)
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.chdir(root)
+
+    assert runner.invoke(app, ["implemented", "005"]).exit_code == 1
+    assert "status: implemented" in path.read_text(encoding="utf-8")
+
+    hook.unlink()
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 0, result.output
+    assert "committing the earlier change" in result.output
+    # The retry commits the first run's entry and writes no second one.
+    assert path.read_text(encoding="utf-8").count("— Implemented:") == 1
+    assert git_out(root, "log", "-1", "--format=%s").strip() == (
+        "plan [implemented]: 005 - my-thing"
+    )
+    assert git_out(root, "status", "--porcelain") == ""
+
+
+def test_implemented_resume_still_refuses_other_uncommitted_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root)
+    monkeypatch.chdir(root)
+    assert runner.invoke(app, ["implemented", "005", "--no-commit"]).exit_code == 0
+    assert "status: implemented" in path.read_text(encoding="utf-8")
+    (root / "loose.txt").write_text("not committed\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "1 uncommitted change(s)" in result.output
+
+
+def test_implemented_puts_a_new_subplan_log_before_its_retrospective(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, work=0)
+    step = path.parent / "subplans" / "b-build.md"
+    step.parent.mkdir()
+    step.write_text(
+        "---\nstatus: active\nbranch:\n---\n\n# Build\n\n## Retrospective\n\nDone.\n"
+    )
+    commit_all(root, "split")
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, ["implemented", "005b"])
+    assert result.exit_code == 0, result.output
+    sub = step.read_text(encoding="utf-8")
+    assert sub.index("## Log") < sub.index("## Retrospective")
+
+
+def test_implemented_counts_against_the_remote_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, work=0)
+    _with_remote(root, tmp_path / "remote.git")
+    # origin/main moves ahead while the local main lags; the branch starts there.
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=root, check=True)
+    (root / "upstream.txt").write_text("upstream\n", encoding="utf-8")
+    commit_all(root, "upstream work")
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=root, check=True)
+    subprocess.run(["git", "reset", "-q", "--hard", "HEAD~1"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "checkout", "-q", "-B", "feature/my-thing", "origin/main"],
+        cwd=root,
+        check=True,
+    )
+    (root / "mine.txt").write_text("mine\n", encoding="utf-8")
+    commit_all(root, "my work")
+    subprocess.run(
+        ["git", "push", "-qfu", "origin", "feature/my-thing"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 0, result.output
+    assert "— Implemented: 1 commit ahead of `main`." in path.read_text(
+        encoding="utf-8"
+    )

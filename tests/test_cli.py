@@ -1092,6 +1092,24 @@ def test_activate_returns_an_implemented_plan_on_its_feature_branch(
     assert "committed the activation on feature/my-thing" in result.output
 
 
+@pytest.mark.parametrize("status", ["active", "implemented"])
+def test_activate_warns_that_a_worktree_flag_is_not_recorded(
+    status: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", f"status: {status}"),
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["activate", "005", "--worktree", "trees/mine", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "--worktree and --no-worktree are not recorded" in result.output
+    assert "trees/mine" not in _plan_text(tmp_path)
+
+
 def test_activate_still_guards_a_draft_on_a_feature_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
