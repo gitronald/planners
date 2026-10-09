@@ -1,8 +1,8 @@
 ---
 id: 11
 slug: plan-review
-status: draft
-branch:
+status: active
+branch: feature/plan-review
 created: 2026-10-09T12:14:51-07:00
 concluded:
 pr:
