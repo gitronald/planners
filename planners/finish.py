@@ -1,24 +1,30 @@
-"""The routine end of a close: merge, pull, delete the branch, re-point the hooks.
+"""The routine end of a close: the worktree, the branches, the index, the hooks.
 
 A close used to end with a block of commands for whoever was running it, and a
-session could, and did, hand that block to the user instead of running it. Every
-step in it is mechanical: remove the worktree, merge the PR, pull the base,
-delete the branch on the remote and locally, regenerate the index, re-point any
+session could, and did, hand that block to the user instead of running it. The
+steps after the merge are mechanical: remove the worktree, pull the base, delete
+the branch on the remote and locally, regenerate the index, and re-point any
 hook installed from inside the worktree. ``planners finish`` runs them, and stops
 only where a person has something to look at.
 
-This module holds the pieces ``finish`` is built from: finding the branch's
-worktree, reading and waiting on the PR, the merge subject, the safe branch
-deletions, and the hook re-point. Each raises :class:`Stop` for a real issue and
-leaves the state as it found it, so a re-run after the issue is dealt with picks
-up where the last run ended. A step whose work is already done is a no-op.
+**The merge itself is not here.** It stays a ``gh pr merge`` (or ``git merge``
+and ``git push``) that the session runs as its own command. A permission rule
+can only see the command a session runs, not what that command runs in turn.
+Under a profile that allows ``planners``, a merge made from inside ``finish``
+would skip the gate that the ``full`` automation level exists to open. For the
+same reason ``finish`` publishes no code. Its one remote write deletes a branch
+that the remote's base already contains.
+
+This module holds the pieces ``finish`` is built from. Each raises :class:`Stop`
+for a real issue and leaves the state as it found it, so a re-run after the
+issue is dealt with picks up where the last run ended. A step whose work is
+already done is a no-op.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,29 +44,13 @@ __all__ = [
     "repoint_hooks",
     "stale_hooks",
     "view_pr",
-    "wait_ready",
 ]
 
 # The commit-subject limit the merge subject is truncated to.
 MERGE_SUBJECT_LIMIT = 60
 
-# CheckRun conclusions and StatusContext states that mean a check failed. A
-# skipped or neutral check is not a failure.
-_FAILED = frozenset(
-    {
-        "FAILURE",
-        "ERROR",
-        "CANCELLED",
-        "TIMED_OUT",
-        "ACTION_REQUIRED",
-        "STARTUP_FAILURE",
-    }
-)
-_PENDING_STATES = frozenset({"PENDING", "EXPECTED"})
-
 _PR_FIELDS = (
-    "number,state,isDraft,mergeable,baseRefName,headRefName,"
-    "isCrossRepository,headRepositoryOwner,statusCheckRollup"
+    "number,state,baseRefName,headRefName,isCrossRepository,headRepositoryOwner"
 )
 
 _INSTALL_PYTHON_RE = re.compile(r"^INSTALL_PYTHON=(.*)$", re.MULTILINE)
@@ -141,13 +131,9 @@ class PullRequest:
 
     number: int
     state: str
-    draft: bool
-    mergeable: str
     base: str
     head: str
     fork_owner: str | None
-    pending: tuple[str, ...]
-    failed: tuple[str, ...]
 
     @property
     def label(self) -> str:
@@ -158,36 +144,15 @@ class PullRequest:
 
     @classmethod
     def from_json(cls, data: dict[str, object]) -> PullRequest:
-        pending: list[str] = []
-        failed: list[str] = []
-        checks: object = data.get("statusCheckRollup") or ()
-        for check in checks if isinstance(checks, list) else ():
-            if not isinstance(check, dict):
-                continue
-            name = str(check.get("name") or check.get("context") or "check")
-            if check.get("__typename") == "StatusContext":
-                state = str(check.get("state") or "")
-                if state in _PENDING_STATES:
-                    pending.append(name)
-                elif state in _FAILED:
-                    failed.append(name)
-            elif check.get("status") != "COMPLETED":
-                pending.append(name)
-            elif str(check.get("conclusion") or "") in _FAILED:
-                failed.append(name)
         owner = data.get("headRepositoryOwner")
         login = owner.get("login") if isinstance(owner, dict) else None
         number = data.get("number")
         return cls(
             number=number if isinstance(number, int) else 0,
             state=str(data.get("state") or ""),
-            draft=bool(data.get("isDraft")),
-            mergeable=str(data.get("mergeable") or "UNKNOWN"),
             base=str(data.get("baseRefName") or ""),
             head=str(data.get("headRefName") or ""),
             fork_owner=str(login) if data.get("isCrossRepository") and login else None,
-            pending=tuple(pending),
-            failed=tuple(failed),
         )
 
 
@@ -201,61 +166,6 @@ def view_pr(root: Path, ref: str) -> PullRequest:
     if not isinstance(data, dict):
         raise Stop(f"`gh pr view {ref}` printed something that is not a PR")
     return PullRequest.from_json(data)
-
-
-def wait_ready(
-    root: Path,
-    ref: str,
-    *,
-    timeout: float,
-    interval: float,
-    say: Say,
-    sleep: Callable[[float], None] = time.sleep,
-    clock: Callable[[], float] = time.monotonic,
-) -> PullRequest:
-    """The PR once it can be merged, or already is; a :class:`Stop` otherwise.
-
-    GitHub recomputes mergeability after every push, and reports ``UNKNOWN``
-    until it has. Checks that a push started are pending for a while. Both are
-    waited out, up to ``timeout`` seconds, before either is read as a problem. A
-    draft, a closed PR, a failed check, and a conflict stop at once: waiting
-    does not change them.
-    """
-    started = clock()
-    waiting_on: str | None = None
-    while True:
-        pr = view_pr(root, ref)
-        if pr.state == "MERGED":
-            return pr
-        if pr.state == "CLOSED":
-            raise Stop(f"PR #{pr.number} is closed without being merged")
-        if pr.draft:
-            raise Stop(
-                f"PR #{pr.number} is a draft; take it out of draft "
-                f"(`gh pr ready {pr.number}`) once the review gate has passed"
-            )
-        if pr.failed:
-            raise Stop(f"PR #{pr.number} has failing checks: {', '.join(pr.failed)}")
-        if pr.mergeable == "CONFLICTING":
-            raise Stop(
-                f"PR #{pr.number} conflicts with {pr.base}; merge {pr.base} into "
-                f"{pr.head}, resolve, and push"
-            )
-        if pr.pending:
-            now_waiting = f"checks to finish ({', '.join(pr.pending)})"
-        elif pr.mergeable == "UNKNOWN":
-            now_waiting = "GitHub to compute mergeability"
-        else:
-            return pr
-        if clock() - started >= timeout:
-            raise Stop(
-                f"PR #{pr.number} is still waiting on {now_waiting} after "
-                f"{timeout:g}s; re-run finish once it settles"
-            )
-        if now_waiting != waiting_on:
-            say(f"waiting on {now_waiting}")
-            waiting_on = now_waiting
-        sleep(interval)
 
 
 def delete_remote_branch(root: Path, branch: str, base: str, say: Say) -> None:

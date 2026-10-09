@@ -1560,24 +1560,56 @@ def _sync_base(root: Path, base: str, say: finish_mod.Say) -> None:
     say(f"pulled {base}")
 
 
-def _push_if_ahead(root: Path, say: finish_mod.Say) -> None:
-    """Push the current branch when it has commits its upstream lacks."""
-    ahead = proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"])
-    if ahead is None or int(ahead) == 0:
-        return
-    finish_mod.must(root, ["git", "push"])
-    say(f"pushed {_current_branch(root)}")
+def _remote_or_local(root: Path, branch: str) -> str:
+    """``origin/<branch>`` when it exists, as last fetched, else ``branch`` itself."""
+    tracking = f"refs/remotes/origin/{branch}"
+    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is not None:
+        return tracking
+    return f"refs/heads/{branch}"
 
 
-def _finish(
-    root: Path,
-    ref: str,
-    *,
-    no_pr: bool,
-    timeout: float,
-    interval: float,
-    say: finish_mod.Say,
-) -> None:
+def _check_merged(
+    root: Path, branch: str, base: str, *, pr_url: str | None
+) -> finish_mod.PullRequest | None:
+    """The merged PR, or ``None`` on the no-PR path; a stop when not merged yet.
+
+    The merge is the session's own command, never ``finish``'s (see
+    :mod:`planners.finish`), so a branch that is not merged is a stop that
+    prints the command to run before the re-run.
+    """
+    if pr_url is not None:
+        pr = finish_mod.view_pr(root, pr_url)
+        if pr.state == "MERGED":
+            return pr
+        if pr.state == "CLOSED":
+            raise finish_mod.Stop(f"PR #{pr.number} is closed without being merged")
+        subject = finish_mod.merge_subject(pr.label, pr.number)
+        raise finish_mod.Stop(
+            f"PR #{pr.number} is not merged yet. Merge it, then run finish again:\n"
+            f'  gh pr merge {pr.number} --merge --subject "{subject}"'
+        )
+    finish_mod.must(root, ["git", "fetch", "--prune"])
+    source = next(
+        (
+            ref
+            for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
+            if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+        ),
+        None,
+    )
+    if source is not None and not finish_mod.is_ancestor(
+        root, source, _remote_or_local(root, base)
+    ):
+        subject = finish_mod.merge_subject(branch)
+        raise finish_mod.Stop(
+            f"{branch} is not merged into {base} yet. From {base}, merge and push "
+            "it, then run finish again:\n"
+            f'  git merge --no-ff {branch} -m "{subject}" && git push'
+        )
+    return None
+
+
+def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
     """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
     plan = _resolve_plan(root / PLANS_DIR, ref)
     parts = DIRNAME_RE.match(plan.parent.name)
@@ -1606,13 +1638,24 @@ def _finish(
     if not no_pr and not meta.pr:
         raise finish_mod.Stop(
             f"plan {label} records no PR; record it with `planners set-pr {label} "
-            "<url>`, or pass --no-pr to merge locally"
+            "<url>`, or pass --no-pr for a branch merged locally"
         )
 
-    # Everything that can stop the run is checked before anything is removed, so
-    # a stop leaves the worktree in place for the fix.
+    base = entries.recorded_base(plan.read_text(encoding="utf-8"))
+    if base is None and mainline.resolved:
+        base = mainline.branches[0]
+    pr = _check_merged(root, branch, base or "", pr_url=None if no_pr else meta.pr)
+    if pr is not None:
+        base = pr.base
+    if not base:
+        raise finish_mod.Stop("cannot tell which branch is the base")
+    merged = f"PR #{pr.number}" if pr is not None else "a local merge"
+    say(f"plan {label}: {branch} is merged into {base} by {merged}")
+
     worktree = finish_mod.find_worktree(root, branch)
-    if worktree is not None:
+    if worktree is None:
+        say(f"no worktree has {branch} checked out")
+    else:
         if Path.cwd().resolve().is_relative_to(worktree.resolve()):
             raise finish_mod.Stop(
                 f"this is the worktree being removed; run finish from the main "
@@ -1624,25 +1667,6 @@ def _finish(
                 f"the worktree {_shown(worktree, root)} has\n"
                 + "\n".join(f"  - {problem}" for problem in problems)
             )
-
-    pr: finish_mod.PullRequest | None = None
-    if no_pr:
-        base = entries.recorded_base(plan.read_text(encoding="utf-8"))
-        if base is None:
-            if not mainline.resolved:
-                raise finish_mod.Stop("cannot tell which branch is the base")
-            base = mainline.branches[0]
-    else:
-        assert meta.pr  # narrowed above
-        pr = finish_mod.wait_ready(
-            root, meta.pr, timeout=timeout, interval=interval, say=say
-        )
-        base = pr.base
-    say(f"plan {label}: {branch} into {base}" + (f", PR #{pr.number}" if pr else ""))
-
-    if worktree is None:
-        say(f"no worktree has {branch} checked out")
-    else:
         hook = worktree / ".planners" / "hooks" / "pre-worktree-remove"
         if hook.is_file() and os.access(hook, os.X_OK):
             finish_mod.must(worktree, [str(hook)])
@@ -1650,50 +1674,7 @@ def _finish(
         finish_mod.must(root, ["git", "worktree", "remove", str(worktree)])
         say(f"removed the worktree {_shown(worktree, root)}")
 
-    if pr is not None:
-        if pr.state == "MERGED":
-            say(f"PR #{pr.number} is already merged")
-        else:
-            subject = finish_mod.merge_subject(pr.label, pr.number)
-            finish_mod.must(
-                root,
-                ["gh", "pr", "merge", str(pr.number), "--merge", "--subject", subject],
-            )
-            if finish_mod.view_pr(root, str(pr.number)).state != "MERGED":
-                raise finish_mod.Stop(
-                    f"`gh pr merge` succeeded but PR #{pr.number} is not merged "
-                    "yet (a merge queue or auto-merge?); re-run finish once it is"
-                )
-            say(f"merged PR #{pr.number}: {subject}")
-        _sync_base(root, base, say)
-    else:
-        _sync_base(root, base, say)
-        source = next(
-            (
-                ref
-                for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
-                if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
-            ),
-            None,
-        )
-        if source is None or finish_mod.is_ancestor(root, source, "HEAD"):
-            say(f"{base} already holds {branch}")
-        else:
-            subject = finish_mod.merge_subject(branch)
-            code = proc.run(
-                root,
-                ["git", "merge", "--no-ff", source, "-m", subject],
-                capture_output=True,
-            )
-            if code.returncode != 0:
-                proc.run(root, ["git", "merge", "--abort"], capture_output=True)
-                detail = (code.stderr or code.stdout).strip()
-                raise finish_mod.Stop(
-                    f"merging {branch} into {base} failed and was aborted:\n{detail}"
-                )
-            say(f"merged {branch} into {base}: {subject}")
-        _push_if_ahead(root, say)
-
+    _sync_base(root, base, say)
     finish_mod.delete_remote_branch(root, branch, base, say)
     finish_mod.delete_local_branch(root, branch, base, say)
 
@@ -1702,8 +1683,7 @@ def _finish(
     if not _is_unmodified(root, root / INDEX_PATH):
         finish_mod.must(root, ["git", "add", INDEX_PATH.as_posix()])
         finish_mod.must(root, ["git", "commit", "-m", "update plan index after merge"])
-        say("committed the regenerated plan index")
-        _push_if_ahead(root, say)
+        say(f"committed the regenerated plan index; push {base} to publish it")
 
     finish_mod.repoint_hooks(root, say)
     say(f"finished plan {label}")
@@ -1715,38 +1695,29 @@ def finish(
     no_pr: bool = typer.Option(
         False,
         "--no-pr",
-        help="Merge the branch locally with --no-ff instead of through a PR. "
-        "Implied when the plan records `pr: null`.",
-    ),
-    timeout: float = typer.Option(
-        600.0,
-        "--timeout",
-        help="Seconds to wait for checks and mergeability before stopping.",
-    ),
-    interval: float = typer.Option(
-        10.0, "--interval", help="Seconds between polls of the PR.", hidden=True
+        help="The branch was merged locally, not through a PR. Implied when the "
+        "plan records `pr: null`.",
     ),
 ) -> None:
-    """Merge a closed plan and clean up after it, from the main checkout.
+    """Clean up after a closed plan's merge, from the main checkout.
 
-    The last step of a close, run once the closing commit is pushed. In order:
-    checks the branch's worktree is committed and pushed and its PR can be
-    merged (waiting out pending checks and mergeability), removes the worktree,
-    merges the PR, pulls the base, deletes the branch on the remote and locally,
-    commits the plan index if the merge left it stale, and re-installs any hook
-    whose interpreter was in a worktree.
+    Run once the closing commit is pushed and the branch is merged: through its
+    PR (`gh pr merge`), or locally with `git merge --no-ff` and a push. The
+    merge stays the session's own command so the permission profile still
+    governs it. In order, `finish` checks the branch is merged, checks the
+    worktree is committed and pushed, removes it, pulls the base, deletes the
+    branch on the remote and locally, commits the plan index if the merge left
+    it stale, and re-installs any hook whose interpreter was in the worktree.
 
-    Stops with exit 1 on a real issue: a dirty or unpushed worktree, a draft PR,
-    a failing check, a conflict, a branch holding commits the base lacks, or a
-    refused git or gh call. A step already done is skipped, so a re-run after a
-    stop picks up where the last one ended.
+    Stops with exit 1 on a real issue: a branch not merged yet (it prints the
+    merge command), a dirty or unpushed worktree, a branch holding commits the
+    base lacks, or a refused git or gh call. A step already done is skipped, so
+    a re-run after a stop picks up where the last one ended.
     """
     toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
     root = Path(toplevel.strip()) if toplevel else Path.cwd()
     try:
-        _finish(
-            root, ref, no_pr=no_pr, timeout=timeout, interval=interval, say=typer.echo
-        )
+        _finish(root, ref, no_pr=no_pr, say=typer.echo)
     except finish_mod.Stop as exc:
         _err(f"stopped: {exc}")
         raise typer.Exit(1) from None

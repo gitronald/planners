@@ -98,7 +98,7 @@ class Scene:
         init_git_identity(merger)
         self.set_view(_pr())
         (self.state / "merged.json").write_text(
-            json.dumps(_pr(state="MERGED", mergeable="UNKNOWN")), encoding="utf-8"
+            json.dumps(_pr("MERGED")), encoding="utf-8"
         )
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
@@ -114,7 +114,6 @@ class Scene:
             '  elif [ -f "$d/view.$n" ]; then cat "$d/view.$n"\n'
             '  else cat "$d/view"; fi ;;\n'
             '"pr merge")\n'
-            '  if [ -f "$d/refuse" ]; then echo "permission denied" >&2; exit 1; fi\n'
             '  git -C "$d/merger" fetch -q origin'
             f' && git -C "$d/merger" merge -q --no-ff origin/{_BRANCH} -m merged'
             ' && git -C "$d/merger" push -q origin HEAD:main'
@@ -144,9 +143,7 @@ class Scene:
         return [c for c in self.calls() if c.startswith("pr merge")]
 
     def finish(self, *args: str) -> Result:
-        return runner.invoke(
-            app, ["finish", "005", "--interval", "0", *args], catch_exceptions=False
-        )
+        return runner.invoke(app, ["finish", "005", *args], catch_exceptions=False)
 
     def has_branch(self, ref: str) -> bool:
         return (
@@ -169,59 +166,50 @@ def _script(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
-def _pr(
-    *,
-    state: str = "OPEN",
-    draft: bool = False,
-    mergeable: str = "MERGEABLE",
-    checks: list[dict[str, str]] | None = None,
-) -> dict[str, object]:
+def _pr(state: str = "OPEN", *, fork: bool = False) -> dict[str, object]:
     return {
         "number": 7,
         "state": state,
-        "isDraft": draft,
-        "mergeable": mergeable,
         "baseRefName": "main",
         "headRefName": _BRANCH,
-        "isCrossRepository": False,
+        "isCrossRepository": fork,
         "headRepositoryOwner": {"login": "owner"},
-        "statusCheckRollup": checks or [],
     }
 
 
-def _check(status: str = "COMPLETED", conclusion: str = "SUCCESS") -> dict[str, str]:
-    return {
-        "__typename": "CheckRun",
-        "name": "test",
-        "status": status,
-        "conclusion": conclusion,
-    }
-
-
-def _assert_finished(scene: Scene) -> None:
+def _assert_finished(scene: Scene, *, published: bool = True) -> None:
     root = scene.root
     assert not scene.worktree.exists()
     assert not scene.has_branch(f"refs/heads/{_BRANCH}")
     assert not git_out(root, "ls-remote", "--heads", "origin", _BRANCH).strip()
     assert git_out(root, "branch", "--show-current").strip() == "main"
-    assert git_out(root, "rev-parse", "HEAD") == git_out(
-        root, "rev-parse", "origin/main"
-    )
+    if published:
+        assert git_out(root, "rev-parse", "HEAD") == git_out(
+            root, "rev-parse", "origin/main"
+        )
     assert (root / "work.txt").is_file()
     assert git_out(root, "status", "--porcelain") == ""
 
 
-def test_finish_merges_and_cleans_up(
+def _assert_untouched(scene: Scene) -> None:
+    assert scene.worktree.is_dir()
+    assert scene.has_branch(f"refs/heads/{_BRANCH}")
+    assert git_out(scene.root, "ls-remote", "--heads", "origin", _BRANCH).strip()
+
+
+def test_finish_cleans_up_after_a_merged_pr(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
     result = scene.finish()
     assert result.exit_code == 0, result.output
     _assert_finished(scene)
-    assert scene.merges() == [f"pr merge 7 --merge --subject merge: PR #7 - {_BRANCH}"]
+    # finish reads the PR and never merges it: the merge is the session's call.
+    assert scene.merges() == []
     for line in (
+        f"plan 005: {_BRANCH} is merged into main by PR #7",
         "removed the worktree .worktrees/my-thing",
-        f"merged PR #7: merge: PR #7 - {_BRANCH}",
         "pulled main",
         f"deleted {_BRANCH} on origin",
         f"deleted {_BRANCH} locally",
@@ -232,107 +220,106 @@ def test_finish_merges_and_cleans_up(
     assert "plan index" not in result.output
 
 
+def test_finish_twice_is_a_no_op(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
+    assert scene.finish().exit_code == 0
+    head = git_out(scene.root, "rev-parse", "HEAD")
+    again = scene.finish()
+    assert again.exit_code == 0, again.output
+    assert f"no worktree has {_BRANCH} checked out" in again.output
+    assert f"{_BRANCH} is already gone from origin" in again.output
+    assert f"{_BRANCH} is already gone locally" in again.output
+    assert git_out(scene.root, "rev-parse", "HEAD") == head
+    _assert_finished(scene)
+
+
 def test_finish_without_a_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
     _git(scene.root, "worktree", "remove", str(scene.worktree))
+    scene.merge_on_github()
     result = scene.finish()
     assert result.exit_code == 0, result.output
     assert f"no worktree has {_BRANCH} checked out" in result.output
     _assert_finished(scene)
 
 
-def test_finish_skips_the_merge_of_a_merged_pr(
+def test_finish_stops_on_an_open_pr_and_names_the_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
-    scene.merge_on_github()
     result = scene.finish()
-    assert result.exit_code == 0, result.output
-    assert "PR #7 is already merged" in result.output
+    assert result.exit_code == 1
+    assert "PR #7 is not merged yet" in result.output
+    assert (
+        f'gh pr merge 7 --merge --subject "merge: PR #7 - {_BRANCH}"' in result.output
+    )
     assert scene.merges() == []
-    _assert_finished(scene)
+    _assert_untouched(scene)
 
 
-def test_finish_waits_out_mergeability_and_pending_checks(
+def test_finish_stops_on_a_closed_pr(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
-    scene.set_view(_pr(mergeable="UNKNOWN"), 1)
-    scene.set_view(_pr(checks=[_check(status="IN_PROGRESS", conclusion="")]), 2)
-    scene.set_view(_pr(checks=[_check()]))
+    scene.set_view(_pr("CLOSED"))
     result = scene.finish()
-    assert result.exit_code == 0, result.output
-    assert "waiting on GitHub to compute mergeability" in result.output
-    assert "waiting on checks to finish (test)" in result.output
-    _assert_finished(scene)
+    assert result.exit_code == 1
+    assert "PR #7 is closed without being merged" in result.output
+    _assert_untouched(scene)
 
 
 def test_finish_commits_an_index_the_merge_left_stale(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch, reindex_branch=False)
+    scene.merge_on_github()
     result = scene.finish()
     assert result.exit_code == 0, result.output
-    assert "committed the regenerated plan index" in result.output
+    assert "committed the regenerated plan index; push main" in result.output
     assert git_out(scene.root, "log", "-1", "--format=%s").strip() == (
         "update plan index after merge"
     )
     readme = (scene.root / ".planners" / "README.md").read_text(encoding="utf-8")
     assert "| done |" in readme
-    _assert_finished(scene)
+    # finish publishes no code, so the commit waits for the session's push.
+    assert git_out(scene.root, "rev-list", "--count", "origin/main..main") == "1\n"
+    _assert_finished(scene, published=False)
 
 
-@pytest.mark.parametrize(
-    ("view", "message"),
-    [
-        (_pr(draft=True), "PR #7 is a draft"),
-        (_pr(state="CLOSED"), "PR #7 is closed without being merged"),
-        (_pr(checks=[_check(conclusion="FAILURE")]), "failing checks: test"),
-        (_pr(mergeable="CONFLICTING"), "PR #7 conflicts with main"),
-        (_pr(mergeable="UNKNOWN"), "still waiting on GitHub to compute"),
-    ],
-)
-def test_finish_stops_on_a_pr_that_cannot_merge(
-    view: dict[str, object],
-    message: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scene = Scene(tmp_path, monkeypatch)
-    scene.set_view(view)
-    result = scene.finish("--timeout", "0")
-    assert result.exit_code == 1
-    assert message in result.output
-    # Nothing was touched: the worktree, both branches, and the PR are as they were.
-    assert scene.worktree.is_dir()
-    assert scene.has_branch(f"refs/heads/{_BRANCH}")
-    assert scene.merges() == []
-
-
-def test_finish_stops_on_a_dirty_worktree(
+def test_finish_stops_on_a_dirty_worktree_and_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
-    (scene.worktree / "loose.txt").write_text("loose\n", encoding="utf-8")
-    result = scene.finish()
-    assert result.exit_code == 1
-    assert "1 uncommitted change(s)" in result.output
-    assert scene.worktree.is_dir()
-    assert scene.calls() == []
+    scene.merge_on_github()
+    loose = scene.worktree / "loose.txt"
+    loose.write_text("loose\n", encoding="utf-8")
+    first = scene.finish()
+    assert first.exit_code == 1
+    assert "1 uncommitted change(s)" in first.output
+    _assert_untouched(scene)
+
+    loose.unlink()
+    second = scene.finish()
+    assert second.exit_code == 0, second.output
+    _assert_finished(scene)
 
 
 def test_finish_stops_on_unpushed_commits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
     (scene.worktree / "late.txt").write_text("late\n", encoding="utf-8")
     commit_all(scene.worktree, "late")
     result = scene.finish()
     assert result.exit_code == 1
     assert f"1 commit(s) not pushed to origin/{_BRANCH}" in result.output
-    assert scene.worktree.is_dir()
+    _assert_untouched(scene)
 
 
 def test_finish_stops_on_a_branch_the_base_lacks(
@@ -340,6 +327,7 @@ def test_finish_stops_on_a_branch_the_base_lacks(
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
     _git(scene.root, "worktree", "remove", str(scene.worktree))
+    scene.merge_on_github()
     # A commit on the local branch that the PR never carried.
     _git(scene.root, "checkout", "-q", _BRANCH)
     (scene.root / "stray.txt").write_text("stray\n", encoding="utf-8")
@@ -365,6 +353,7 @@ def test_finish_stops_inside_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
     monkeypatch.chdir(scene.worktree)
     result = scene.finish()
     assert result.exit_code == 1
@@ -372,36 +361,29 @@ def test_finish_stops_inside_the_worktree(
     assert scene.worktree.is_dir()
 
 
-def test_finish_reruns_after_a_refused_merge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    scene = Scene(tmp_path, monkeypatch)
-    (scene.state / "refuse").touch()
-    first = scene.finish()
-    assert first.exit_code == 1
-    assert "permission denied" in first.output
-    assert scene.has_branch(f"refs/heads/{_BRANCH}")
-
-    (scene.state / "refuse").unlink()
-    second = scene.finish()
-    assert second.exit_code == 0, second.output
-    assert f"no worktree has {_BRANCH} checked out" in second.output
-    _assert_finished(scene)
-
-
 @pytest.mark.parametrize("flag", [False, True])
-def test_finish_merges_locally_without_a_pr(
+def test_finish_after_a_local_merge(
     flag: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `pr: null` takes the local path on its own; --no-pr takes it with a PR set.
     scene = Scene(tmp_path, monkeypatch, pr=_URL if flag else None)
-    result = scene.finish(*(["--no-pr"] if flag else []))
+    args = ["--no-pr"] if flag else []
+
+    unmerged = scene.finish(*args)
+    assert unmerged.exit_code == 1
+    assert f"{_BRANCH} is not merged into main yet" in unmerged.output
+    assert (
+        f'git merge --no-ff {_BRANCH} -m "merge: {_BRANCH}" && git push'
+        in unmerged.output
+    )
+    _assert_untouched(scene)
+
+    _git(scene.root, "merge", "--no-ff", _BRANCH, "-m", f"merge: {_BRANCH}")
+    _git(scene.root, "push", "-q")
+    result = scene.finish(*args)
     assert result.exit_code == 0, result.output
+    assert f"{_BRANCH} is merged into main by a local merge" in result.output
     assert scene.calls() == []
-    root = scene.root
-    assert git_out(root, "log", "-1", "--format=%s").strip() == f"merge: {_BRANCH}"
-    assert git_out(root, "rev-list", "--count", "--merges", "HEAD").strip() == "1"
-    assert "pushed main" in result.output
     _assert_finished(scene)
 
 
@@ -409,6 +391,7 @@ def test_finish_repoints_a_hook_installed_from_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
     hooks = scene.root / ".git" / "hooks"
     python = scene.worktree / ".venv" / "bin" / "python"
     _script(hooks / "pre-commit", f"INSTALL_PYTHON={python}\nexit 0\n")
@@ -432,21 +415,6 @@ def test_merge_subject_truncates_the_label() -> None:
     assert subject == "merge: PR #6 - feature/install-activate-precommit-hook-fr..."
 
 
-def test_pull_request_sorts_checks_and_names_a_fork() -> None:
-    pr = PullRequest.from_json(
-        {
-            **_pr(),
-            "isCrossRepository": True,
-            "statusCheckRollup": [
-                _check(),
-                _check(status="QUEUED", conclusion=""),
-                {**_check(conclusion="CANCELLED"), "name": "lint"},
-                {**_check(conclusion="SKIPPED"), "name": "docs"},
-                {"__typename": "StatusContext", "context": "ci", "state": "PENDING"},
-                {"__typename": "StatusContext", "context": "cd", "state": "ERROR"},
-            ],
-        }
-    )
-    assert pr.pending == ("test", "ci")
-    assert pr.failed == ("lint", "cd")
-    assert pr.label == f"owner/{_BRANCH}"
+def test_pull_request_names_a_fork_by_owner() -> None:
+    assert PullRequest.from_json(_pr()).label == _BRANCH
+    assert PullRequest.from_json(_pr(fork=True)).label == f"owner/{_BRANCH}"
