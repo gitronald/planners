@@ -230,6 +230,7 @@ class Report:
     summary: list[SummaryRow]
     open_subplans: list[OpenSubplans]
     plans: list[PlanEvidence]
+    skipped: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -348,15 +349,11 @@ class _Git:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._trees: dict[str, list[str]] = {}
+        self._tags: dict[str, list[Tag]] = {}
+        self._origin: bool | None = None
 
     def out(self, args: list[str], cwd: Path | None = None) -> str | None:
-        try:
-            result = proc.run(cwd or self.root, ["git", *args], capture_output=True)
-        except OSError:
-            return None
-        if result.returncode != 0:
-            return None
-        return result.stdout
+        return proc.git_out(cwd or self.root, args)
 
     def verify(self, ref: str) -> bool:
         return (
@@ -369,7 +366,28 @@ class _Git:
         )
 
     def has_origin(self) -> bool:
-        return "origin" in (self.out(["remote"]) or "").split()
+        if self._origin is None:
+            self._origin = "origin" in (self.out(["remote"]) or "").split()
+        return self._origin
+
+    def tags(self, rev: str) -> list[Tag]:
+        """Tags reachable from ``rev``, with their creation dates."""
+        if rev not in self._tags:
+            listing = self.out(
+                [
+                    "for-each-ref",
+                    "--merged",
+                    rev,
+                    f"--format=%(refname:short){_US}%(creatordate:iso-strict)",
+                    "refs/tags",
+                ]
+            )
+            found: list[Tag] = []
+            for line in (listing or "").splitlines():
+                name, _, date = line.partition(_US)
+                found.append(Tag(name=name, date=date))
+            self._tags[rev] = found
+        return self._tags[rev]
 
     def tree(self, rev: str) -> list[str]:
         if rev not in self._trees:
@@ -450,16 +468,16 @@ def _check_ref(
 
     if kind == "path":
         hits = _resolve_path(git, rev, ref)
+        if not hits and (git.root / ref).exists():
+            return CodeRef(
+                ref=ref, kind=kind, state="present", path=ref, detail="untracked"
+            )
         if not hits and _looks_like_a_name(git, rev, ref):
             return CodeRef(
                 ref=ref,
                 kind=kind,
                 state="unresolved",
                 detail="not in the tree; may be a branch, ref, or repo name",
-            )
-        if not hits and (git.root / ref).exists():
-            return CodeRef(
-                ref=ref, kind=kind, state="present", path=ref, detail="untracked"
             )
         if not hits:
             return CodeRef(ref=ref, kind=kind, state="missing")
@@ -480,23 +498,32 @@ def _check_ref(
             hits = _resolve_path(git, rev, candidate)
             if not hits:
                 continue
-            path = hits[0]
-            text = git.show(rev, path) or ""
             names = parts[cut:]
-            missing = [
-                name for name in (names[0], names[-1]) if not _defines(text, name)
-            ]
-            if missing:
-                return CodeRef(
-                    ref=ref,
-                    kind=kind,
-                    state="missing",
-                    path=path,
-                    detail=f"no `{missing[0]}` defined in {path}",
-                    changed=changed(path),
-                )
+            # A suffix can match several files; the ref is present if any defines it.
+            first_missing: list[str] = []
+            for path in hits:
+                text = git.show(rev, path) or ""
+                missing = [
+                    name for name in (names[0], names[-1]) if not _defines(text, name)
+                ]
+                if not missing:
+                    return CodeRef(
+                        ref=ref,
+                        kind=kind,
+                        state="present",
+                        path=path,
+                        changed=changed(path),
+                    )
+                first_missing = first_missing or missing
+            path = hits[0]
+            also = f"; also checked {', '.join(hits[1:])}" if len(hits) > 1 else ""
             return CodeRef(
-                ref=ref, kind=kind, state="present", path=path, changed=changed(path)
+                ref=ref,
+                kind=kind,
+                state="missing",
+                path=path,
+                detail=f"no `{first_missing[0]}` defined in {path}{also}",
+                changed=changed(path),
             )
     return CodeRef(
         ref=ref, kind=kind, state="unresolved", detail="no module file in the tree"
@@ -555,10 +582,12 @@ class _Plan:
     subplans: list[SubplanMetadata]
 
 
-def _load(root: Path, plans_dir: Path) -> list[_Plan]:
+def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
+    """The plans under ``plans_dir``, and a note for each one that failed to parse."""
     plans: list[_Plan] = []
+    skipped: list[str] = []
     if not plans_dir.is_dir():
-        return plans
+        return plans, skipped
     for child in sorted(plans_dir.iterdir()):
         plan = child / "plan.md"
         if not (child.is_dir() and DIRNAME_RE.match(child.name) and plan.is_file()):
@@ -566,7 +595,8 @@ def _load(root: Path, plans_dir: Path) -> list[_Plan]:
         text = plan.read_text(encoding="utf-8")
         try:
             meta = PlanMetadata.from_text(text, dirname=child.name)
-        except PlanError:
+        except PlanError as exc:
+            skipped.append(f"{plan.relative_to(root).as_posix()}: {exc}")
             continue
         _, body = split_frontmatter(text)
         subs: list[SubplanMetadata] = []
@@ -584,7 +614,7 @@ def _load(root: Path, plans_dir: Path) -> list[_Plan]:
         plans.append(
             _Plan(meta=meta, path=plan.relative_to(root), body=body, subplans=subs)
         )
-    return plans
+    return plans, skipped
 
 
 def _check_layout(root: Path, plans_dir: Path) -> None:
@@ -611,15 +641,15 @@ def _summary(git: _Git, plans: list[_Plan], shallow: bool) -> list[SummaryRow]:
     less than the column's sum.
     """
 
+    has_head = git.verify("HEAD")
+
     def row(status: str, group: list[_Plan]) -> SummaryRow:
         dirs = [p.path.parent.as_posix() for p in group]
         commits: int | None = None
         last: str | None = None
         if not shallow:
             found: list[Commit] = (
-                git.log(["--no-merges", "HEAD", "--", *dirs])
-                if git.verify("HEAD")
-                else []
+                git.log(["--no-merges", "HEAD", "--", *dirs]) if has_head else []
             )
             commits = len({c.sha for c in found})
             newest = max(found, key=lambda c: _instant(c.date) or 0.0, default=None)
@@ -772,7 +802,7 @@ def gather(
     use_gh = (_gh_available() if gh is None else gh) and git.has_origin()
     clock = datetime.fromisoformat(now)
 
-    plans = _load(root, plans_dir)
+    plans, skipped = _load(root, plans_dir)
     lookup = _status_lookup(plans)
     worktrees = _worktrees(git)
 
@@ -798,25 +828,19 @@ def gather(
         commits: list[Commit] | None = None
         tags: list[Tag] = []
         if not shallow and _instant(start) is not None:
+            # An active plan is judged from its branch tip, so its window
+            # includes the branch's own commits.
             commits = [
                 c
-                for c in git.log([f"--since={start}", rev, "--", *_OUTSIDE_PLANS])
+                for c in git.log(
+                    [f"--since={start}", evidence_rev, "--", *_OUTSIDE_PLANS]
+                )
                 if not _TOOL_SUBJECT_RE.match(c.subject)
             ]
-            listing = git.out(
-                [
-                    "for-each-ref",
-                    "--merged",
-                    rev,
-                    f"--format=%(refname:short){_US}%(creatordate:iso-strict)",
-                    "refs/tags",
-                ]
-            )
             since = _instant(start) or 0.0
-            for line in (listing or "").splitlines():
-                name, _, date = line.partition(_US)
-                if (_instant(date) or 0.0) >= since:
-                    tags.append(Tag(name=name, date=date))
+            tags = [
+                t for t in git.tags(evidence_rev) if (_instant(t.date) or 0.0) >= since
+            ]
 
         code_refs = [
             _check_ref(git, evidence_rev, kind, ref, start, shallow)
@@ -879,6 +903,7 @@ def gather(
         summary=_summary(git, plans, shallow),
         open_subplans=open_subplans,
         plans=evidence,
+        skipped=skipped,
     )
 
 
@@ -995,6 +1020,8 @@ def render_text(report: Report) -> str:
             "",
             "note: shallow clone; commit counts and change history are unknown.",
         ]
+    for note in report.skipped:
+        lines += ["", f"warning: skipped {note}"]
     if not report.plans:
         lines += ["", "no plans selected."]
     for item in report.plans:

@@ -391,6 +391,48 @@ def test_an_untracked_path_on_disk_is_present(repo: Path) -> None:
     assert "src/fenced.py" not in refs
 
 
+def test_an_untracked_path_outside_the_tree_is_present_not_a_name(
+    repo: Path,
+) -> None:
+    path = repo / ".planners/plans/001-draft-idea/plan.md"
+    path.write_text(
+        path.read_text().replace("Builds on", "Reads `newpkg/data`, builds on")
+    )
+    (repo / "newpkg").mkdir()
+    (repo / "newpkg" / "data").write_text("untracked\n")
+    refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
+    assert refs["newpkg/data"].state == "present"
+    assert refs["newpkg/data"].detail == "untracked"
+
+
+def test_a_symbol_is_found_in_any_same_named_module(repo: Path) -> None:
+    _write(repo, "a/util.py", "def other():\n    pass\n")
+    _write(repo, "b/util.py", "def helper():\n    pass\n")
+    path = repo / ".planners/plans/001-draft-idea/plan.md"
+    path.write_text(
+        path.read_text().replace("Builds on", "Uses `util.helper`, builds on")
+    )
+    _commit(repo, "add utils", "2026-03-19T10:00:00-08:00")
+    refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
+    assert refs["util.helper"].state == "present"
+    assert refs["util.helper"].path == "b/util.py"
+
+
+def test_a_plan_that_fails_to_parse_is_reported_as_skipped(repo: Path) -> None:
+    _write(
+        repo,
+        ".planners/plans/005-broken/plan.md",
+        _plan(5, "broken", "nonsense", DRAFT_CREATED),
+    )
+    report = _gather(repo)
+    assert [note.split(":")[0] for note in report.skipped] == [
+        ".planners/plans/005-broken/plan.md"
+    ]
+    assert "warning: skipped .planners/plans/005-broken/plan.md" in (
+        review_mod.render_text(report)
+    )
+
+
 def test_plan_refs_carry_status(repo: Path) -> None:
     draft = _by_prefix(_gather(repo))["001"]
     assert [(r.ref, r.status) for r in draft.plan_refs] == [
@@ -413,6 +455,12 @@ def test_active_plan_is_judged_from_its_branch(repo: Path, tmp_path: Path) -> No
     assert state.worktree == str(tmp_path / "wt")
     assert state.dirty is True
     assert any("uncommitted changes" in flag for flag in active.flags)
+
+
+def test_active_plan_window_includes_its_branch_commits(repo: Path) -> None:
+    report = _by_prefix(_gather(repo))
+    assert "work on active" in [c.subject for c in report["002"].commits or []]
+    assert "work on active" not in [c.subject for c in report["001"].commits or []]
 
 
 def test_stale_days_sets_the_idle_flag(repo: Path) -> None:
@@ -551,6 +599,30 @@ def test_cli_commit_carries_log_entries_only(cli_repo: Path) -> None:
     assert sorted(changed) == [".planners/README.md", DONE, DRAFT]
     assert git_out(cli_repo, "status", "--porcelain", "--", ".planners") == ""
     assert "src/app.py" in git_out(cli_repo, "status", "--porcelain")
+
+
+def test_cli_commit_leaves_other_staged_files_out(cli_repo: Path) -> None:
+    _append_log(cli_repo, DRAFT, ENTRY)
+    (cli_repo / "src" / "app.py").write_text("staged elsewhere\n")
+    _git(cli_repo, "add", "src/app.py")
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    changed = git_out(cli_repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(changed) == [".planners/README.md", DRAFT]
+    assert "M  src/app.py" in git_out(cli_repo, "status", "--porcelain")
+
+
+def test_cli_commit_accepts_a_new_log_section(cli_repo: Path) -> None:
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(text[: text.index("## Log")].rstrip("\n") + "\n")
+    _commit(cli_repo, "drop the log", "2026-03-19T10:00:00-08:00")
+    path.write_text(path.read_text() + "\n## Log\n\n" + ENTRY)
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    assert git_out(cli_repo, "log", "-1", "--format=%s").strip() == (
+        "plan [review]: 1 plan"
+    )
 
 
 def test_cli_commit_refuses_an_active_plan(cli_repo: Path) -> None:
