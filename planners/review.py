@@ -279,6 +279,8 @@ def _classify(span: str) -> tuple[str, str] | None:
     if text.endswith("()"):
         text = text[:-2]
     text = _LINE_SUFFIX_RE.sub("", text)
+    # `path/to/file.py::name` names a symbol in a file; the file is what is checked.
+    text = text.split("::", 1)[0]
     if text.startswith("./"):
         text = text[2:]
     if not text or text.startswith(("-", "/", "~")) or "://" in text or ".." in text:
@@ -417,6 +419,19 @@ def _resolve_path(git: _Git, rev: str, ref: str) -> list[str]:
     return [p for p in tree if p.endswith("/" + want)]
 
 
+def _looks_like_a_name(git: _Git, rev: str, ref: str) -> bool:
+    """True for a slashed span that reads as a branch or repo name, not a path.
+
+    ``feature/x``, ``origin/dev``, and ``owner/repo`` all have a slash. A span
+    with no file suffix and no trailing slash, whose first segment is not a
+    top-level entry of the tree, is more likely one of those than a deleted file.
+    """
+    if ref.endswith("/") or Path(ref).suffix in _SUFFIXES:
+        return False
+    first = ref.split("/", 1)[0]
+    return not any(p == first or p.startswith(first + "/") for p in git.tree(rev))
+
+
 def _defines(text: str, name: str) -> bool:
     pattern = re.compile(
         rf"^\s*(?:async\s+)?(?:def|class)\s+{re.escape(name)}\b|^{re.escape(name)}\s*[:=]",
@@ -435,6 +450,17 @@ def _check_ref(
 
     if kind == "path":
         hits = _resolve_path(git, rev, ref)
+        if not hits and _looks_like_a_name(git, rev, ref):
+            return CodeRef(
+                ref=ref,
+                kind=kind,
+                state="unresolved",
+                detail="not in the tree; may be a branch, ref, or repo name",
+            )
+        if not hits and (git.root / ref).exists():
+            return CodeRef(
+                ref=ref, kind=kind, state="present", path=ref, detail="untracked"
+            )
         if not hits:
             return CodeRef(ref=ref, kind=kind, state="missing")
         detail = f"also matches {', '.join(hits[1:])}" if len(hits) > 1 else ""

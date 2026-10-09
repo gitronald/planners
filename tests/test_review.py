@@ -66,7 +66,8 @@ def _git(root: Path, *args: str) -> None:
 
 DRAFT_BODY = (
     "Builds on `src/app.py` and `app.run`, replaces `src/gone.py`, and calls "
-    "`app.missing`. Pass `--json`; `meta.status` is not a path. Follows plan 000 "
+    "`app.missing`, on `feature/other` from `src/old/`. Pass `--json`; "
+    "`meta.status` is not a path. Follows plan 000 "
     "and plan 099.\n\n```bash\ncat `src/fenced.py`\n```"
 )
 DONE_CREATED = "2026-01-10T10:00:00-08:00"
@@ -211,6 +212,8 @@ def test_extract_code_refs_keeps_paths_and_dotted_symbols_only() -> None:
         ("symbol", "app.run"),
         ("path", "src/gone.py"),
         ("symbol", "app.missing"),
+        ("path", "feature/other"),
+        ("path", "src/old/"),
         ("symbol", "meta.status"),
     ]
 
@@ -219,6 +222,7 @@ def test_extract_code_refs_keeps_paths_and_dotted_symbols_only() -> None:
     ("span", "expected"),
     [
         ("planners/cli.py:120", [("path", "planners/cli.py")]),
+        ("planners/base.py::_git_out", [("path", "planners/base.py")]),
         ("cli.py", [("path", "cli.py")]),
         ("docs/", [("path", "docs/")]),
         ("./src/app.py", [("path", "src/app.py")]),
@@ -374,6 +378,16 @@ def test_code_refs_are_checked_against_the_tree(repo: Path) -> None:
     assert refs["app.missing"].state == "missing"
     assert "no `missing`" in refs["app.missing"].detail
     assert refs["meta.status"].state == "unresolved"
+    assert refs["feature/other"].state == "unresolved"
+    assert "branch" in refs["feature/other"].detail
+    assert refs["src/old/"].state == "missing"
+
+
+def test_an_untracked_path_on_disk_is_present(repo: Path) -> None:
+    (repo / "src" / "gone.py").write_text("untracked\n")
+    refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
+    assert refs["src/gone.py"].state == "present"
+    assert refs["src/gone.py"].detail == "untracked"
     assert "src/fenced.py" not in refs
 
 
