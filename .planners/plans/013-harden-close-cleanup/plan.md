@@ -5,7 +5,7 @@ status: active
 branch: feature/harden-close-cleanup
 created: 2026-10-09T15:26:29-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/38
 ---
 
 # Run the close cleanup without handing it to the user
