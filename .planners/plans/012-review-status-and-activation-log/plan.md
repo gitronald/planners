@@ -1,7 +1,7 @@
 ---
 id: 12
 slug: review-status-and-activation-log
-status: active
+status: implemented
 branch: feature/review-status-and-activation-log
 created: 2026-10-09T13:22:44-07:00
 concluded:
@@ -159,3 +159,4 @@ work is.
     A scratch-repo run of add -> activate -> set-pr -> implemented produced
     the three entries and an `implemented` index row. `gh pr ready` is
     covered by a fake `gh` in the tests; not yet verified against GitHub.
+- **2026-10-09T15:12:29-07:00** — Implemented: 6 commits ahead of `dev`.
