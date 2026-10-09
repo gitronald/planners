@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners implemented <NNN>` flips an active plan or nested subplan to
   `implemented`, logs how many commits the branch carries past its base,
   commits on the feature branch, and takes the PR out of draft. It refuses
-  while the branch has uncommitted or unpushed work.
+  while the branch has uncommitted or unpushed work, and on the mainline or a
+  detached HEAD. A re-run finishes a run whose commit failed.
 - `planners activate` appends a standard Log entry naming the branch, the
   base and commit, the worktree, and the PR. `--worktree <path>` records a
   repo-relative worktree, and `--no-worktree` the main checkout.

@@ -95,7 +95,7 @@ it as work progresses: `draft` -> `active` -> `implemented` -> `done` (or `retir
 Use `implemented` once the implementation is **finished and its PR is ready for review**:
 everything committed and pushed, waiting on a person to accept the work. `{cli} implemented
 {NNN}` sets it from `active`, appends a Log entry, commits on the feature branch, and takes the
-PR out of draft (`gh pr ready`); it refuses while the branch has uncommitted or unpushed work.
+PR out of draft (`gh pr ready`); it refuses while the branch has uncommitted or unpushed work, and on the mainline.
 It is an open state, so `concluded` stays empty and an umbrella does not close over a subplan
 in it. It closes nothing: merging, the Retrospective, and `concluded` stay with `close`. Review
 feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the

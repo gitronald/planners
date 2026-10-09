@@ -217,7 +217,7 @@ It flips `active` to `implemented`, appends an `Implemented: <n> commits ahead
 of <base>` Log entry, refreshes the index, commits `plan [implemented]: {NNN} -
 <slug>` on the feature branch, and takes the PR out of draft with `gh pr ready`.
 It refuses while the branch has uncommitted changes or unpushed commits, and
-says which, so the status always matches what the reviewer sees. Push its
+says which, and refuses on the mainline or a detached HEAD, so the status always matches what the reviewer sees. Push its
 commit so the PR shows it. A failing `gh pr ready` is reported as a warning
 with the commit kept; run it by hand.
 

@@ -64,7 +64,8 @@ for this; the CLI owns it.
 `status: implemented`, appends `Implemented: <n> commits ahead of <base>` to the
 Log, refreshes the index, commits `plan [implemented]: {NNN} - <slug>`, and
 takes the PR out of draft. It refuses a plan that is not `active`, and a branch
-with uncommitted or unpushed work, naming which. It closes nothing; that stays
+with uncommitted or unpushed work, naming which, and runs only on the feature
+branch, never the mainline. It closes nothing; that stays
 with `/planners close`.
 
 **Reactivate** — when review asks for more work on an `implemented` plan, run
