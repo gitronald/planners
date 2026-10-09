@@ -1,8 +1,8 @@
 ---
 id: 10
 slug: validate-follow-ups
-status: draft
-branch:
+status: active
+branch: feature/validate-follow-ups
 created: 2026-10-06T20:28:54-07:00
 concluded:
 pr:
