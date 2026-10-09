@@ -195,6 +195,6 @@ the verdict table. The CLI writes nothing.
   question). Spec changes: the default status set adds `blocked`, and section
   2 defines a `Review: <verdict>.` Log marker that `planners review` reads as
   the start of its evidence window.
-- **2026-10-09T12:41:58-07:00** — Added a `creation_date` column to the
+- **2026-10-09T12:37:34-07:00** — Added a `creation_date` column to the
   summary table: the earliest frontmatter `created` among each status's
   plans.
