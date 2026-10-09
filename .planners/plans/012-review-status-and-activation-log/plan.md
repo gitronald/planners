@@ -1,8 +1,8 @@
 ---
 id: 12
 slug: review-status-and-activation-log
-status: draft
-branch:
+status: active
+branch: feature/review-status-and-activation-log
 created: 2026-10-09T13:22:44-07:00
 concluded:
 pr:
