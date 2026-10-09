@@ -125,20 +125,8 @@ def find_worktree(root: Path, branch: str) -> Path | None:
     The main checkout is never one: git lists it first, and a branch checked out
     there is left for the base checkout to replace, not removed with the tree.
     """
-    listing = proc.git_out(root, ["worktree", "list", "--porcelain"])
-    if listing is None:
-        return None
-    for block in listing.split("\n\n")[1:]:
-        path: str | None = None
-        checked_out: str | None = None
-        for line in block.splitlines():
-            if line.startswith("worktree "):
-                path = line[len("worktree ") :]
-            elif line.startswith("branch "):
-                checked_out = line[len("branch ") :]
-        if path is not None and checked_out == f"refs/heads/{branch}":
-            return Path(path)
-    return None
+    linked = proc.worktrees(root)[1:]
+    return next((path for path, checked_out in linked if checked_out == branch), None)
 
 
 def is_ancestor(root: Path, commit: str, of: str) -> bool:

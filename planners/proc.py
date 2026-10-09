@@ -34,6 +34,7 @@ __all__ = [
     "git_out",
     "pinned_env",
     "run",
+    "worktrees",
 ]
 
 # The variables that relocate git's idea of "the repository". Stripped for the
@@ -86,3 +87,26 @@ def git_out(root: Path, args: Sequence[str]) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def worktrees(root: Path) -> list[tuple[Path, str | None]]:
+    """``(path, branch)`` for each worktree of the repo at ``root``, main first.
+
+    Parsed from ``git worktree list --porcelain``, which lists the main checkout
+    first. ``branch`` is the short name, or ``None`` for a detached or bare entry.
+    Empty when git cannot list them.
+    """
+    found: list[tuple[Path, str | None]] = []
+    for block in (git_out(root, ["worktree", "list", "--porcelain"]) or "").split(
+        "\n\n"
+    ):
+        path: str | None = None
+        branch: str | None = None
+        for line in block.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree ") :]
+            elif line.startswith("branch refs/heads/"):
+                branch = line[len("branch refs/heads/") :]
+        if path is not None:
+            found.append((Path(path), branch))
+    return found

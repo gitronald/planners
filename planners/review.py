@@ -531,15 +531,8 @@ def _check_ref(
 
 
 def _worktrees(git: _Git) -> dict[str, str]:
-    """``branch name -> worktree path`` from ``git worktree list --porcelain``."""
-    found: dict[str, str] = {}
-    path: str | None = None
-    for line in (git.out(["worktree", "list", "--porcelain"]) or "").splitlines():
-        if line.startswith("worktree "):
-            path = line[len("worktree ") :]
-        elif line.startswith("branch refs/heads/") and path is not None:
-            found[line[len("branch refs/heads/") :]] = path
-    return found
+    """``branch name -> worktree path``, the main checkout included."""
+    return {branch: str(path) for path, branch in proc.worktrees(git.root) if branch}
 
 
 def _gh_available() -> bool:
