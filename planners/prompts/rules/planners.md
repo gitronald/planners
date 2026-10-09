@@ -350,7 +350,8 @@ skills):
 - `/planners implement` — check git status, activate on the mainline, branch from
   that commit, start coding
 - `/planners update` — activate, log, close, or retire a plan
-- `/planners close` — close end-to-end: log, retrospective, merge PR, clean up branch.
+- `/planners close` — close end-to-end: log, retrospective, merge the PR, then `{cli} finish
+  <NNN>` from the main checkout to clean up the worktree, branches, index, and hooks.
   "no PR" merges locally instead (`pr: null`) and asks first when a PR already exists;
   "minimal review" swaps the review loop for checks plus a diff skim
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
@@ -358,6 +359,14 @@ skills):
   entry per plan, retirements proposed (`planners review` itself only reads)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
+
+**Close-out steps are the session's to run.** Once the review gate has passed, removing the
+worktree, merging, pulling, deleting the branch, and re-pointing hooks need no decision, so
+the session runs them: `gh pr merge`, then `{cli} finish`. A step goes to the user only after a call to it
+was actually refused, with the refusal quoted. Before reporting a block, try the command: a
+worktree shown as the working directory after a `cd` is not an isolation block until a command
+run from the main checkout fails. Reach a worktree with a subshell (`(cd .worktrees/<name> &&
+...)`), not a bare `cd` in the persistent shell.
 
 **Print a subcommand's instructions before describing it**, not only before running it:
 `{cli} skill <subcommand>`. A lifecycle step described from memory is described wrongly, and

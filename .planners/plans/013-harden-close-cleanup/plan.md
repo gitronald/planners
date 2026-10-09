@@ -1,11 +1,11 @@
 ---
 id: 13
 slug: harden-close-cleanup
-status: active
+status: done
 branch: feature/harden-close-cleanup
 created: 2026-10-09T15:26:29-07:00
-concluded:
-pr:
+concluded: 2026-10-09T16:52:02-07:00
+pr: https://github.com/gitronald/planners/pull/38
 ---
 
 # Run the close cleanup without handing it to the user
@@ -135,3 +135,112 @@ Scratch repos with a bare remote and a fake `gh` on `PATH`, as
 1. `planners finish`, with its stops and tests.
 2. The `--no-pr` path and its tests.
 3. The `close` and `pipeline` skill text, the rule, and the CHANGELOG.
+
+## Log
+
+- **2026-10-09T16:44:36-07:00** — Implemented on `feature/harden-close-cleanup`
+  ([#38](https://github.com/gitronald/planners/pull/38)).
+  - Activated on `dev` at `7f9cf7b` with the installed `planners` 0.10.0, which
+    predates plan 012's activation and `PR opened` Log entries, so neither was
+    written; this entry starts the Log.
+  - `ab98f95` added `planners finish` (`planners/finish.py` + the command in
+    `cli.py`) with the merge inside it and check/mergeability polling, and
+    `8081434` its tests.
+  - **Decision: the merge moved out of `finish`** (`dc76bc7`). Open question 2's
+    default assumed a lower automation level would refuse `gh pr merge`. It
+    does not: a permission rule sees only the command a session runs, and the
+    global `assist` profile grants `Bash(planners:*)`, so a merge made inside
+    `finish` would skip the `full`-level gate. pkgskills writes only `allow`
+    rules, so `finish` cannot be put behind an `ask`. Asked the user, who chose:
+    the session runs `gh pr merge` itself (gated as before), and `finish` is the
+    cleanup after it. The same reasoning keeps `finish` from pushing code. Its
+    one remote write deletes a branch the remote's base already contains, and a
+    stale-index commit is left for the session to push.
+  - What that changed against the spec: `finish` no longer merges, polls, or
+    passes `--delete-branch`. A PR that is not merged is a stop that prints the
+    exact `gh pr merge` command; on the no-PR path, a branch that the base's
+    upstream lacks is a stop that prints the `git merge --no-ff ... && git push`
+    command. The draft, failing-check, and conflict stops went with the merge,
+    since `gh pr merge` reports them itself. The worktree check runs before
+    anything is removed, so a stop leaves it in place.
+  - `6e4cb28` rewrote `close` step 6 and its no-PR step 6: commit and push in
+    the worktree through a subshell, then merge and `planners finish` from the
+    main checkout. It added *Who runs the cleanup* (the session runs every step,
+    hands one off only after a quoted refusal, and keeps its shell on the main
+    checkout). `pipeline` step 6 and the rule's close summary match, and the
+    rule carries the habit for every repo.
+  - `e900ae7`: README command list and CHANGELOG.
+  - Checks: `ruff check`, `ruff format --check`, `pyrefly check`, and `pytest`
+    (489 passed, coverage 93.86%), all run in the worktree.
+  - Tests cover: the happy path with and without a worktree, a second run as a
+    no-op, an open PR and a closed PR, a stale index, a dirty worktree followed
+    by a resumed run, unpushed commits, a branch the base lacks, a plan not
+    closed, running from inside the worktree, the no-PR path (both `pr: null`
+    and `--no-pr`), the hook re-point, merge-subject truncation, and the fork
+    label.
+  - Found along the way: the git rule's example truncated subject
+    (`...-hook-fro...`) is 61 characters, one past its own limit. Left alone
+    (the user's rule files are out of scope).
+- **2026-10-09T16:52:44-07:00** — Closed.
+  - **Review follow-up.** `/code-review` at medium on PR #38 (two finders and
+    two verifiers on sonnet), posted to the PR. It found 4 confirmed defects
+    and 3 plausible ones, all in `finish`. `23dcebc` fixed them, each with a
+    regression test:
+    - The worktree check used `_unpublished_work`, so a pruned upstream read
+      as "no upstream; push it" on a merged branch. It now checks for
+      uncommitted changes and for commits the merged base lacks.
+    - `find_worktree` matched the main checkout. It now skips it.
+    - After `gh pr merge --delete-branch`, `_closed_plan` read the unpulled
+      base's activated plan. It now reads `origin/<base>` too, after one
+      up-front fetch. That fetch also removed a duplicate fetch on the no-PR
+      path.
+    - A hand edit to the index was committed under the index subject. A dirty
+      index is now a stop up front.
+    - `is_ancestor` read a git error as "not contained". It now stops,
+      quoting git.
+    - `stale_hooks` passed a `pre-commit.legacy` to `--hook-type`. It is now
+      limited to pre-commit's hook types.
+    - Remote deletion tests against `origin/<base>`.
+  - `50932ef` updated the CHANGELOG, the `finish` help, and close step 6 to
+    match.
+  - Conscious no-ops, as refactors outside this diff: sharing the porcelain
+    parser with `review._worktrees`, and moving the test git and bare-remote
+    helpers into `tests/helpers.py`.
+  - Checks: ruff, ruff format, pyrefly, and pytest (494 passed, 93.83%).
+    The new regression tests were not run against the pre-fix code.
+
+## Handoff
+
+- **State.** Closed. Every commit is pushed on `feature/harden-close-cleanup`,
+  and PR #38 is ready. The merge and `finish` run after this commit, from the
+  main checkout.
+- **Open questions** (numbered as in the spec):
+  1. Name: `finish`. Settled 2026-10-09 (the default).
+  2. Should `finish` merge? Answered 2026-10-09 by the user: no. The session
+     merges, and `finish` cleans up after (see the Log).
+  3. Should `finish` write `pr`/`concluded`? No (the default). Settled 2026-10-09.
+- **Not verified.** `finish` has not run against a real GitHub PR. The tests use
+  a fake `gh` and a bare local remote. The installed rule and skill stubs are
+  not reinstalled, so they still carry the old close text until
+  `planners install --force` runs on a release that includes this. Still
+  open, and left as a known gap: the local-branch deletion tests against the
+  local base, which stays stale when the base has no upstream.
+- **Next.** None in this plan. This close is the first real run of `finish`,
+  and its outcome is reported with the merge, not recorded here.
+
+## Retrospective
+
+- The spec's open question 2 assumed a permission level would gate a merge
+  made inside `finish`. Tracing the permission model showed a rule sees only
+  the outer command, so the merge moved out. Check where a gate actually bites
+  before designing around it.
+- The review earned its place: every confirmed bug was a state the happy-path
+  tests never set up (a pruned upstream, a branch in the main checkout, a
+  deleted branch, a dirty index). For cleanup code, list the states the world
+  can be in after a merge before writing the steps.
+- Reusing `_unpublished_work` looked like reuse but carried the wrong question.
+  "Pushed to upstream" is the test before a merge. After a merge, the test is
+  "contained in the base".
+- During this close, the session briefly ran a bare `cd` into the worktree,
+  the exact habit the plan warns against, and corrected it. The rule text
+  alone does not prevent the slip.
