@@ -34,7 +34,8 @@ prints an evidence report for each one. It never edits a file, commits, or
 changes a branch.
 
 - `--status/-s`, repeatable, one of `all`, `active`, `draft`, `done`,
-  `retired`, `blocked`, or `inactive`. The default is `active` plus `draft`.
+  `retired`, `blocked`, or `inactive`. The default is `active`, `draft`, and `blocked`, the open statuses
+  (question 1).
   `all` is shorthand for every value in the enum and cannot be combined with
   the others.
 - A positional plan ref (`011`, `012d`) reviews one plan, whatever its status.
@@ -89,6 +90,17 @@ assigns one verdict per plan:
 Every reviewed plan gets a dated Log entry. The entry names what changed in
 the repo since `created`, or since the plan's last review entry, and the
 verdict with its evidence (commit SHAs, function names, test counts).
+
+The entry opens with a fixed marker so the next review can find it
+(question 3):
+
+    - **2026-10-09T12:09:25-07:00** — Review: narrowed. <evidence>
+
+`planners review` reads the newest marker in a plan's Log and uses its
+timestamp as the start of the evidence window in place of `created`, and
+reports it as `last_reviewed`. The marker lives in the Log, not the
+frontmatter, so the seven-key schema is unchanged. The `review` CLI does not
+write markers; the skill writes them with the Log entries.
 Retirement is only ever proposed. The skill presents the proposals in a single
 table and retires only the ones the user confirms. A review never activates or
 closes a plan, and never edits a plan's `## Plan` section; the scope change
@@ -143,18 +155,30 @@ the verdict table. The CLI writes nothing.
 1. Should the default also include `blocked`? The request named `active` and
    `draft`. `blocked` is open too, but it waits on a person, so a review
    rarely changes it. Proposed: no, it is reachable with `-s blocked`.
+   **Answered 2026-10-09: yes.** The default is all three open statuses;
+   blocked plans get the active-plan care in section 3.
 2. How far should code-reference extraction go? Backticked paths are reliable.
    Bare function names give false positives. Proposed: paths and
    `module.function` forms only, with the skill doing the rest by hand.
+   **Answered 2026-10-09: as proposed** (left to the implementer, who took
+   the proposal).
 3. Should a review leave a machine-readable marker (for example a
    `reviewed:` line in the Log entry) so the next review can diff from it? The
    proposal is to rely on the last Log entry's timestamp and add nothing to
    the frontmatter.
+   **Answered 2026-10-09: yes, leave a marker.** It is a fixed
+   `Review: <verdict>.` prefix on the Log entry, not a frontmatter field; see
+   section 2.
 4. What should the summary's `commits` count? Proposed: commits that touched
    the plan directories, which is cheap and defined for every status. The
    alternative is the commits on each plan's `branch`. That measures the
    implementation work, but it is undefined for drafts and for plans merged
    with no branch.
+   **Answered 2026-10-09: as proposed**, commits that touched the plan
+   directories. A dry run on one repo showed the cost: every row's
+   `last_date` was the same day, because one day's plan-log and close
+   commits touched every status group. Recorded as a known limitation, not a
+   reason to change the definition.
 
 ### Out of scope
 
@@ -163,3 +187,10 @@ the verdict table. The CLI writes nothing.
   umbrella's evidence.
 - Cross-repo checks, such as a plan whose work lands in another repo through
   its own PR, beyond reporting the `pr` URL's state.
+
+## Log
+
+- **2026-10-09T12:35:34-07:00** — Answered open questions 1-4 (see each
+  question). Spec changes: the default status set adds `blocked`, and section
+  2 defines a `Review: <verdict>.` Log marker that `planners review` reads as
+  the start of its evidence window.
