@@ -208,25 +208,31 @@ Scratch repos with a bare remote and a fake `gh` on `PATH`, as
     helpers into `tests/helpers.py`.
   - Checks: ruff, ruff format, pyrefly, and pytest (494 passed, 93.83%).
     The new regression tests were not run against the pre-fix code.
+- **2026-10-09T16:57:02-07:00** — Follow-ups on `dev`, after the merge.
+  - The first real `finish` (PR #38) removed the worktree, deleted the
+    branch on origin and locally, and exited 0.
+  - `398967e` added `proc.worktrees`, one porcelain parser that `review` and
+    `finish` now share. This was the first of the close's conscious no-ops.
+  - `fa0bf2a` closed the known gap. A base with no upstream is now
+    fast-forwarded to `origin/<base>`. Its regression test was run against the
+    pre-fix `cli.py` and failed with the false "holds commits" stop. The same
+    commit moved the test git, identity, bare-remote, and script helpers into
+    `tests/helpers.py` (the second no-op).
+  - Checks: ruff, ruff format, pyrefly, and pytest (497 passed, 93.88%).
 
 ## Handoff
 
-- **State.** Closed. Every commit is pushed on `feature/harden-close-cleanup`,
-  and PR #38 is ready. The merge and `finish` run after this commit, from the
-  main checkout.
+- **State.** Closed and merged (PR #38). `finish` cleaned up after the merge,
+  and the follow-ups landed on `dev` (see the Log).
 - **Open questions** (numbered as in the spec):
   1. Name: `finish`. Settled 2026-10-09 (the default).
   2. Should `finish` merge? Answered 2026-10-09 by the user: no. The session
      merges, and `finish` cleans up after (see the Log).
   3. Should `finish` write `pr`/`concluded`? No (the default). Settled 2026-10-09.
-- **Not verified.** `finish` has not run against a real GitHub PR. The tests use
-  a fake `gh` and a bare local remote. The installed rule and skill stubs are
-  not reinstalled, so they still carry the old close text until
-  `planners install --force` runs on a release that includes this. Still
-  open, and left as a known gap: the local-branch deletion tests against the
-  local base, which stays stale when the base has no upstream.
-- **Next.** None in this plan. This close is the first real run of `finish`,
-  and its outcome is reported with the merge, not recorded here.
+- **Not verified.** The installed rule and skill stubs are not reinstalled.
+  They carry the old close text until `planners install --force` runs on a
+  release that includes `finish`.
+- **Next.** None in this plan.
 
 ## Retrospective
 
