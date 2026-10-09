@@ -24,7 +24,7 @@ from pkgskills import register
 
 from planners import ahead as ahead_mod
 from planners import base as base_mod
-from planners import proc
+from planners import entries, proc
 from planners import review as review_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
@@ -1026,6 +1026,17 @@ def activate(
         help="Branch name to record; defaults to feature/<slug>. An already-filled "
         "branch: field is left alone.",
     ),
+    worktree: str | None = typer.Option(
+        None,
+        "--worktree",
+        help="Repo-relative worktree path to record in the Log entry; defaults to "
+        ".worktrees/<branch-suffix>.",
+    ),
+    no_worktree: bool = typer.Option(
+        False,
+        "--no-worktree",
+        help="Record that the work happens in the main checkout, not a worktree.",
+    ),
     allow_branch: bool = typer.Option(
         False,
         "--allow-branch",
@@ -1036,7 +1047,7 @@ def activate(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
-    """Flip a plan to active, fill its branch, refresh the index, and commit.
+    """Flip a plan to active, fill its branch, log where the work is, and commit.
 
     The activation commit belongs on the mainline, *before* the feature branch
     exists, so the plan is recorded there even if the branch never lands. That
@@ -1044,8 +1055,24 @@ def activate(
     frontmatter — which is why the ``plan [activate]`` subjects in this repo's own
     history disagree with each other, and why no guard could cover the step. Both
     problems are the same problem: there was no code to put them in.
+
+    The activation appends a standard entry to the plan's Log naming the branch,
+    the base and the commit it starts from, the worktree, and the PR, so the plan
+    file says where its work lives without anyone rebuilding it from git.
+
+    A plan in ``implemented`` that review sends back is reactivated the same way,
+    on its feature branch: that return is not guarded, and it logs a short
+    ``Reactivated`` entry instead.
     """
     root = Path.cwd()
+    if worktree is not None and no_worktree:
+        _err("--worktree and --no-worktree cannot be combined.")
+        raise typer.Exit(1)
+    if worktree is not None:
+        problem = entries.worktree_error(worktree)
+        if problem is not None:
+            _err(f"error: {problem}.")
+            raise typer.Exit(1)
 
     # Resolve and validate before the branch guard, the ordering `add` uses for its
     # slug check. A closed plan is closed on every branch, so leading with the branch
@@ -1086,8 +1113,10 @@ def activate(
 
     # Guard before writing, so a refusal leaves the plan exactly as it was — the
     # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit:
+    # no commit, so there is nothing for a branch to strand. A plan coming back
+    # from `implemented` is on its feature branch by design, where review sent it.
+    returning = meta.status == Status.implemented
+    if not no_commit and not returning:
         _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
 
     if unchanged:
@@ -1099,8 +1128,21 @@ def activate(
         )
     else:
         _, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        # An already-active plan that only gains its branch was activated before,
+        # so it gets no second entry; that keeps a re-run idempotent.
+        entry = None
+        if returning:
+            entry = entries.reactivation_entry(_now())
+        elif meta.status != Status.active:
+            entry = _activation_entry(
+                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
+            )
         meta.status = Status.active
         meta.branch = new_branch
+        if entry is not None:
+            body = append_to_section(
+                body, "Log", entry, before=("Handoff", "Retrospective")
+            )
         # Re-render only the frontmatter and keep the body verbatim — the same
         # mutate-preserving-body shape `finalize` uses. The plan text is the record.
         path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
@@ -1128,6 +1170,35 @@ def activate(
     if ahead is not None:
         for line in ahead_mod.report(ahead, meta.prefix):
             typer.echo(line)
+
+
+def _activation_entry(
+    root: Path,
+    meta: PlanMetadata,
+    branch: str,
+    *,
+    worktree: str | None,
+    no_worktree: bool,
+) -> str:
+    """The activation Log entry for ``meta``, read from HEAD as it stands now.
+
+    Called before the activation commit is made, so the commit it records is the
+    one the activation sits on, which is where the feature branch will start.
+    """
+    mainline = base_mod.detect(root)
+    sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
+    if no_worktree:
+        recorded = entries.NO_WORKTREE
+    else:
+        recorded = worktree or entries.default_worktree(branch)
+    return entries.activation_entry(
+        _now(),
+        branch=branch,
+        base=mainline.current,
+        sha=sha.strip() if sha else None,
+        worktree=recorded,
+        pr=meta.pr or None,
+    )
 
 
 def _current_branch(root: Path) -> str:

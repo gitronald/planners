@@ -967,6 +967,145 @@ def test_activate_commits_an_explicit_branch(
     )
 
 
+# --- activate: the standard Log entry -----------------------------------------
+
+
+def _plan_text(tmp_path: Path) -> str:
+    return (tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_activate_appends_the_activation_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN + "\n## Handoff\n\nWhere to pick up.\n",
+    )
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+    branch, before = (
+        subprocess.run(
+            ["git", "rev-parse", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        for args in (["--abbrev-ref", "HEAD"], ["--short", "HEAD"])
+    )
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+
+    text = _plan_text(tmp_path)
+    # The Log is created ahead of the Handoff, and holds one generated entry.
+    assert text.index("## Log") < text.index("## Handoff")
+    assert text.count("— Activated.") == 1
+    assert "  - Branch: `feature/my-thing`\n" in text
+    # The base is the commit the activation sits on: HEAD before it was made.
+    assert f"  - Base: `{branch}` at `{before}`\n" in text
+    assert "  - Worktree: `.worktrees/my-thing`\n" in text
+    assert "  - PR: pending\n" in text
+    assert "Body text that must survive verbatim." in text
+
+
+def test_activate_records_a_chosen_worktree_or_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["activate", "005", "--worktree", "trees/mine", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "  - Worktree: `trees/mine`\n" in _plan_text(tmp_path)
+
+    _write_plan(plans, "005-my-thing", _DRAFT_PLAN)
+    result = runner.invoke(app, ["activate", "005", "--no-worktree", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    text = _plan_text(tmp_path)
+    assert "  - Worktree: none (main checkout)\n" in text
+    # Outside a repo there is no base to name, and the entry says so.
+    assert "  - Base: a detached HEAD (no commits yet)\n" in text
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--worktree", "/home/someone/repo/.worktrees/x"],
+        ["--worktree", "~/x"],
+        ["--worktree", "x", "--no-worktree"],
+    ],
+)
+def test_activate_refuses_a_worktree_it_cannot_record(
+    args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["activate", "005", *args, "--no-commit"])
+    assert result.exit_code == 1
+    # A refusal leaves the plan byte-for-byte untouched.
+    assert path.read_text(encoding="utf-8") == _DRAFT_PLAN
+
+
+def test_activate_writes_no_second_entry_when_only_the_branch_is_filled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: active"),
+    )
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["activate", "005", "--no-commit"]).exit_code == 0
+    assert "Activated." not in _plan_text(tmp_path)
+
+
+def test_activate_returns_an_implemented_plan_on_its_feature_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: implemented").replace(
+            "branch:\n", "branch: feature/my-thing\n"
+        ),
+    )
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+    subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
+
+    # Review sent it back: the return is made where the work is, unguarded.
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    text = _plan_text(tmp_path)
+    assert "status: active" in text
+    assert "— Reactivated" in text
+    assert "Activated." not in text
+    assert "committed the activation on feature/my-thing" in result.output
+
+
+def test_activate_still_guards_a_draft_on_a_feature_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    _init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+    subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 1
+    assert path.read_text(encoding="utf-8") == _DRAFT_PLAN
+
+
 # --- validate: the index must agree with the frontmatter it is generated from --
 
 
