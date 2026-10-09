@@ -102,17 +102,6 @@ def parse_log(text: str) -> list[Commit]:
     return commits
 
 
-def _git_out(root: Path, args: list[str]) -> str | None:
-    """Stdout of a git command in ``root``, or ``None`` on any failure."""
-    try:
-        result = proc.run(root, ["git", *args], capture_output=True)
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
-
-
 def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:
     """Sort the commits on ``branch`` ahead of its upstream into own and other.
 
@@ -121,7 +110,7 @@ def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:
     comparison. Returns ``None`` when there is nothing to compare against: no
     upstream configured, no remote, or git unavailable.
     """
-    upstream = _git_out(
+    upstream = proc.git_out(
         root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
     if upstream is None or not upstream.strip():
@@ -131,7 +120,7 @@ def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:
     # rather than C-quoted with octal escapes, which no prefix would match; and
     # ``--no-renames`` so a file moved into the plan's directory lists its old
     # path too — the deletion outside the plan is what the push publishes.
-    log = _git_out(
+    log = proc.git_out(
         root,
         [
             "-c",

@@ -31,6 +31,7 @@ from pathlib import Path
 
 __all__ = [
     "LOCATION_ENV",
+    "git_out",
     "pinned_env",
     "run",
 ]
@@ -74,3 +75,14 @@ def run(
         text=True,
         env=pinned_env(),
     )
+
+
+def git_out(root: Path, args: Sequence[str]) -> str | None:
+    """Stdout of a read-only git command in ``root``, or ``None`` on any failure."""
+    try:
+        result = run(root, ["git", *args], capture_output=True)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout

@@ -1433,26 +1433,23 @@ def subplans(
         raise typer.Exit(1)
 
 
-def _outside_log(text: str) -> tuple[str | None, str]:
-    """``text``'s frontmatter and its body with the ``## Log`` section cut out.
+def _split_log(text: str) -> tuple[tuple[str | None, str, str], str]:
+    """``text`` as (everything outside the ``## Log`` section, the Log itself).
 
-    Two versions of a plan that agree on this differ only in their Log, which is
-    the one part of a plan ``review --commit`` may carry.
+    Two versions of a plan whose outside parts agree differ only in their Log,
+    the one part of a plan ``review --commit`` may carry. The text on either side
+    of the cut is compared with its surrounding blank lines stripped, so adding a
+    Log section to a plan that had none, with a blank line before it, still
+    reads as a Log-only change.
     """
     fm, body = split_frontmatter(text)
     span = section_span(body, "Log")
     if span is None:
-        return fm, body
+        return (fm, body.strip(), ""), ""
     lines = body.splitlines(keepends=True)
-    return fm, "".join(lines[: span[0]] + lines[span[1] :])
-
-
-def _log_of(text: str) -> str:
-    _, body = split_frontmatter(text)
-    span = section_span(body, "Log")
-    if span is None:
-        return ""
-    return "".join(body.splitlines(keepends=True)[span[0] : span[1]])
+    head = "".join(lines[: span[0]]).strip()
+    tail = "".join(lines[span[1] :]).strip()
+    return (fm, head, tail), "".join(lines[span[0] : span[1]])
 
 
 def _review_commit(root: Path, *, allow_branch: bool) -> None:
@@ -1463,7 +1460,7 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
     spec or frontmatter) or is an active or blocked plan (whose file a review
     never edits, since its owner may be working on it elsewhere).
     """
-    diff = _git_capture(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
+    diff = proc.git_out(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
     if diff is None:
         _err("cannot read the working tree's changes; is this a git repo with commits?")
         raise typer.Exit(1)
@@ -1478,13 +1475,15 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
             problems.append(f"{rel}: deleted; a review never removes a plan")
             continue
         current = path.read_text(encoding="utf-8")
-        before = _git_capture(root, ["show", f"HEAD:{rel}"])
+        before = proc.git_out(root, ["show", f"HEAD:{rel}"])
         if before is None:
             continue
-        if _outside_log(current) != _outside_log(before):
+        outside_now, log_now = _split_log(current)
+        outside_before, log_before = _split_log(before)
+        if outside_now != outside_before:
             problems.append(f"{rel}: changed outside its Log")
             continue
-        if _log_of(current) == _log_of(before):
+        if log_now == log_before:
             continue
         try:
             meta = PlanMetadata.from_text(current, dirname=path.parent.name)
@@ -1510,21 +1509,12 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
 
     _guard_base_branch(root, "plan [review]", allow_branch=allow_branch)
     readme = _refresh_index(root, cols="curated")
-    _git(root, ["add", *staged, str(readme.relative_to(root))])
+    paths = [*staged, str(readme.relative_to(root))]
+    _git(root, ["add", *paths])
     noun = "plan" if len(staged) == 1 else "plans"
-    _git(root, ["commit", "-m", f"plan [review]: {len(staged)} {noun}"])
+    # The pathspec keeps anything else already staged out of the commit.
+    _git(root, ["commit", "-m", f"plan [review]: {len(staged)} {noun}", "--", *paths])
     typer.echo(f"committed review notes for {len(staged)} {noun}")
-
-
-def _git_capture(root: Path, args: list[str]) -> str | None:
-    """Stdout of a read-only git command in ``root``, or ``None`` on any failure."""
-    try:
-        result = proc.run(root, ["git", *args], capture_output=True)
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
 
 
 @app.command()
