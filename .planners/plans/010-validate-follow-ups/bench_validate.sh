@@ -7,7 +7,7 @@
 # fresh index, then reports the best of <runs> wall-clock times for each form,
 # both as a directory argument (one root) and as one argument per plan file
 # (how the pre-commit hook calls it). Run from the planners checkout so
-# `uv run planners` resolves to the tree under test.
+# `uv run planners` resolves to the tree under test. Needs GNU date (%N).
 set -euo pipefail
 
 show_help() {
@@ -34,6 +34,9 @@ scratch=$1
 count=${2:-300}
 runs=${3:-5}
 repo="$scratch/repo"
+for n in "$count" "$runs"; do
+  [[ "$n" =~ ^[1-9][0-9]*$ ]] || { echo "Error: plan-count and runs must be positive integers, got '$n'" >&2; exit 1; }
+done
 
 [ -e "$repo" ] && { echo "Error: refusing to reuse existing $repo" >&2; exit 1; }
 mkdir -p "$repo/.planners/plans"
@@ -69,7 +72,8 @@ best() {
   for _ in $(seq "$runs"); do
     local start end ms
     start=$(date +%s%N)
-    "$@" >/dev/null 2>&1
+    # A failing command would be timed on its error path, so stop instead.
+    "$@" >/dev/null 2>&1 || { echo "Error: command failed: $*" >&2; return 1; }
     end=$(date +%s%N)
     ms=$(((end - start) / 1000000))
     if [ -z "$best_ms" ] || [ "$ms" -lt "$best_ms" ]; then best_ms=$ms; fi
@@ -78,8 +82,14 @@ best() {
 }
 
 files=("$repo"/.planners/plans/*/plan.md)
+# Assign before echoing: a failure inside $(...) in an echo argument is not
+# caught by set -e, but one in a plain assignment is.
+dir_index=$(best uv run planners validate "$repo/.planners/plans")
+dir_noindex=$(best uv run planners validate --no-index "$repo/.planners/plans")
+files_index=$(best uv run planners validate "${files[@]}")
+files_noindex=$(best uv run planners validate --no-index "${files[@]}")
 echo "plans=$count runs=$runs (best wall-clock ms)"
-echo "dir   with index: $(best uv run planners validate "$repo/.planners/plans")"
-echo "dir   --no-index: $(best uv run planners validate --no-index "$repo/.planners/plans")"
-echo "files with index: $(best uv run planners validate "${files[@]}")"
-echo "files --no-index: $(best uv run planners validate --no-index "${files[@]}")"
+echo "dir   with index: $dir_index"
+echo "dir   --no-index: $dir_noindex"
+echo "files with index: $files_index"
+echo "files --no-index: $files_noindex"
