@@ -1,10 +1,10 @@
 ---
 id: 12
 slug: review-status-and-activation-log
-status: implemented
+status: done
 branch: feature/review-status-and-activation-log
 created: 2026-10-09T13:22:44-07:00
-concluded:
+concluded: 2026-10-09T15:22:50-07:00
 pr: https://github.com/gitronald/planners/pull/37
 ---
 
@@ -160,3 +160,43 @@ work is.
     the three entries and an `implemented` index row. `gh pr ready` is
     covered by a fake `gh` in the tests; not yet verified against GitHub.
 - **2026-10-09T15:12:29-07:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-10-09T15:23:05-07:00** — Closed via `/planners close`.
+  - Review follow-up (`/code-review` at medium, posted to PR #37): 7
+    findings, all fixed in `2073d18` (code and tests) and `fa24712` (docs).
+    - `implemented` committed wherever it ran, including the mainline. It
+      now refuses on a mainline branch or a detached HEAD.
+    - `implemented` was not retry-safe: a failed commit stranded the
+      status change, and a re-run refused it. A re-run now finishes the
+      commit, ignoring only the plan, umbrella, and index files when
+      checking for uncommitted work.
+    - The nested-subplan path appended its Log entry after a Handoff or
+      Retrospective section. It now inserts it before them, as the plan
+      path does.
+    - On a detached HEAD the no-upstream hint suggested
+      `git push -u origin a detached HEAD`. That case is now refused instead.
+    - `activate --worktree` and `--no-worktree` were silently dropped for a
+      plan that is already active or is returning from `implemented`. They
+      now print a warning.
+    - The commit count preferred a local base that can lag its remote. It
+      now tries `origin/<base>` first.
+    - `_unpublished_work` duplicated `_git_status_porcelain` and now reuses
+      it. That helper strips its output, so paths are split rather than
+      sliced; a test caught the slicing.
+    - Rejected in verification: the fallback base without a `.resolved`
+      check, which is equivalent to the existing `if branches` test.
+  - Verified: 473 tests pass, and ruff, the format check, and pyrefly are clean.
+
+## Retrospective
+
+- The spec held up. The four steps landed in order. The open choices it
+  left (who pushes, the base for the count, the nested PR) were made in
+  code and logged, not reopened.
+- `implemented` copied `set-pr`'s shape but not `activate`'s two
+  protections: the mainline guard and recovery from a failed commit. A new
+  committing command should take the checklist from the most defended
+  command, not the nearest one.
+- The plan and nested-subplan paths drifted: one passed `before=` and one
+  did not. When a command branches on plan vs. subplan, test both branches
+  against the same section layout.
+- `planners status <NNN>` stays out of scope. It is the natural reader of
+  the activation entry this plan writes.
