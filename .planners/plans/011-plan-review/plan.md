@@ -243,8 +243,8 @@ today.
   table: the latest frontmatter `concluded` among each status's plans, blank
   when none has one.
 - **2026-10-09T12:40:18-07:00** — Filled gaps found on a re-read: the
-  `review --commit` step with the mainline guard and a `plan [review]:` subject; `--stale-days` (default
-  14); a `now` field in `--json` so the skill never writes a timestamp from
+  `review --commit` step with the mainline guard and a `plan [review]:`
+  subject; `--stale-days` (default 14); a `now` field in `--json` so the skill never writes a timestamp from
   memory; refusal of the legacy layout; `review` in the `assist` permission
   profile; top-level-only summary rows with a note on open subplans; batched
   checking for large runs; and a test that rebuilds the summary table
