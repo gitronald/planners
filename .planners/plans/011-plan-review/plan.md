@@ -1,11 +1,11 @@
 ---
 id: 11
 slug: plan-review
-status: active
+status: done
 branch: feature/plan-review
 created: 2026-10-09T12:14:51-07:00
-concluded:
-pr:
+concluded: 2026-10-09T13:00:03-07:00
+pr: https://github.com/gitronald/planners/pull/35
 ---
 
 # Add a review subcommand that checks plans against the repo
@@ -249,3 +249,87 @@ today.
   the `assist` permission profile; top-level-only summary rows with a note on
   open subplans; batched checking for large runs; and a test that rebuilds the
   summary table independently.
+- **2026-10-09T12:53:20-07:00** — Implemented steps 1-4 on
+  `feature/plan-review` (PR #35, draft). `planners/review.py` gathers the
+  evidence, `planners review` in `cli.py` renders it as text or `--json`, and
+  `review --commit` commits Log-only changes with the mainline guard. The
+  `review` skill is registered after `pipeline`, and the rule summary, README,
+  and CHANGELOG `[Unreleased]` describe it. 421 tests pass, 93.9% coverage;
+  ruff and pyrefly are clean. Departures from the spec, each found on a dry
+  run against this repo's own plans:
+  - The commits-since window also drops commits that touch nothing outside
+    `.planners/`. Hand-written plan edits (another plan's spec revisions)
+    otherwise filled every plan's window; the plans a body names cover
+    cross-plan moves.
+  - The summary counts commits with `--no-merges`. With several plan
+    directories in one pathspec git shows merges it hides for each alone, so
+    the total exceeded the column's sum. The total row counts distinct
+    commits, so it can be less than the sum, never more.
+  - Code references have a third state, `unresolved`: a dotted name whose
+    module is not a file in the tree, or a slashed name with no file suffix
+    whose first segment is not in the tree (`feature/x`, `origin/dev`,
+    `owner/repo`). The dry run read every branch name as a missing path.
+    An untracked path that exists on disk is `present` with detail
+    `untracked`. `path::name` is checked as `path`.
+  - Step 3's permission change is not needed. `planners review` is already
+    covered at `assist` by `Bash(uv run:*)` locally and the derived
+    `Bash(planners:*)` globally, and the `git` and `gh` calls the command
+    makes are not Bash tool calls, so nothing was added.
+  - A nested-subplan ref (`012d`) reviews its umbrella, with a note, since
+    subplans are covered by their umbrella's evidence.
+  - `--commit` refuses alongside a plan ref, `--status`, or `--json`, and
+    `--allow-branch` without `--commit`.
+  Dry run (`planners review -s all`): the two active plans report their
+  branch, dirty worktree, and open PR correctly; the ten done plans report
+  merged PRs and 35 missing references, mostly skill files moved from
+  `<name>.md` to `<name>/SKILL.md` and modules removed when pkgskills was
+  adopted (plan 007). No Log entries were written: the skill's own pass over
+  the plans was not run.
+- **2026-10-09T13:00:12-07:00** — Merged `dev` after plan 010 closed. Plan
+  010 changed only its own plan files and a benchmark script, so nothing here
+  conflicted; the post-merge hook's index refresh was committed.
+  - **Review follow-up** (`/code-review` medium, PR #35): 15 findings
+    reported, one candidate rejected (the singular `1 plan` subject is
+    intended pluralization).
+  - **Fixed, each with a regression test:** `review --commit` committed
+    with a pathspec, so files staged elsewhere stay out of the
+    `plan [review]` commit; adding a `## Log` section to a plan that had none
+    is no longer refused as an edit outside the Log (the comparison strips
+    blank lines around the cut); an active plan's commit window and tags now
+    come from its branch tip, as section 3 specifies, not the mainline; a
+    `module.func` ref is present if any same-named module defines it, not
+    only the first match; an untracked suffix-less path (`newpkg/data`) is
+    checked on disk before it is read as a branch name; a plan whose
+    frontmatter fails to parse is reported as `skipped` (text warning and a
+    `skipped` JSON list) instead of vanishing.
+  - **Fixed, no new test (covered by existing ones):** one read-only git
+    helper, `proc.git_out`, replaces the copies in `ahead.py`, `cli.py`, and
+    `review._Git.out`; `has_origin`, the tag listing, and the summary's
+    `HEAD` check are computed once per run; `_outside_log` and `_log_of`
+    became one `_split_log` that parses once.
+  - **Conscious no-ops:** `_load` still walks plans itself rather than
+    sharing `cli._plan_files` (sharing needs the helpers moved out of
+    `cli.py`, a refactor beyond this PR); the status rank stays local rather
+    than importing the private `index._STATUS_RANK`; `gh pr view` stays one
+    call per plan (5 s on 12 plans, mostly network; a batched
+    `gh pr list` is a candidate follow-up if large `-s all` runs matter);
+    `base._git_out` keeps its own copy because it strips output; linear tree
+    scans in ref resolution are well under a second at realistic sizes.
+  - Not verified: that each new regression test fails on the pre-fix code
+    (the tests were written after the fixes). 427 tests pass, 94.3%
+    coverage; ruff, ruff format, and pyrefly are clean.
+
+## Retrospective
+
+- The dry run against this repo's own plans was the most useful test: it
+  produced every spec departure in the implementation log (plan-only
+  commits, merge double-counting, branch names read as paths). Run the real
+  data early for any evidence-gathering tool.
+- Review found the spec's "judge from the branch" rule applied to code refs
+  but not to the commit list. A rule stated once in prose is easy to apply
+  to half the fields; listing the fields it governs would have caught it.
+- `review --commit` is the one write path, and both of its bugs were about
+  scope (other staged files, a new Log section). Write paths deserve their
+  edge-case tests first.
+- The skill's own pass over the plans (verdicts and Log entries) has not
+  been run yet; the first real review will be the test of the prompt.
