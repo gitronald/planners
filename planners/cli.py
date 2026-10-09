@@ -1229,7 +1229,7 @@ def set_pr(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
-    """Record a plan's PR URL, refresh the index, and commit.
+    """Record a plan's PR URL, log it, refresh the index, and commit.
 
     The index shows the PR, so the three hand steps (edit ``pr:``, regenerate,
     commit) are one command here and the middle one cannot be forgotten. There is
@@ -1269,6 +1269,14 @@ def set_pr(
         typer.echo(f"plan {label} already records {url}; nothing to do.")
         return
     if updated != text:
+        # The entry goes in only with a change of URL, so a re-run that finishes
+        # an interrupted commit does not log the same PR twice.
+        updated = append_to_section(
+            updated,
+            "Log",
+            entries.pr_entry(_now(), url),
+            before=("Handoff", "Retrospective"),
+        )
         target.write_text(updated, encoding="utf-8")
         typer.echo(f"recorded {url} in {_shown(target, root)}")
 
@@ -1279,6 +1287,171 @@ def set_pr(
         staged.append(_refresh_index(root, cols="curated"))
     _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
     _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
+
+
+def _unpublished_work(root: Path) -> list[str]:
+    """What the branch at ``root`` holds that a reviewer of its PR cannot see.
+
+    Uncommitted changes, commits not pushed to the upstream, and a branch with no
+    upstream at all in a repo that has a remote. A repo with no remote has nothing
+    to publish to, so only its uncommitted changes count. Outside a repo there is
+    nothing to check, and the commit that follows reports that on its own.
+    """
+    status = proc.git_out(root, ["status", "--porcelain"])
+    if status is None:
+        return []
+    problems: list[str] = []
+    changed = len(status.splitlines())
+    if changed:
+        problems.append(f"{changed} uncommitted change(s); commit them first")
+    upstream = proc.git_out(
+        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+    )
+    if upstream is None:
+        if (proc.git_out(root, ["remote"]) or "").strip():
+            branch = _current_branch(root)
+            problems.append(
+                f"{branch} has no upstream; push it with `git push -u origin {branch}`"
+            )
+        return problems
+    unpushed = proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"])
+    if unpushed and int(unpushed) > 0:
+        problems.append(
+            f"{int(unpushed)} commit(s) not pushed to {upstream.strip()}; push first"
+        )
+    return problems
+
+
+def _ahead_of(root: Path, base: str) -> int | None:
+    """How many commits HEAD has that ``base`` lacks, or ``None`` when unknown.
+
+    A clone that never checked the base out locally still has its remote copy, so
+    ``origin/<base>`` is tried when the local branch is missing.
+    """
+    for ref in (base, f"origin/{base}"):
+        out = proc.git_out(root, ["rev-list", "--count", f"{ref}..HEAD"])
+        if out is not None:
+            return int(out)
+    return None
+
+
+def _mark_pr_ready(root: Path, url: str) -> None:
+    """Take the PR at ``url`` out of draft, warning rather than failing.
+
+    The status change is already committed by the time this runs, so a gh that is
+    missing, unauthenticated, or offline is reported for the user to finish by
+    hand instead of undoing a commit that is correct.
+    """
+    try:
+        result = proc.run(root, ["gh", "pr", "ready", url], capture_output=True)
+    except OSError:
+        _warn(f"warning: gh is not available; run `gh pr ready {url}` by hand.")
+        return
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        _warn(
+            f"warning: `gh pr ready {url}` failed"
+            + (f": {detail}" if detail else "")
+            + "; run it by hand."
+        )
+        return
+    typer.echo(f"marked {url} ready for review")
+
+
+@app.command()
+def implemented(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    no_commit: bool = typer.Option(
+        False,
+        "--no-commit",
+        help="Write only: no index refresh, no commit, and the PR stays a draft.",
+    ),
+) -> None:
+    """Mark an active plan implemented: its work is done and its PR awaits review.
+
+    Flips ``active`` to ``implemented``, appends a Log entry counting the commits
+    the branch carries past its base, refreshes the index, and commits on the
+    feature branch. When the plan has a PR it is then taken out of draft, since
+    ``implemented`` means it is open for review.
+
+    Refuses unless the plan is ``active``, and unless the branch is fully
+    committed and pushed, so the plan never says implemented about work the
+    reviewer cannot see. It closes nothing: merging, the Retrospective, and
+    ``concluded`` stay with ``close``. Review that asks for more work returns the
+    plan with ``planners activate``.
+
+    For a nested subplan the subplan's own file changes and the umbrella's table
+    follows; only a PR recorded in the subplan itself is taken out of draft.
+    """
+    root = Path.cwd()
+    plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
+    target = nested or plan
+
+    meta: PlanMetadata | None = None
+    try:
+        text = target.read_text(encoding="utf-8")
+        if nested is not None:
+            sub_meta = SubplanMetadata.from_text(text, nested.name)
+            status, pr, slug = sub_meta.status, sub_meta.pr, sub_meta.step
+        else:
+            meta = PlanMetadata.from_text(text, plan.parent.name)
+            status, pr, slug = meta.status, meta.pr, meta.slug
+    except (PlanError, SubplanError, OSError, UnicodeDecodeError) as exc:
+        _err(f"cannot read {_shown(target, root)}: {exc}")
+        raise typer.Exit(1) from None
+
+    kind = "subplan" if nested is not None else "plan"
+    if status != Status.active:
+        _err(
+            f"{kind} {label} is {status.value}; only an active {kind} can be marked "
+            "implemented."
+        )
+        raise typer.Exit(1)
+
+    problems = _unpublished_work(root)
+    if problems:
+        _err(f"{kind} {label} is not marked implemented: the branch has")
+        for problem in problems:
+            _err(f"  - {problem}")
+        raise typer.Exit(1)
+
+    # The base the work came from, as the activation entry recorded it: in the
+    # subplan for a step on a sub-branch of its own, else in the umbrella.
+    umbrella_text = plan.read_text(encoding="utf-8")
+    base = entries.recorded_base(text) or entries.recorded_base(umbrella_text)
+    if base is None:
+        branches = base_mod.detect(root).branches
+        base = branches[0] if branches else None
+    ahead = _ahead_of(root, base) if base is not None else None
+    entry = entries.implemented_entry(_now(), ahead, base)
+
+    if meta is None:
+        updated = set_frontmatter_key(text, "status", Status.implemented.value)
+        updated = append_to_section(updated, "Log", entry)
+        _sync_subplans(root, plan, {target: updated})
+        staged = [target, plan]
+    else:
+        _, body = split_frontmatter(text)
+        meta.status = Status.implemented
+        body = append_to_section(
+            body, "Log", entry, before=("Handoff", "Retrospective")
+        )
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        staged = [plan]
+    typer.echo(f"marked {_shown(target, root)} implemented")
+
+    if no_commit:
+        return
+
+    if nested is None:
+        staged.append(_refresh_index(root, cols="curated"))
+    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
+    _git(root, ["commit", "-m", f"plan [implemented]: {label} - {slug}"])
+    if pr:
+        _mark_pr_ready(root, pr)
+    typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
 
 
 @app.command()
