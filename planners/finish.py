@@ -32,6 +32,7 @@ from pathlib import Path
 from planners import proc
 
 __all__ = [
+    "HOOK_TYPES",
     "MERGE_SUBJECT_LIMIT",
     "PullRequest",
     "Stop",
@@ -54,6 +55,23 @@ _PR_FIELDS = (
 )
 
 _INSTALL_PYTHON_RE = re.compile(r"^INSTALL_PYTHON=(.*)$", re.MULTILINE)
+
+# The hook types ``pre-commit install --hook-type`` accepts. Any other file in
+# the hooks directory (a ``pre-commit.legacy`` backup) is not re-installable.
+HOOK_TYPES = frozenset(
+    {
+        "commit-msg",
+        "post-checkout",
+        "post-commit",
+        "post-merge",
+        "post-rewrite",
+        "pre-commit",
+        "pre-merge-commit",
+        "pre-push",
+        "pre-rebase",
+        "prepare-commit-msg",
+    }
+)
 
 
 class Stop(Exception):
@@ -102,11 +120,15 @@ def merge_subject(label: str, number: int | None = None) -> str:
 
 
 def find_worktree(root: Path, branch: str) -> Path | None:
-    """The worktree that has ``branch`` checked out, or ``None``."""
+    """The linked worktree that has ``branch`` checked out, or ``None``.
+
+    The main checkout is never one: git lists it first, and a branch checked out
+    there is left for the base checkout to replace, not removed with the tree.
+    """
     listing = proc.git_out(root, ["worktree", "list", "--porcelain"])
     if listing is None:
         return None
-    for block in listing.split("\n\n"):
+    for block in listing.split("\n\n")[1:]:
         path: str | None = None
         checked_out: str | None = None
         for line in block.splitlines():
@@ -120,8 +142,16 @@ def find_worktree(root: Path, branch: str) -> Path | None:
 
 
 def is_ancestor(root: Path, commit: str, of: str) -> bool:
-    """True when ``of`` contains ``commit``."""
-    code, _, _ = _call(root, ["git", "merge-base", "--is-ancestor", commit, of])
+    """True when ``of`` contains ``commit``; a :class:`Stop` when git cannot tell.
+
+    ``--is-ancestor`` exits 1 for "not contained" and higher for an error such
+    as a missing ref, which must not read as unmerged work.
+    """
+    argv = ["git", "merge-base", "--is-ancestor", commit, of]
+    code, out, err = _call(root, argv)
+    if code > 1:
+        detail = (err or out).strip()
+        raise Stop(f"`{' '.join(argv)}` failed (exit {code}): {detail}")
     return code == 0
 
 
@@ -168,11 +198,15 @@ def view_pr(root: Path, ref: str) -> PullRequest:
     return PullRequest.from_json(data)
 
 
-def delete_remote_branch(root: Path, branch: str, base: str, say: Say) -> None:
+def delete_remote_branch(
+    root: Path, branch: str, base: str, say: Say, *, against: str | None = None
+) -> None:
     """Delete ``branch`` on ``origin`` if it is still there and ``base`` holds it.
 
-    Compared as last fetched, so the caller fetches first. A remote branch with
-    commits the base lacks is a stop: deleting it would lose them.
+    ``against`` is the ref the test runs on, ``base`` by default; the caller
+    passes ``origin/<base>`` so the test does not hang on whether the local base
+    was pulled. Compared as last fetched, so the caller fetches first. A remote
+    branch with commits the base lacks is a stop: deleting it would lose them.
     """
     remotes = (proc.git_out(root, ["remote"]) or "").split()
     if "origin" not in remotes:
@@ -182,7 +216,7 @@ def delete_remote_branch(root: Path, branch: str, base: str, say: Say) -> None:
         say(f"{branch} is already gone from origin")
         return
     tracking = f"refs/remotes/origin/{branch}"
-    if not is_ancestor(root, tracking, base):
+    if not is_ancestor(root, tracking, against or base):
         raise Stop(f"origin/{branch} holds commits {base} does not; it was not deleted")
     must(root, ["git", "push", "origin", "--delete", branch])
     say(f"deleted {branch} on origin")
@@ -222,7 +256,7 @@ def stale_hooks(root: Path) -> list[str]:
         return []
     found: list[str] = []
     for hook in sorted(directory.iterdir()):
-        if not hook.is_file() or hook.suffix == ".sample":
+        if not hook.is_file() or hook.name not in HOOK_TYPES:
             continue
         try:
             text = hook.read_text(encoding="utf-8")

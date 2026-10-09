@@ -10,7 +10,7 @@ import pytest
 from typer.testing import CliRunner, Result
 
 from planners.cli import app
-from planners.finish import PullRequest, merge_subject
+from planners.finish import PullRequest, Stop, is_ancestor, merge_subject
 from tests.helpers import commit_all, git_out, init_git
 
 runner = CliRunner()
@@ -318,7 +318,7 @@ def test_finish_stops_on_unpushed_commits(
     commit_all(scene.worktree, "late")
     result = scene.finish()
     assert result.exit_code == 1
-    assert f"1 commit(s) not pushed to origin/{_BRANCH}" in result.output
+    assert "1 commit(s) main does not have" in result.output
     _assert_untouched(scene)
 
 
@@ -396,6 +396,8 @@ def test_finish_repoints_a_hook_installed_from_the_worktree(
     python = scene.worktree / ".venv" / "bin" / "python"
     _script(hooks / "pre-commit", f"INSTALL_PYTHON={python}\nexit 0\n")
     _script(hooks / "post-merge", "INSTALL_PYTHON=/usr/bin/python3\nexit 0\n")
+    # A backup is not a hook type pre-commit can install, so it is left alone.
+    _script(hooks / "pre-commit.legacy", f"INSTALL_PYTHON={python}\nexit 0\n")
     uv_calls = tmp_path / "uv-calls"
     _script(scene.bin / "uv", f'echo "$@" >> "{uv_calls}"\n')
     result = scene.finish()
@@ -404,6 +406,76 @@ def test_finish_repoints_a_hook_installed_from_the_worktree(
         "run pre-commit install --hook-type pre-commit"
     ]
     assert "re-installed the pre-commit hook" in result.output
+
+
+def test_finish_with_the_branch_in_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Worked without a worktree: the main checkout is not a worktree to remove.
+    scene = Scene(tmp_path, monkeypatch)
+    _git(scene.root, "worktree", "remove", str(scene.worktree))
+    _git(scene.root, "checkout", "-q", _BRANCH)
+    scene.merge_on_github()
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert f"no worktree has {_BRANCH} checked out" in result.output
+    assert "checked out main" in result.output
+    _assert_finished(scene)
+
+
+def test_finish_after_github_deleted_the_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Auto-delete of head branches: the worktree's upstream is pruned away.
+    scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
+    _git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
+    _git(scene.root, "fetch", "-q", "--prune")
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert "removed the worktree" in result.output
+    assert f"{_BRANCH} is already gone from origin" in result.output
+    _assert_finished(scene)
+
+
+def test_finish_after_gh_deleted_the_branch_and_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `gh pr merge --delete-branch` on some versions: only the merged base still
+    # has the closed plan, and the local base is not pulled yet.
+    scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
+    _git(scene.root, "worktree", "remove", str(scene.worktree))
+    _git(scene.root, "branch", "-q", "-D", _BRANCH)
+    _git(scene.root, "push", "-q", "origin", "--delete", _BRANCH)
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert "pulled main" in result.output
+    _assert_finished(scene)
+
+
+def test_finish_stops_on_a_hand_edited_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
+    _git(scene.root, "pull", "-q", "--ff-only")
+    index = scene.root / ".planners" / "README.md"
+    index.write_text(index.read_text(encoding="utf-8") + "hand edit\n", "utf-8")
+    result = scene.finish()
+    assert result.exit_code == 1
+    assert ".planners/README.md has uncommitted changes" in result.output
+    assert "hand edit" in index.read_text(encoding="utf-8")
+    _assert_untouched(scene)
+
+
+def test_is_ancestor_stops_on_a_missing_ref(tmp_path: Path) -> None:
+    init_git(tmp_path)
+    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
+    commit_all(tmp_path, "a")
+    assert is_ancestor(tmp_path, "HEAD", "HEAD")
+    with pytest.raises(Stop, match="exit 128"):
+        is_ancestor(tmp_path, "refs/remotes/origin/gone", "HEAD")
 
 
 def test_merge_subject_truncates_the_label() -> None:
