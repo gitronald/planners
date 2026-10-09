@@ -249,3 +249,39 @@ today.
   the `assist` permission profile; top-level-only summary rows with a note on
   open subplans; batched checking for large runs; and a test that rebuilds the
   summary table independently.
+- **2026-10-09T12:53:20-07:00** — Implemented steps 1-4 on
+  `feature/plan-review` (PR #35, draft). `planners/review.py` gathers the
+  evidence, `planners review` in `cli.py` renders it as text or `--json`, and
+  `review --commit` commits Log-only changes with the mainline guard. The
+  `review` skill is registered after `pipeline`, and the rule summary, README,
+  and CHANGELOG `[Unreleased]` describe it. 421 tests pass, 93.9% coverage;
+  ruff and pyrefly are clean. Departures from the spec, each found on a dry
+  run against this repo's own plans:
+  - The commits-since window also drops commits that touch nothing outside
+    `.planners/`. Hand-written plan edits (another plan's spec revisions)
+    otherwise filled every plan's window; the plans a body names cover
+    cross-plan moves.
+  - The summary counts commits with `--no-merges`. With several plan
+    directories in one pathspec git shows merges it hides for each alone, so
+    the total exceeded the column's sum. The total row counts distinct
+    commits, so it can be less than the sum, never more.
+  - Code references have a third state, `unresolved`: a dotted name whose
+    module is not a file in the tree, or a slashed name with no file suffix
+    whose first segment is not in the tree (`feature/x`, `origin/dev`,
+    `owner/repo`). The dry run read every branch name as a missing path.
+    An untracked path that exists on disk is `present` with detail
+    `untracked`. `path::name` is checked as `path`.
+  - Step 3's permission change is not needed. `planners review` is already
+    covered at `assist` by `Bash(uv run:*)` locally and the derived
+    `Bash(planners:*)` globally, and the `git` and `gh` calls the command
+    makes are not Bash tool calls, so nothing was added.
+  - A nested-subplan ref (`012d`) reviews its umbrella, with a note, since
+    subplans are covered by their umbrella's evidence.
+  - `--commit` refuses alongside a plan ref, `--status`, or `--json`, and
+    `--allow-branch` without `--commit`.
+  Dry run (`planners review -s all`): the two active plans report their
+  branch, dirty worktree, and open PR correctly; the ten done plans report
+  merged PRs and 35 missing references, mostly skill files moved from
+  `<name>.md` to `<name>/SKILL.md` and modules removed when pkgskills was
+  adopted (plan 007). No Log entries were written: the skill's own pass over
+  the plans was not run.
