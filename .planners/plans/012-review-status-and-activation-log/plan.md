@@ -5,7 +5,7 @@ status: active
 branch: feature/review-status-and-activation-log
 created: 2026-10-09T13:22:44-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/37
 ---
 
 # Add an implemented status and a standard activation log entry
