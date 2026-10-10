@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import sys
 from dataclasses import asdict
@@ -1356,8 +1357,7 @@ def _unpublished_work(
     mainline: base_mod.Mainline,
     *,
     ignore: tuple[Path, ...] = (),
-    require_upstream: bool = True,
-    check_upstream: bool = True,
+    origin: remote_mod.RemoteKind = remote_mod.RemoteKind.github,
 ) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
@@ -1366,11 +1366,11 @@ def _unpublished_work(
     to publish to, so only its uncommitted changes count. Outside a repo there is
     nothing to check, and the commit that follows reports that on its own.
 
-    ``require_upstream=False`` drops the no-upstream problem, for a remote whose
-    review does not happen on a pushed branch (see :mod:`planners.remote`). A
-    branch that does have an upstream is still checked for unpushed commits,
-    unless ``check_upstream=False``: on a single-branch remote the upstream is
-    the live document, and pushing to it is a publish, not a precondition.
+    ``origin`` is the remote's kind (see :mod:`planners.remote`). Only a GitHub
+    origin reviews the pushed branch, so only there is a missing upstream a
+    problem; a branch that has one is still checked for unpushed commits. On a
+    single-branch remote the upstream is the live document, and pushing to it is
+    a publish, not a precondition, so only uncommitted changes count.
 
     ``ignore`` names files whose changes are not counted: the ones an earlier run
     wrote and then failed to commit, which this run is about to commit itself.
@@ -1387,21 +1387,20 @@ def _unpublished_work(
     )
     if changed:
         problems.append(f"{changed} uncommitted change(s); commit them first")
-    if not check_upstream:
+    if origin is remote_mod.RemoteKind.single_branch:
         return problems
     upstream = proc.git_out(
         root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
     if upstream is None:
         if (
-            require_upstream
+            origin is remote_mod.RemoteKind.github
             and mainline.current is not None
             and (proc.git_out(root, ["remote"]) or "").strip()
         ):
             branch = mainline.current
-            problems.append(
-                f"{branch} has no upstream; push it with `git push -u origin {branch}`"
-            )
+            push = shlex.join(["git", "push", "-u", "origin", branch])
+            problems.append(f"{branch} has no upstream; push it with `{push}`")
         return problems
     unpushed = int(
         proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"]) or 0
@@ -1558,24 +1557,12 @@ def implemented(
         raise typer.Exit(1)
 
     ignore = (target, plan, root / INDEX_PATH) if resuming else ()
-    # Only a GitHub origin reviews the pushed branch; elsewhere the feature branch
-    # may be unpushable (a single-branch bridge) or simply unreviewed there.
-    origin = remote_mod.classify(root)
-    require_upstream = origin.kind is remote_mod.RemoteKind.github
-    check_upstream = origin.kind is not remote_mod.RemoteKind.single_branch
-    if not check_upstream:
-        typer.echo(
-            f"origin is {origin.kind.value}: only uncommitted changes are checked"
-        )
-    elif not require_upstream and origin.kind is not remote_mod.RemoteKind.none:
-        typer.echo(f"origin is {origin.kind.value}: a missing upstream is not refused")
-    problems = _unpublished_work(
-        root,
-        mainline,
-        ignore=ignore,
-        require_upstream=require_upstream,
-        check_upstream=check_upstream,
-    )
+    origin = remote_mod.classify(root).kind
+    if origin is remote_mod.RemoteKind.single_branch:
+        typer.echo(f"origin is {origin.value}: only uncommitted changes are checked")
+    elif origin in (remote_mod.RemoteKind.other_forge, remote_mod.RemoteKind.bare):
+        typer.echo(f"origin is {origin.value}: a missing upstream is not refused")
+    problems = _unpublished_work(root, mainline, ignore=ignore, origin=origin)
     if problems:
         _err(f"{kind} {label} is not marked implemented: the branch has")
         for problem in problems:
@@ -1702,6 +1689,15 @@ def _unmerged_work(worktree: Path, merged: str, base: str) -> list[str]:
     return problems
 
 
+def _merge_command(branch: str) -> str:
+    """The ``git merge`` line for ``branch``, quoted for pasting into a shell.
+
+    A branch name can hold ``$(...)`` or ``;``, and git allows both.
+    """
+    subject = finish_mod.merge_subject(branch)
+    return shlex.join(["git", "merge", "--no-ff", branch, "-m", subject])
+
+
 def _check_merged(
     root: Path,
     branch: str,
@@ -1739,8 +1735,7 @@ def _check_merged(
     )
     target = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
     if source is not None and not finish_mod.is_ancestor(root, source, target):
-        subject = finish_mod.merge_subject(branch)
-        merge = f'git merge --no-ff {branch} -m "{subject}"'
+        merge = _merge_command(branch)
         if local_only:
             raise finish_mod.Stop(
                 f"{branch} is not merged into {base} yet. From {base}, merge it, "

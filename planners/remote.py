@@ -34,6 +34,7 @@ __all__ = [
     "classify",
     "effects",
     "gh_hosts",
+    "redact_url",
     "url_host",
 ]
 
@@ -87,6 +88,11 @@ _GITHUB_ALIASES = {"ssh.github.com", "www.github.com"}
 _URL = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/]*@)?(?P<host>\[[^\]]+\]|[^:/]+)", re.I)
 # scp-like `[user@]host:path`, which git takes only when no slash precedes the colon.
 _SCP = re.compile(r"^(?:[^@/]*@)?(?P<host>[^:/]+):(?!//)")
+# The userinfo of a `scheme://` URL, which can carry a password or token.
+_USERINFO = re.compile(r"^(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<userinfo>[^@/]*)@", re.I)
+# Schemes whose userinfo is a credential, even with no password part: a token
+# often stands alone as the user, as in `https://<token>@host/...`.
+_CREDENTIAL_SCHEMES = ("http://", "https://", "ftp://", "ftps://")
 # A Windows drive path (`C:\\repo`, `C:/repo`), which the scp pattern would read
 # as host `c`; git itself treats a one-letter "host" this way.
 _DRIVE = re.compile(r"^[a-z]:[\\/]", re.I)
@@ -96,10 +102,12 @@ _DRIVE = re.compile(r"^[a-z]:[\\/]", re.I)
 class Remote:
     """``origin``'s kind, and what it was decided from.
 
-    ``host`` is ``None`` for a local path or no remote; for an SSH URL it is the
-    host the SSH config resolves the name to. ``source`` says which rule
-    decided the kind, so a surprising answer can be traced. ``note`` carries a
-    warning to show, e.g. an override that names no kind.
+    ``url`` has any credential in it masked (see :func:`redact_url`), since it is
+    only ever shown. ``host`` is ``None`` for a local path or no remote; for an
+    SSH URL it is the host the SSH config resolves the name to, unless an
+    override decided the kind first. ``source`` says
+    which rule decided the kind, so a surprising answer can be traced. ``note``
+    carries a warning to show, e.g. an override that names no kind.
     """
 
     kind: RemoteKind
@@ -121,6 +129,26 @@ def url_host(url: str) -> str | None:
     return None
 
 
+def redact_url(url: str) -> str:
+    """``url`` with a credential in its userinfo replaced by ``***``.
+
+    An HTTP(S) or FTP userinfo is masked whole, since a token can stand alone as
+    the user; elsewhere only a password part is, so ``ssh://git@host`` keeps its
+    user. Scp-like and local URLs carry no password and pass through.
+    """
+    match = _USERINFO.match(url)
+    if match is None:
+        return url
+    scheme, userinfo = match.group("scheme"), match.group("userinfo")
+    if scheme.lower() in _CREDENTIAL_SCHEMES:
+        masked = "***"
+    elif ":" in userinfo:
+        masked = userinfo.partition(":")[0] + ":***"
+    else:
+        return url
+    return f"{scheme}{masked}@{url[match.end() :]}"
+
+
 def _is_ssh(url: str) -> bool:
     """Whether git reaches ``url`` over SSH, where the host may be a config alias."""
     lowered = url.lower()
@@ -133,10 +161,14 @@ def _ssh_hostname(root: Path, host: str) -> str:
     """The host an SSH config alias stands for, via ``ssh -G``, else ``host``.
 
     ``ssh -G`` only evaluates the config and prints the result; it opens no
-    connection. A missing ``ssh`` or a failure leaves the name as written.
+    connection. A missing ``ssh`` or a failure leaves the name as written, and
+    so does a name starting with ``-``, which ``ssh`` would read as an option
+    (git refuses such a host too); ``--`` ends the options regardless.
     """
+    if host.startswith("-"):
+        return host
     try:
-        result = proc.run(root, ["ssh", "-G", host], capture_output=True)
+        result = proc.run(root, ["ssh", "-G", "--", host], capture_output=True)
     except OSError:
         return host
     if result.returncode != 0:
@@ -237,11 +269,15 @@ def classify(root: Path) -> Remote:
     url = proc.git_out(root, ["remote", "get-url", "origin"])
     url = url.strip() if url is not None else None
     host = url_host(url) if url else None
-    if url and host is not None and _is_ssh(url):
-        host = _ssh_hostname(root, host)
+    shown = redact_url(url) if url else url
     kind, source, note = _override(root)
     if kind is not None:
-        return Remote(kind, url, host, source, note)
+        # The kind is settled, so the SSH alias is left unresolved: no `ssh`
+        # call, and `host` is the name as the URL writes it.
+        return Remote(kind, shown, host, source, note)
+    if url and host is not None and _is_ssh(url):
+        host = _ssh_hostname(root, host)
+    url = shown
     if not url:
         return Remote(RemoteKind.none, None, None, "no origin remote", note)
     if host is None:
