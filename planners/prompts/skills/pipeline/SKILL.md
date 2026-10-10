@@ -32,7 +32,8 @@ previous one landed before it starts:
 - **implement** leaves: `status: implemented` (its last step runs
   `{cli} implemented {NNN}` once the work is committed and pushed), `branch:`
   filled, a `.worktrees/` worktree on that branch, and an open PR taken out of
-  draft, ready for review.
+  draft, ready for review. Off GitHub (`{cli} remote` is not `github`) there is
+  no PR, and on a `single-branch` remote no pushed branch either.
 - **close** requires exactly that state to begin — `status: implemented` with a
   branch, worktree, and ready PR. If any piece is missing, the handoff failed:
   stop and report rather than improvising. A plan still `active` means the
@@ -44,6 +45,10 @@ previous one landed before it starts:
   user wants rather than reinterpreting; that question joins the review-gate
   pause rather than adding a second one. Say so up front when the request
   names both a pipeline and no PR.
+- The exception is a remote that is not GitHub. When `{cli} remote` reports any
+  other kind, implement opens no PR and close takes the no-PR path on its own,
+  so a "no PR" request there raises no conflict. Say at the start which path
+  the run will take.
 - For an umbrella with **nested subplans**, the work is finished when
   `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
   `active`, `implemented`, or `blocked`, and the umbrella's table agrees with the subplan

@@ -36,8 +36,18 @@ spec. If `status` is `done` or `retired`, stop and tell the user — it is close
 git status
 git branch --show-current
 {cli} base --all
+{cli} remote
 git rev-list --left-right --count HEAD...@{upstream}
 ```
+
+- `{cli} remote` names what kind of remote `origin` is, from its URL and config
+  without contacting it: `github`, `single-branch` (a hosted editor's git
+  bridge that takes one branch, where every push lands in the live document),
+  `other-forge`, `bare`, or `none`. The steps below assume `github`. **Any other
+  kind has no PR**: skip step 6, and the plan closes through `close`'s no-PR
+  path, so say that now. `single-branch` also changes steps 3, 4, and 7, where
+  the push would be rejected or would publish. When the kind is wrong for this
+  repo, `git config planners.remoteKind <kind>` overrides it.
 
 - The activation commit (step 3) lands on the **base**, so be on the base branch
   in the main checkout. `{cli} base --all` prints the branches this repo counts
@@ -93,6 +103,10 @@ and silence is not a count of zero: when no report prints, check
 `git status -sb` (or `git log --oneline @{upstream}..`) before pushing, and set
 the upstream first when there is none.
 
+**On a `single-branch` remote, do not push the base as a routine step.** The
+push lands in the live document collaborators are editing, so it is a publish,
+not a backup. Show the ahead count from the report and ask before pushing.
+
 `activate` prints two lines before the report, and they name different
 branches: the branch it **recorded** in the frontmatter, where the work will
 go, and the branch it **committed on**, which is the base.
@@ -133,6 +147,10 @@ git worktree add "$root/.worktrees/<branch-suffix>" -b <branch> <base>
 cd "$root/.worktrees/<branch-suffix>"
 git push -u origin <branch>
 ```
+
+On a `single-branch` remote, skip the `git push -u`: the remote rejects any
+branch but its own, and the work is merged locally at close. On `other-forge`
+and `bare` remotes the push is a backup and is fine.
 
 `<branch-suffix>` is the branch's final path component (e.g. `<slug>` for
 `feature/<slug>`); `<base>` is the branch chosen in step 2. `$root` is the
@@ -175,6 +193,9 @@ Fan them out to subagents only when the user asks for subagents or a workflow;
 
 ### 6. Open a draft PR
 
+Only on a `github` remote (step 2). For any other kind, skip this step: there is
+no PR to open or record, and `pr:` stays empty until `close` writes `pr: null`.
+
 The activation commit lives on the base, so the new branch starts even with it —
 `gh pr create` has nothing to open until the branch is a commit ahead. After your
 first implementation commit, open the draft PR.
@@ -212,6 +233,11 @@ Once the plan's work is finished, committed, and pushed, and its checks pass:
 {cli} implemented {NNN}
 git push
 ```
+
+Off GitHub, `implemented` does not require the feature branch to have an
+upstream (it prints `origin is <kind>: the branch needs no upstream`), but it
+still refuses uncommitted changes, and unpushed commits on a branch that has an
+upstream. On a `single-branch` remote, skip the `git push`.
 
 It flips `active` to `implemented`, appends an `Implemented: <n> commits ahead
 of <base>` Log entry, refreshes the index, commits `plan [implemented]: {NNN} -
