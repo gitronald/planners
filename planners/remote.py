@@ -104,7 +104,8 @@ class Remote:
 
     ``url`` has any credential in it masked (see :func:`redact_url`), since it is
     only ever shown. ``host`` is ``None`` for a local path or no remote; for an
-    SSH URL it is the host the SSH config resolves the name to. ``source`` says
+    SSH URL it is the host the SSH config resolves the name to, unless an
+    override decided the kind first. ``source`` says
     which rule decided the kind, so a surprising answer can be traced. ``note``
     carries a warning to show, e.g. an override that names no kind.
     """
@@ -268,12 +269,15 @@ def classify(root: Path) -> Remote:
     url = proc.git_out(root, ["remote", "get-url", "origin"])
     url = url.strip() if url is not None else None
     host = url_host(url) if url else None
-    if url and host is not None and _is_ssh(url):
-        host = _ssh_hostname(root, host)
-    url = redact_url(url) if url else url
+    shown = redact_url(url) if url else url
     kind, source, note = _override(root)
     if kind is not None:
-        return Remote(kind, url, host, source, note)
+        # The kind is settled, so the SSH alias is left unresolved: no `ssh`
+        # call, and `host` is the name as the URL writes it.
+        return Remote(kind, shown, host, source, note)
+    if url and host is not None and _is_ssh(url):
+        host = _ssh_hostname(root, host)
+    url = shown
     if not url:
         return Remote(RemoteKind.none, None, None, "no origin remote", note)
     if host is None:

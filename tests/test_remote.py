@@ -178,6 +178,18 @@ def test_classify_never_hands_ssh_a_dash_host(
     assert origin.kind is RemoteKind.bare
 
 
+def test_classify_skips_ssh_when_an_override_decides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "ssh-ran"
+    _fake_ssh(tmp_path, monkeypatch, f'touch "{marker}"\necho "hostname github.com"\n')
+    root = _repo_with_origin(tmp_path / "repo", "git@gh-work:owner/repo.git")
+    git(root, "config", "planners.remoteKind", "single-branch")
+    origin = classify(root)
+    assert not marker.exists()
+    assert (origin.kind, origin.host) == (RemoteKind.single_branch, "gh-work")
+
+
 def test_classify_does_not_ask_ssh_about_https(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
