@@ -5,7 +5,7 @@ status: active
 branch: feature/non-github-remotes
 created: 2026-10-09T18:26:35-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/44
 ---
 
 # Detect remotes that cannot host a PR
@@ -108,3 +108,4 @@ hosts and `owner/repo`, never real projects.
   - Base: `dev` at `458ecf9`
   - Worktree: `.worktrees/non-github-remotes`
   - PR: pending
+- **2026-10-09T20:06:50-07:00** — PR opened: https://github.com/gitronald/planners/pull/44
