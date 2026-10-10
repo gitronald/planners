@@ -46,7 +46,7 @@ WIDE_HEADER = ("#", "Plan", "Status", "Branch", "Created", "Concluded", "PR")
 
 def _concluded_key(meta: PlanMetadata) -> tuple[int, float]:
     # Present instants sort before missing/unparseable; newer instant first.
-    instant = parse_instant(meta.concluded, naive_utc=True)
+    instant = parse_instant(meta.concluded)
     return (1, instant) if instant is not None else (0, 0.0)
 
 

@@ -123,20 +123,21 @@ def render_frontmatter_line(key: str, value: str | None) -> str:
     return f"{key}: {value}"
 
 
-def parse_instant(value: str | None, *, naive_utc: bool = False) -> float | None:
+def parse_instant(value: str | None) -> float | None:
     """Parse an ISO-8601 timestamp to a comparable UTC instant (epoch seconds).
 
     Returns ``None`` for empty/null or unparseable values. Comparing the parsed
     instant — rather than the raw string — keeps ordering correct across plans
     written with different UTC offsets, where lexical order does not match
-    chronological order. Naive values use local time unless ``naive_utc`` is set.
+    chronological order. A value with no offset is read as UTC, so the order
+    does not depend on the time zone of the machine reading it.
     """
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(value)
-        if naive_utc and parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.timestamp()
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
