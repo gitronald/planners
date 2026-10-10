@@ -109,3 +109,46 @@ hosts and `owner/repo`, never real projects.
   - Worktree: `.worktrees/non-github-remotes`
   - PR: pending
 - **2026-10-09T20:06:50-07:00** — PR opened: https://github.com/gitronald/planners/pull/44
+- **2026-10-09T20:08:05-07:00** — Steps 1-5 implemented.
+  - `planners/remote.py`: `RemoteKind`, `classify`, `url_host`, `gh_hosts`,
+    `effects`. The host table holds `git.overleaf.com` (single-branch, checked
+    against Overleaf's git docs: "The Overleaf Git system does not support
+    branching") and `gitlab.com`, `bitbucket.org`, `codeberg.org`, `gitea.com`,
+    `git.sr.ht` (other-forge). `gh` hosts come from `GH_HOST` and the top-level
+    keys of `hosts.yml` (`GH_CONFIG_DIR`, then `XDG_CONFIG_HOME/gh`, then
+    `~/.config/gh`), parsed without a YAML dependency.
+  - Decision: the override is the git config key `planners.remoteKind`. The
+    repo had no config file to extend, and a git key works in any repo; an
+    unknown value is ignored with a warning.
+  - `planners remote [--json]` prints the kind, host, deciding rule, and
+    effects. `implemented` drops the no-upstream refusal for every kind but
+    `github` and prints `origin is <kind>: the branch needs no upstream`.
+  - Skills: `implement` (steps 2, 3, 4, 6, 7), `close` (opening), `update`
+    (activate, implemented), and `pipeline` (handoff contract) branch on
+    `planners remote`. README and CHANGELOG updated.
+  - Tests: `tests/test_remote.py` (URL forms, every kind, gh hosts, override,
+    command output); `implemented` parametrized over kinds. The conftest now
+    points `GH_CONFIG_DIR` at an empty directory so a developer's gh hosts do
+    not leak in. The existing no-upstream test used a local bare repo as its
+    "GitHub" remote and now pins `planners.remoteKind github`.
+  - Checks: 546 passed, ruff and pyrefly clean.
+
+## Handoff
+
+State: steps 1-5 committed and pushed on `feature/non-github-remotes` (PR #44).
+
+Open questions for the review gate:
+
+1. A local-path or unknown-host SSH remote now classifies as `bare` and loses
+   the upstream check that `implemented` applied before. That is the plan's
+   rule, but it changes behavior for anyone using a self-hosted bare remote
+   with PR-less review today. Accept, or keep the check for `bare`?
+2. `finish --no-pr` still requires the base's upstream to contain the branch,
+   so on a `single-branch` remote it forces the live publish before cleanup.
+   Left unchanged here (the skill now asks before that push). Follow-up plan,
+   or in scope?
+3. The override is per-clone git config, not a committed file, so collaborators
+   each set it. Acceptable for now?
+
+Not verified: classification against a real enterprise GitHub host or a real
+Overleaf project (fixtures only, by design: no network probes).
