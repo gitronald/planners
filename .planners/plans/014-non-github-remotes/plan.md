@@ -1,8 +1,8 @@
 ---
 id: 14
 slug: non-github-remotes
-status: draft
-branch:
+status: active
+branch: feature/non-github-remotes
 created: 2026-10-09T18:26:35-07:00
 concluded:
 pr:
@@ -100,3 +100,11 @@ hosts and `owner/repo`, never real projects.
 - Mis-classifying a GitHub remote as `other` would silently drop the upstream
   check. Default unknown `https` hosts to `bare` only after checking `gh`'s
   configured hosts, and print the kind in every command that branches on it.
+
+## Log
+
+- **2026-10-09T20:03:52-07:00** — Activated.
+  - Branch: `feature/non-github-remotes`
+  - Base: `dev` at `458ecf9`
+  - Worktree: `.worktrees/non-github-remotes`
+  - PR: pending
