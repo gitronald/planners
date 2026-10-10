@@ -248,6 +248,25 @@ class PlanMetadata(_Serializable):
         """Emit a full plan file: canonical frontmatter, then the title heading."""
         return f"{self.render_frontmatter()}\n# {self.title}\n"
 
+    def to_record(self) -> dict[str, int | str | None]:
+        """The frontmatter fields and title as a JSON-ready dict, in canonical order.
+
+        Values are as written: timestamps stay strings, and the nullable fields
+        keep the empty-vs-``None`` distinction (``""`` pending, ``None`` N/A).
+        ``sub`` is always present, ``""`` for an ordinary or umbrella plan.
+        """
+        return {
+            "id": self.id,
+            "slug": self.slug,
+            "sub": self.sub,
+            "status": self.status.value,
+            "branch": self.branch,
+            "created": self.created,
+            "concluded": self.concluded,
+            "pr": self.pr,
+            "title": self.title,
+        }
+
     def validate(self) -> list[str]:
         """Return a list of human-readable rule violations (empty = valid)."""
         errors: list[str] = []

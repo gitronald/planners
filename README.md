@@ -77,7 +77,7 @@ planners subplans <NNN>                  # list nested subplans; fail if the umb
 planners review                          # report what changed around each open plan (-s all, --json); reads only
 planners base                            # print the repo's mainline branch (--all: every one)
 planners index .                         # regenerate .planners/README.md
-planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check)
+planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check; --json prints parsed records)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
 planners rule <name>                     # print a bundled convention rule body

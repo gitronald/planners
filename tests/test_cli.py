@@ -1,5 +1,6 @@
 """End-to-end tests for the CLI commands via Typer's runner."""
 
+import json
 import subprocess
 from importlib import metadata
 from pathlib import Path
@@ -1316,6 +1317,92 @@ def test_validate_with_no_argument_still_fails_on_an_empty_repo(
     result = runner.invoke(app, ["validate"])
     assert result.exit_code == 1
     assert "no plan files matched" in result.output
+
+
+def test_validate_json_reports_records_as_written(tmp_path: Path) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    closed = (
+        "---\nid: 2\nslug: done-thing\nstatus: done\nbranch: null\n"
+        "created: 2026-06-07T12:00:00-07:00\nconcluded: 2026-06-08T09:00:00-07:00\n"
+        "pr: null\n---\n\n# Done thing\n"
+    )
+    _write_plan(plans, "002-done-thing", closed)
+
+    result = runner.invoke(app, ["validate", "--json", str(plans)])
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    assert document["ok"] is True
+    assert document["subplan_errors"] == []
+    assert document["stale_index"] == []
+    first, second = document["plans"]
+    assert first["path"] == str(plans / "001-thing" / "plan.md")
+    assert first["errors"] == []
+    assert first["plan"] == {
+        "id": 1,
+        "slug": "thing",
+        "sub": "",
+        "status": "active",
+        "branch": "feature/thing",
+        "created": "2026-06-07T12:00:00-07:00",
+        "concluded": "",
+        "pr": "",
+        "title": "Thing",
+    }
+    # empty (pending) and null (closed, N/A) stay distinct
+    assert second["plan"]["branch"] is None
+    assert second["plan"]["pr"] is None
+
+
+def test_validate_json_keeps_the_record_of_a_plan_that_breaks_a_rule(
+    tmp_path: Path,
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN.replace("pr:", "pr: none"))
+    _write_plan(plans, "002-broken", "no frontmatter here\n")
+
+    result = runner.invoke(app, ["validate", "--json", str(plans)])
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert document["ok"] is False
+    invalid, unparsed = document["plans"]
+    assert invalid["plan"]["pr"] == "none"
+    assert invalid["errors"] == ["pr is the literal string 'none'; use empty or null"]
+    assert unparsed["plan"] is None
+    assert unparsed["errors"] == ["missing YAML frontmatter"]
+    # the violations live in the document, not on stderr
+    assert "use empty or null" not in result.stderr
+
+
+def test_validate_json_reports_a_stale_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", "--json", "."])
+    assert result.exit_code == 1
+    document = json.loads(result.stdout)
+    assert document["ok"] is False
+    assert document["plans"][0]["errors"] == []
+    assert len(document["stale_index"]) == 1
+    assert document["stale_index"][0].endswith(".planners/README.md")
+
+
+@pytest.mark.parametrize(("flags", "code"), [([], 1), (["--allow-empty"], 0)])
+def test_validate_json_on_an_empty_match(
+    flags: list[str], code: int, tmp_path: Path
+) -> None:
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    result = runner.invoke(app, ["validate", "--json", *flags, str(tmp_path)])
+    assert result.exit_code == code
+    document = json.loads(result.stdout)
+    assert document["plans"] == []
+    assert document["ok"] is (code == 0)
 
 
 def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
