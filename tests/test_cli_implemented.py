@@ -364,3 +364,27 @@ def test_implemented_counts_against_the_remote_base(
     assert "— Implemented: 1 commit ahead of `main`." in path.read_text(
         encoding="utf-8"
     )
+
+
+def test_implemented_refuses_a_branch_the_plan_does_not_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root)
+    subprocess.run(["git", "checkout", "-qb", "feature/other"], cwd=root, check=True)
+    _with_remote(root, tmp_path / "remote.git", push=False)
+    subprocess.run(
+        ["git", "push", "-qu", "origin", "feature/other"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert (
+        "records branch 'feature/my-thing', but HEAD is on 'feature/other'"
+        in result.output
+    )
+    assert "status: active" in path.read_text(encoding="utf-8")

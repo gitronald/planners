@@ -99,13 +99,8 @@ def _git_out(root: Path, args: list[str]) -> str | None:
     an inherited ``GIT_DIR`` silently answers about another repo entirely and the
     guard clears a branch it never inspected.
     """
-    try:
-        result = proc.run(root, ["git", *args], capture_output=True)
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
+    out = proc.git_out(root, args)
+    return out.strip() if out is not None else None
 
 
 def _is_repo(root: Path) -> bool:

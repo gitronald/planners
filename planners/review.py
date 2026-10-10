@@ -36,7 +36,7 @@ from planners.metadata import (
     Status,
 )
 from planners.subplans import UNFINISHED_STATUSES, SubplanMetadata
-from planners.utils import split_frontmatter
+from planners.utils import parse_instant, split_frontmatter
 
 __all__ = [
     "DEFAULT_STATUSES",
@@ -249,12 +249,13 @@ def last_review(body: str) -> str | None:
         return None
     lines = body.splitlines()[span[0] : span[1]]
     best: tuple[float, str] | None = None
-    for line in lines:
-        match = _MARKER_RE.match(line)
+    # A fenced marker is an example of the format, not a review that happened.
+    for line, fenced in zip(lines, fenced_lines(lines), strict=True):
+        match = None if fenced else _MARKER_RE.match(line)
         if not match:
             continue
         stamp = match.group(1).strip()
-        instant = _instant(stamp)
+        instant = parse_instant(stamp)
         if instant is None:
             continue
         if best is None or instant > best[0]:
@@ -318,15 +319,6 @@ def extract_plan_refs(body: str, own: str) -> list[str]:
         if ref != own and ref not in seen:
             seen.append(ref)
     return seen
-
-
-def _instant(value: str | None) -> float | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except ValueError:
-        return None
 
 
 def _date(value: str | None) -> str | None:
@@ -647,22 +639,26 @@ def _summary(git: _Git, plans: list[_Plan], shallow: bool) -> list[SummaryRow]:
                 git.log(["--no-merges", "HEAD", "--", *dirs]) if has_head else []
             )
             commits = len({c.sha for c in found})
-            newest = max(found, key=lambda c: _instant(c.date) or 0.0, default=None)
+            newest = max(
+                found, key=lambda c: parse_instant(c.date) or 0.0, default=None
+            )
             last = _date(newest.date) if newest else None
         created = [
-            p.meta.created for p in group if _instant(p.meta.created) is not None
+            p.meta.created for p in group if parse_instant(p.meta.created) is not None
         ]
         concluded = [
-            p.meta.concluded for p in group if _instant(p.meta.concluded) is not None
+            p.meta.concluded
+            for p in group
+            if parse_instant(p.meta.concluded) is not None
         ]
         return SummaryRow(
             status=status,
             plans=len(group),
             commits=commits,
-            creation_date=_date(min(created, key=lambda v: _instant(v) or 0.0))
+            creation_date=_date(min(created, key=lambda v: parse_instant(v) or 0.0))
             if created
             else None,
-            closed_date=_date(max(concluded, key=lambda v: _instant(v) or 0.0))
+            closed_date=_date(max(concluded, key=lambda v: parse_instant(v) or 0.0))
             if concluded
             else None,
             last_date=last,
@@ -822,7 +818,7 @@ def gather(
 
         commits: list[Commit] | None = None
         tags: list[Tag] = []
-        if not shallow and _instant(start) is not None:
+        if not shallow and parse_instant(start) is not None:
             # An active plan is judged from its branch tip, so its window
             # includes the branch's own commits.
             commits = [
@@ -832,9 +828,11 @@ def gather(
                 )
                 if not _TOOL_SUBJECT_RE.match(c.subject)
             ]
-            since = _instant(start) or 0.0
+            since = parse_instant(start) or 0.0
             tags = [
-                t for t in git.tags(evidence_rev) if (_instant(t.date) or 0.0) >= since
+                t
+                for t in git.tags(evidence_rev)
+                if (parse_instant(t.date) or 0.0) >= since
             ]
 
         code_refs = [

@@ -3,7 +3,12 @@
 from hypothesis import given
 from hypothesis import strategies as st
 
-from planners.utils import is_safe_slug, parse_frontmatter, split_frontmatter
+from planners.utils import (
+    is_safe_slug,
+    parse_frontmatter,
+    parse_instant,
+    split_frontmatter,
+)
 
 
 def test_split_no_fence_is_lossless() -> None:
@@ -83,3 +88,14 @@ def test_is_safe_slug_rejects_traversal_and_separators() -> None:
     assert not is_safe_slug("UPPER")
     assert not is_safe_slug("a--b")
     assert not is_safe_slug("")
+
+
+def test_parse_instant_reads_a_value_with_no_offset_as_utc() -> None:
+    assert parse_instant("2026-06-07T12:00:00") == parse_instant(
+        "2026-06-07T12:00:00+00:00"
+    )
+    assert parse_instant("2026-06-07T12:00:00-07:00") == parse_instant(
+        "2026-06-07T19:00:00+00:00"
+    )
+    assert parse_instant("") is None
+    assert parse_instant("not-a-date") is None

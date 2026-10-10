@@ -394,3 +394,15 @@ def test_the_first_row_for_a_letter_is_the_one_kept_in_step() -> None:
     out = write_table(text, [_sub("b", "done")])
     assert "| b | one | done |  |\n" in out
     assert "| b | two | draft | |\n" in out
+
+
+def test_write_table_leaves_a_fenced_example_table_alone() -> None:
+    example = "```\n| Sub | Status |\n|---|---|\n| b | draft |\n```\n"
+    text = (
+        f"{TABLE_START}\n{example}\n"
+        "| Sub | Status |\n|---|---|\n| b | draft |\n"
+        f"{TABLE_END}\n"
+    )
+    out = write_table(text, [_sub("b", "active")])
+    assert example in out
+    assert out.endswith(f"| b | active |\n{TABLE_END}\n")
