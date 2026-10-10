@@ -1,5 +1,6 @@
 """CLI tests for ``retire``."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -245,3 +246,36 @@ def test_retire_closes_an_umbrella_whose_subplans_are_finished(
     result = runner.invoke(app, ["retire", "015", "--no-commit"])
     assert result.exit_code == 0, result.output
     assert "status: retired" in (plans / "015-follow-up" / "plan.md").read_text()
+
+
+def test_retire_keeps_other_staged_changes_out_of_its_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path, git=True)
+    (tmp_path / "unrelated.txt").write_text("staged by hand\n", encoding="utf-8")
+    subprocess.run(["git", "add", "unrelated.txt"], cwd=tmp_path, check=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["retire", "005", "--into", "015"])
+    assert result.exit_code == 0, result.output
+
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert "unrelated.txt" not in changed
+    # Still staged, as the user left it.
+    assert git_out(tmp_path, "diff", "--cached", "--name-only").split() == [
+        "unrelated.txt"
+    ]
+
+
+def test_retire_refuses_an_umbrella_with_an_unreadable_subplan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = _repo(tmp_path)
+    sub = plans / "015-follow-up" / "subplans" / "d-step.md"
+    sub.write_text(_SUBPLAN.replace("status: blocked", "status: actve"))
+    before = (plans / "015-follow-up" / "plan.md").read_text()
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["retire", "015", "--no-commit"])
+    assert result.exit_code == 1
+    assert "plan 015 has subplans that cannot be read" in result.output
+    assert (plans / "015-follow-up" / "plan.md").read_text() == before

@@ -667,3 +667,12 @@ def test_pr_state_passes_the_target_after_end_of_flags(
     state = review_mod._pr_state(tmp_path, "--web", enabled=True)
     assert state is not None and state.state == "open"
     assert calls[0][-2:] == ["--", "--web"]
+
+
+def test_last_review_skips_a_fenced_example_marker() -> None:
+    body = (
+        "## Log\n\n"
+        "- **2026-06-01T12:00:00-07:00** — Review: still open.\n\n"
+        "```\n- **2099-01-01T00:00:00-07:00** — Review: moot.\n```\n"
+    )
+    assert last_review(body) == "2026-06-01T12:00:00-07:00"

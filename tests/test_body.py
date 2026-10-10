@@ -183,3 +183,12 @@ def test_a_heading_with_tabs_and_trailing_space_is_read() -> None:
     assert section_span("## Log #  \n", "Log") == (0, 1)
     # No space after the opening run is not a heading.
     assert section_span("##Log\n", "Log") is None
+
+
+def test_set_frontmatter_key_drops_a_duplicate_the_parser_would_read() -> None:
+    # The parser keeps the last of two lines; a write that replaced only the first
+    # would leave the old value in force.
+    text = "---\nstatus: draft\nslug: x\nstatus: active\n---\n\n# T\n"
+    assert set_frontmatter_key(text, "status", "done") == (
+        "---\nstatus: done\nslug: x\n---\n\n# T\n"
+    )

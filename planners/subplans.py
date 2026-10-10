@@ -367,7 +367,7 @@ def _find_table(text: str) -> _Table | None:
     status_col: int | None = None
     rows: dict[str, int] = {}
     for i in range(start + 1, end):
-        if not lines[i].strip().startswith("|"):
+        if fenced[i] or not lines[i].strip().startswith("|"):
             continue
         cells = _cells(lines[i])
         if header is None:
