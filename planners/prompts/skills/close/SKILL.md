@@ -32,6 +32,10 @@ request is silent, run the default.
 ### 1. Read the plan and gather context
 
 Read the plan's `# Title`, `status`, `branch`, and existing Log/Retrospective.
+The status is normally `implemented`, set by `{cli} implemented` when the work
+was pushed and the PR left draft. An `active` plan is accepted too: it skipped
+that step, and the gate below takes its PR out of draft. Any other status is not
+ready to close; stop and say which it is.
 Run `git log --oneline` for recent commits and `git diff --stat HEAD`; if there
 are uncommitted changes, stop and tell the user.
 
@@ -42,8 +46,8 @@ subplans, run:
 {cli} subplans {NNN} --require-closed
 ```
 
-It exits non-zero and lists every subplan that is `draft`, `active`, or
-`blocked`, and any row where the umbrella's table disagrees with the subplan
+It exits non-zero and lists every subplan that is `draft`, `active`,
+`implemented`, or `blocked`, and any row where the umbrella's table disagrees with the subplan
 frontmatter. Refuse to close while it fails. Each listed subplan is finished, or
 moved:
 
@@ -105,7 +109,9 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check &&
   uv run pytest` (the `ruff format --check` is easy to omit locally and is the
   usual reason CI fails a run that passed on the machine).
-- `gh pr ready <number>` — also a self-authored write, so the classifier can
+- `gh pr ready <number>` — usually done already by `{cli} implemented`; run it
+  for a plan that skipped that step (still `active`), and it is harmless on a PR
+  that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
   PR is still a draft and stop before the merge (a draft can't be merged). The
   same `Bash(gh pr ready:*)` allow-rule pre-authorizes it, or the user can mark
@@ -140,54 +146,80 @@ changed, key decisions, and what would help next time. Insight, not a summary.
 - Set `status: done`.
 - `{cli} index .` and commit the regenerated `.planners/README.md`.
 
-### 6. Commit, merge, clean up
+### 6. Commit, then finish from the main checkout
 
-The commands run in two places, and each block names its own. In the
-**worktree**, on the feature branch:
+The session runs this step itself, start to finish. See *Who runs the
+cleanup* below.
 
-```bash
-git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
-git push
-gh pr merge --merge
-[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
-```
-
-The last line releases whatever the repo has to release before the worktree
-goes. It is the counterpart of the setup step in `implement`, and the repo
-defines it the same way.
-
-Then in the **main checkout**, which is where the base is checked out (a
-worktree cannot check the base out a second time, and cannot remove itself):
+First commit and push the closing plan edit on the feature branch. Reach the
+worktree with a subshell, so the session's shell stays on the main checkout:
 
 ```bash
-git checkout "$({cli} base)" && git pull         # a no-op checkout when already on it
-git worktree remove .worktrees/<branch-suffix>   # if the work ran on a worktree
-git push origin --delete <branch>
-git merge-base --is-ancestor <branch> "$({cli} base)" && git branch -d <branch>
+(cd .worktrees/<branch-suffix> \
+  && git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md \
+  && git commit -m "plan [close]: {NNN} - <slug>" && git push)
 ```
 
-**Deleting the branch.** `git branch -d` tests the branch against its upstream
-or the current HEAD, not against the base, so it can refuse a branch that is
-merged: when the main checkout is on some other branch, or the upstream is
-already deleted. `git merge-base --is-ancestor <branch> <base>` is the test that
-matters, and it exits zero when the base contains the branch. When it passes and
-`-d` still refuses, check the base out and run `-d` again. Do not reach for
-`-D`: if the ancestor test fails, the branch holds commits the base does not,
-and that is the thing to report.
-
-Removing the worktree deletes its `.venv`, but worktrees share the main repo's
-`.git/hooks/` — a pre-commit hook installed from inside the worktree keeps its
-`INSTALL_PYTHON` pointed at that deleted venv, and every later commit in the
-repo fails. Check for this and re-install from the main checkout:
+Then, from the **main checkout**, merge the PR and finish:
 
 ```bash
-grep -q '\.worktrees/' .git/hooks/pre-commit 2>/dev/null \
-  && uv sync && uv run pre-commit install
+gh pr merge <N> --merge --subject "merge: PR #<N> - <branch>"
+{cli} finish {NNN}
 ```
 
-Never delete a mainline branch (`{cli} base --all` prints them) — only the
-feature branch just merged. Report: review run, plan closed, PR merged, branch
-and worktree cleaned up (hook re-pointed if needed).
+The subject follows the repo's merge-subject convention, with the branch cut
+with a trailing `...` past 60 characters. Leave out `--delete-branch`. On some
+`gh` versions it removes the branch's worktree as well, and `finish` deletes the
+branch itself. Right after a push, GitHub can report a PR as not mergeable while
+it recomputes. Poll `gh pr view <N> --json mergeable,mergeStateStatus` until it
+reads `MERGEABLE`, then merge.
+
+The merge is the session's own command, not part of `finish`, so the
+automation level still governs it. A permission rule sees only the command a
+session runs, not what that command runs in turn. `gh pr merge` is
+pre-authorized only at the `full` level (`{cli} permissions --level full`).
+Below it, the merge goes to the permission prompt or the classifier.
+
+`finish` does the rest in order, and prints a line for each step:
+
+1. It fetches with `--prune` and confirms the PR reads `MERGED`. If it does not, it stops and prints the
+   merge command.
+2. It checks that the worktree has nothing uncommitted and no commit the merged
+   base lacks (not its upstream, which GitHub may have deleted). It runs
+   `.planners/hooks/pre-worktree-remove` when the repo defines one (the
+   counterpart of the setup step in `implement`), then removes the worktree.
+3. It checks the base out and fast-forwards it. The main checkout is never
+   treated as a worktree; a branch checked out there is replaced by the base.
+4. It deletes the branch on the remote, and then locally, each only when the
+   base contains it. It never uses `-D` and never deletes a mainline branch.
+5. It commits the plan index when the merge left it stale. It does not push;
+   when it says it committed, run `git push`.
+6. It re-installs any hook in `.git/hooks/` whose `INSTALL_PYTHON` points into
+   `.worktrees/`. A hook installed from inside the worktree runs that worktree's
+   `.venv`, and the generated script skips quietly once the venv is gone.
+
+**When `finish` stops.** It exits 1 and leaves the state as it was when there is
+something to look at: a branch that is not merged, a worktree with uncommitted
+changes or commits the base lacks, a branch that holds such commits, an
+uncommitted edit to the plan index, or a `git` or `gh` call that was refused. Deal with what it names, then run `{cli} finish {NNN}` again.
+Each step that is already done is skipped, so the re-run picks up where the last
+one ended.
+
+Report: review run, plan closed, PR merged, and what `finish` printed.
+
+### Who runs the cleanup
+
+- **The session runs every cleanup step itself.** None of them needs a
+  decision, and the review gate has already passed.
+- **Hand a step to the user only after a call to it was refused**, and quote the
+  refusal. Never hand one off because a block seems likely. A session that
+  believes it cannot reach the main checkout tests that with one read-only
+  command run there (`git status`) before it says so.
+- **Keep the shell on the main checkout.** Reach the worktree with a subshell
+  (`(cd .worktrees/<name> && ...)`) or a pathspec, not with a bare `cd` in the
+  persistent shell. After a bare `cd`, the harness reports the worktree as the
+  session's working directory, which reads like an isolation block and is not
+  one.
 
 ## The no-PR path
 
@@ -218,40 +250,35 @@ Ask before step 1, but do not close the PR yet: a gate that finds a blocker
 can still end the close, and a PR closed early with a "merging locally"
 comment would then say something false.
 
-**Step 6 on the no-PR path.** In the **worktree**, on the feature branch, commit
-the closing plan edit and push the branch as usual; then, when the user chose
-to close an existing PR unmerged, close it now:
+**Step 6 on the no-PR path.** Commit and push the closing plan edit on the
+feature branch as in step 6. Then, when the user chose to close an existing PR
+unmerged, close it now:
 
 ```bash
-git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md && git commit -m "plan [close]: {NNN} - <slug>"
-git push
-gh pr close <number> --comment "Closing unmerged; the branch is merged locally into $({cli} base)."   # only when a PR was open
-[ -x .planners/hooks/pre-worktree-remove ] && .planners/hooks/pre-worktree-remove
+gh pr close <number> --comment "Closing unmerged; the branch is merged locally into $({cli} base)."
 ```
 
-Then in the **main checkout**, where the base is checked out, merge the branch
-with a merge commit whose subject follows the repo's merge-subject convention
-(for a merge made without a PR, name the branch: `merge: <branch>`, truncated
-with a trailing `...` past the commit-length limit):
+Then, from the **main checkout**, merge the branch, push, and finish:
 
 ```bash
 git checkout "$({cli} base)" && git pull
 git merge --no-ff <branch> -m "merge: <branch>"
-{cli} index .
-git add .planners/README.md && git commit -m "update plan index after merge"   # only when the index changed
 git push
+{cli} finish {NNN} --no-pr
 ```
 
-The index is marked `merge=union`, so the local merge does not conflict on it —
-but union can leave a plan's row duplicated when both branches rewrote it, and
-`{cli} validate` fails on an index that disagrees with the frontmatter. The
-`{cli} index .` after the merge is that repair; skip the commit when it changed
-nothing. The repo's `post-merge` hook runs the same regeneration after a clean
-merge, so often the index is already current and only the commit remains.
+For a merge made without a PR, the subject names the branch, cut with a
+trailing `...` past 60 characters. The plan records `pr: null`, which takes the
+no-PR path without the flag; the flag says so out loud. `finish` checks that the
+base's upstream contains the branch, and stops with the merge command if it
+does not. The rest is the same as step 6: the worktree, the branches, the index,
+and the hooks.
 
-Then the cleanup, as in the default step 6: remove the worktree, delete the
-branch on the remote and locally after the `merge-base --is-ancestor` test, and
-re-point the pre-commit hook if the worktree had installed it.
+The index is marked `merge=union`, so the local merge does not conflict on it.
+Union can leave a plan's row duplicated when both branches rewrote it, though,
+and `{cli} validate` fails on an index that disagrees with the frontmatter. The
+repo's `post-merge` hook regenerates it after a clean merge, and `finish`
+regenerates it again and commits it when it changed.
 
 Report: review run (and at which gate), plan closed, branch merged locally with
 no PR (or: existing PR closed unmerged, then merged locally), branch and

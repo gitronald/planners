@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
+### Added
+
+- An `implemented` status: the implementation is finished and pushed, and
+  its PR waits on review. It is open, sorts after `active` in the index, and
+  an umbrella cannot close or retire over a subplan in it.
+- `planners implemented <NNN>` flips an active plan or nested subplan to
+  `implemented`, logs how many commits the branch carries past its base,
+  commits on the feature branch, and takes the PR out of draft. It refuses
+  while the branch has uncommitted or unpushed work, and on the mainline or a
+  detached HEAD. A re-run finishes a run whose commit failed.
+- `planners activate` appends a standard Log entry naming the branch, the
+  base and commit, the worktree, and the PR. `--worktree <path>` records a
+  repo-relative worktree, and `--no-worktree` the main checkout.
+- `planners set-pr` appends a `PR opened` Log entry.
+- `planners finish <NNN>` runs the cleanup after a closed plan's branch is
+  merged, from the main checkout. It removes the worktree (running
+  `.planners/hooks/pre-worktree-remove` first), pulls the base, deletes the
+  branch on the remote and locally when the base contains it, commits a stale
+  plan index, and re-installs any hook whose `INSTALL_PYTHON` points into
+  `.worktrees/`. It stops on a branch that is not merged yet (printing the
+  merge command), a worktree with uncommitted changes or commits the base
+  lacks, a hand-edited plan index, or a refused call, and a re-run skips the steps already done. The
+  merge itself stays the session's own `gh pr merge` or `git merge`, so the
+  automation level still governs it.
+
+### Changed
+
+- The `close` skill's last step is now: commit and push the closing edit, merge,
+  then `planners finish`. The `close` and `pipeline` skills and the rule say
+  that the session runs every cleanup step itself, and hands one to the user
+  only after a call to it was refused.
+- `planners activate` returns an `implemented` plan to `active` on its
+  feature branch, without the mainline guard, and logs `Reactivated`.
+- `planners review` includes `implemented` plans by default and treats them
+  as work in progress, like `active` and `blocked`.
+- The `implement` and `pipeline` skills end with `planners implemented`, and
+  `close` accepts an `implemented` or `active` plan.
+
+### Fixed
+
+- `planners review` passes a plan's branch or PR to `gh pr view` after
+  `--`, so a value starting with `-` is read as the target, not a flag.
+
 ## [0.10.0] - 2026-10-09
 
 ### Added

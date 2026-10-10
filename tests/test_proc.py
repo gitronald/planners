@@ -91,3 +91,47 @@ def test_run_propagates_a_missing_binary(tmp_path: Path) -> None:
     """A missing tool raises, so each caller can translate it into its own idiom."""
     with pytest.raises(FileNotFoundError):
         proc.run(tmp_path, ["planners-not-a-real-binary"], capture_output=True)
+
+
+def test_worktrees_lists_the_main_checkout_first(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "a",
+        ],
+        cwd=root,
+        check=True,
+    )
+    linked = tmp_path / "linked"
+    detached = tmp_path / "detached"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "feature/x", str(linked)],
+        cwd=root,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "--detach", str(detached)],
+        cwd=root,
+        check=True,
+    )
+    found = [(path.resolve(), branch) for path, branch in proc.worktrees(root)]
+    # Main first; git orders the linked ones by path.
+    assert found[0] == (root.resolve(), "main")
+    assert sorted(found[1:], key=str) == sorted(
+        [(linked.resolve(), "feature/x"), (detached.resolve(), None)], key=str
+    )
+
+
+def test_worktrees_is_empty_outside_a_repo(tmp_path: Path) -> None:
+    assert proc.worktrees(tmp_path) == []

@@ -22,13 +22,13 @@ only status changes are retirements the user confirms.
 ### 1. Gather the evidence
 
 ```bash
-{cli} review --json                 # open plans: active, draft, blocked
+{cli} review --json                 # open plans: active, implemented, draft, blocked
 {cli} review --json -s done -s retired   # closed plans, for drift
 {cli} review --json -s all
 {cli} review --json 011             # one plan, whatever its status
 ```
 
-`--stale-days N` (default 14) sets when an active or blocked plan's branch
+`--stale-days N` (default 14) sets when an active, implemented, or blocked plan's branch
 counts as idle. A repo on the legacy `docs/plans/` + `TODO.md` layout is
 refused; it needs migrating to `.planners/` first.
 
@@ -47,7 +47,7 @@ The report holds:
   in it, each backticked path or `module.function` the plan names with
   `present`, `missing`, or `unresolved` and the commits that changed it, the
   other plans it names with their status, its nested subplans, and `flags`.
-  An active or blocked plan also carries `branch_state` (local, origin,
+  An active, implemented, or blocked plan also carries `branch_state` (local, origin,
   commits ahead, last commit, worktree, dirty) and `pr_state`.
 
 A field that is `null` is unknown (no `gh`, no remote, a shallow clone), not
@@ -80,10 +80,10 @@ The report is where to look, not the verdict. For each plan:
 | moot | its premise no longer holds | propose `{cli} retire <NNN> --note "..."` |
 | unclear | evidence conflicts | log the question, no status change |
 
-**Active and blocked plans get care.** Someone may be working on them right
+**Active, implemented, and blocked plans get care.** Someone may be working on them right
 now, in another session, a worktree, or a branch that is not pushed.
 
-- Never edit an active or blocked plan's file, on any branch, and never touch
+- Never edit an active, implemented, or blocked plan's file, on any branch, and never touch
   its branch or worktree. Write its entry as a suggestion in your report, for
   the owner to paste where the work lives.
 - Judge from the branch, not the mainline: the report's references for these
@@ -102,7 +102,7 @@ review never reopens a closed plan.
 
 ### 4. Write the Log entries
 
-Every reviewed plan that is not active or blocked gets one entry, appended to
+Every reviewed plan that is not active, implemented, or blocked gets one entry, appended to
 its `## Log` (create the section before `## Handoff` or `## Retrospective` if
 absent). It opens with the fixed marker, which the next review reads as the
 start of its window:
@@ -119,7 +119,7 @@ narrowed plan, the entry states the remaining scope. Never edit the plan's
 ### 5. Present, then commit
 
 Show the user one table: plan, status, verdict, and the proposed action. Then
-show the suggested entries for active and blocked plans, which you did not
+show the suggested entries for active, implemented, and blocked plans, which you did not
 write. Wait for the user before committing.
 
 ```bash
@@ -129,7 +129,7 @@ write. Wait for the user before committing.
 It commits only plan files whose `## Log` changed, as `plan [review]: <N>
 plans`, with a refreshed index, on the mainline (it refuses elsewhere;
 `--allow-branch` overrides). It refuses the whole commit when one of those
-files changed outside its Log or is an active or blocked plan, so revert the
+files changed outside its Log or is an active, implemented, or blocked plan, so revert the
 stray edit rather than forcing it.
 
 Then retire only the plans the user confirms, one `{cli} retire` each, which

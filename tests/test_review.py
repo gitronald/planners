@@ -18,7 +18,7 @@ from planners.review import (
     gather,
     last_review,
 )
-from tests.helpers import git_out, init_git
+from tests.helpers import git, git_out, init_git
 
 runner = CliRunner()
 
@@ -58,10 +58,6 @@ def _commit(root: Path, message: str, date: str) -> None:
     env = {**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
     subprocess.run(["git", "commit", "-qm", message], cwd=root, check=True, env=env)
-
-
-def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
 
 
 DRAFT_BODY = (
@@ -161,7 +157,7 @@ def repo(tmp_path: Path) -> Path:
 
     _write(root, "pyproject.toml", "[project]\nversion = '0.1.1'\n")
     _commit(root, "version [patch]: 0.1.1", "2026-03-12T10:00:00-08:00")
-    _git(root, "tag", "v0.1.1")
+    git(root, "tag", "v0.1.1")
 
     path = root / plans / "001-draft-idea" / "plan.md"
     path.write_text(path.read_text() + "- **2026-03-15T10:00:00-08:00** — Note.\n")
@@ -170,12 +166,12 @@ def repo(tmp_path: Path) -> Path:
     _write(root, "docs/notes.md", "more notes\n")
     _commit(root, "touch docs", "2026-03-18T10:00:00-08:00")
 
-    _git(root, "checkout", "-q", "-b", "feature/active-work")
+    git(root, "checkout", "-q", "-b", "feature/active-work")
     _write(root, "src/new.py", "def build():\n    pass\n")
     _commit(root, "work on active", "2026-03-21T10:00:00-08:00")
-    _git(root, "checkout", "-q", "main")
+    git(root, "checkout", "-q", "main")
     worktree = tmp_path / "wt"
-    _git(root, "worktree", "add", "-q", str(worktree), "feature/active-work")
+    git(root, "worktree", "add", "-q", str(worktree), "feature/active-work")
     (worktree / "scratch.txt").write_text("in progress\n")
     return root
 
@@ -604,7 +600,7 @@ def test_cli_commit_carries_log_entries_only(cli_repo: Path) -> None:
 def test_cli_commit_leaves_other_staged_files_out(cli_repo: Path) -> None:
     _append_log(cli_repo, DRAFT, ENTRY)
     (cli_repo / "src" / "app.py").write_text("staged elsewhere\n")
-    _git(cli_repo, "add", "src/app.py")
+    git(cli_repo, "add", "src/app.py")
     result = runner.invoke(app, ["review", "--commit"])
     assert result.exit_code == 0, result.output
     changed = git_out(cli_repo, "show", "--name-only", "--format=", "HEAD").split()
@@ -649,10 +645,25 @@ def test_cli_commit_with_nothing_to_commit(cli_repo: Path) -> None:
 
 
 def test_cli_commit_is_guarded_off_the_mainline(cli_repo: Path) -> None:
-    _git(cli_repo, "checkout", "-q", "-b", "elsewhere")
+    git(cli_repo, "checkout", "-q", "-b", "elsewhere")
     _append_log(cli_repo, DRAFT, ENTRY)
     result = runner.invoke(app, ["review", "--commit"])
     assert result.exit_code == 1
     assert "not a mainline branch" in result.output
     allowed = runner.invoke(app, ["review", "--commit", "--allow-branch"])
     assert allowed.exit_code == 0, allowed.output
+
+
+def test_pr_state_passes_the_target_after_end_of_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(root: Path, args: list[str], **_: object):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, '{"state": "OPEN", "url": "u"}', "")
+
+    monkeypatch.setattr(review_mod.proc, "run", fake_run)
+    state = review_mod._pr_state(tmp_path, "--web", enabled=True)
+    assert state is not None and state.state == "open"
+    assert calls[0][-2:] == ["--", "--web"]

@@ -25,7 +25,7 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 `{cli} validate` fails when the tracked index disagrees with the plan frontmatter, so an
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
 with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
-`retire`) already do that; a hand-written `log`/`close` edit is the case to remember — run
+`implemented`, `retire`) already do that; a hand-written `log`/`close` edit is the case to remember — run
 `{cli} index .` before committing. (`validate --no-index` skips the index comparison, for a
 caller checking plans in a repo whose index it cannot regenerate.) The same check catches a
 merge: `install` marks the index `merge=union` in `.gitattributes`, so a **local** merge
@@ -89,11 +89,20 @@ keys above. `{cli} schema PlanMetadata` is the authority on both.
 > still keyed `completed:` fails `validate` (its `concluded` parses empty) until the key is
 > renamed; rename the first frontmatter occurrence per file when migrating.
 
-`status` is one of `draft`, `active`, `blocked`, `done`, `inactive`, `retired` (the shipped
-enum; the neutral terminal status is `retired`, with no failure connotation). Update it as work
-progresses: `draft` -> `active` -> `done` (or `retired`).
+`status` is one of `draft`, `active`, `implemented`, `blocked`, `done`, `inactive`, `retired`
+(the shipped enum; the neutral terminal status is `retired`, with no failure connotation). Update
+it as work progresses: `draft` -> `active` -> `implemented` -> `done` (or `retired`).
+Use `implemented` once the implementation is **finished and its PR is ready for review**:
+everything committed and pushed, waiting on a person to accept the work. `{cli} implemented
+{NNN}` sets it from `active`, appends a Log entry, commits on the feature branch, and takes the
+PR out of draft (`gh pr ready`); it refuses while the branch has uncommitted or unpushed work, and on the mainline.
+It is an open state, so `concluded` stays empty and an umbrella does not close over a subplan
+in it. It closes nothing: merging, the Retrospective, and `concluded` stay with `close`. Review
+feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the
+feature branch.
 Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
-they have. It is an open state like `active`, so `concluded` stays empty and nothing closes over
+they have. It differs from `implemented`, which waits on a person to accept finished work;
+`blocked` waits for something the work itself needs. It is an open state like `active`, so `concluded` stays empty and nothing closes over
 it. It is distinct from `draft` (not started) and `inactive` (set aside). Say what it waits on:
 in the plan's Handoff section, or for a nested subplan in the Note column of the umbrella's table.
 Use `inactive` for a plan that is parked or set aside without being implemented — considered
@@ -113,6 +122,23 @@ not the current time or an estimate. Fill it for `done` and `retired`; leave it 
 `inactive` plans (they were parked, not concluded).
 Fill `pr` with the full PR URL (e.g., `https://github.com/owner/repo/pull/1`), not just the
 number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
+
+**Generated Log entries.** `{cli} activate` appends a standard entry to the plan's `## Log`
+(creating the section, ahead of Handoff and Retrospective, when it is missing), so every plan
+records where its work lives:
+
+    - **2026-01-01T12:00:00-08:00** — Activated.
+      - Branch: `feature/<slug>`
+      - Base: `dev` at `abc1234`
+      - Worktree: `.worktrees/<slug>`
+      - PR: pending
+
+`Base` is the branch and commit the activation sits on. `Worktree` defaults to
+`.worktrees/<branch-suffix>`; `--worktree <path>` records another repo-relative path, and
+`--no-worktree` records the main checkout. An absolute path is refused. `set-pr` adds `PR opened:
+<url>` and `implemented` adds `Implemented: <n> commits ahead of <base>`, each a one-line entry,
+so the Log reads as a timeline: activated, PR opened, implemented. A re-run of `activate` on an
+active plan writes no second entry; a return from `implemented` writes `Reactivated`.
 
 **Empty vs `null`.** An empty value (`pr:`) means "pending / not yet determined" — use it for
 a field that may still be filled (an open plan's `concluded`/`pr`, or a branch not yet
@@ -228,7 +254,7 @@ hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--
   workstream and splitting by order disagree, split by order.
 - **A subplan closes when its own work is finished**, not when the effort is.
 - **An umbrella does not close over unfinished subplans.** `{cli} subplans <NNN>
-  --require-closed` fails while one is `draft`, `active`, or `blocked`, and
+  --require-closed` fails while one is `draft`, `active`, `implemented`, or `blocked`, and
   `{cli} retire <NNN>` refuses the umbrella for the same reason. Each is finished, or
   moved: a step carried to a follow-up plan closes as `retired` with `moved_to: <NNN>`
   (`{cli} retire <NNN><letter> --into <NNN>`), and one that was partly done closes as `done`
@@ -293,16 +319,19 @@ has no commits yet. `git fetch` does not refresh `origin/HEAD`, so it can be
 unset or stale; `git remote set-head origin --auto` re-derives it.
 
 Activation is `{cli} activate {NNN}`, which carries the same guard — it flips the
-status, fills `branch`, refreshes the index, and commits, so the ordering is
-enforced rather than remembered. `log` and `close` updates are still hand-written
-commits and belong on the feature branch, where the work is. `{cli} set-pr` and
-`{cli} retire` commit where they are run and carry no guard: a PR exists once the branch
-does, and a plan is retired wherever the decision is made.
+status, fills `branch`, logs the activation entry, refreshes the index, and commits, so the
+ordering is enforced rather than remembered. The guard covers activating a `draft`,
+`blocked`, or `inactive` plan; returning one from `implemented` happens on the feature
+branch and is not guarded. `log` and `close` updates are still hand-written
+commits and belong on the feature branch, where the work is. `{cli} set-pr`,
+`{cli} implemented`, and `{cli} retire` commit where they are run and carry no guard: a PR
+exists once the branch does, the work is implemented on its branch, and a plan is retired
+wherever the decision is made.
 
 ### Plan commit subjects name the slug
 
 `plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`,
-`{cli} finalize`, `{cli} activate`, `{cli} set-pr`, and `{cli} retire` write, so the
+`{cli} finalize`, `{cli} activate`, `{cli} set-pr`, `{cli} implemented`, and `{cli} retire` write, so the
 remaining hand-written subjects (`log`, `close`) match them. A slug is fixed by the directory name; a title can
 be reworded, so a title-derived subject drifts from the plan it names. (`log` is
 the exception: its subject is a brief summary of the entry.)
@@ -321,7 +350,8 @@ skills):
 - `/planners implement` — check git status, activate on the mainline, branch from
   that commit, start coding
 - `/planners update` — activate, log, close, or retire a plan
-- `/planners close` — close end-to-end: log, retrospective, merge PR, clean up branch.
+- `/planners close` — close end-to-end: log, retrospective, merge the PR, then `{cli} finish
+  <NNN>` from the main checkout to clean up the worktree, branches, index, and hooks.
   "no PR" merges locally instead (`pr: null`) and asks first when a PR already exists;
   "minimal review" swaps the review loop for checks plus a diff skim
 - `/planners pipeline` — drive a plan from implement to close in one run (pauses at the review gate)
@@ -329,6 +359,14 @@ skills):
   entry per plan, retirements proposed (`planners review` itself only reads)
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
+
+**Close-out steps are the session's to run.** Once the review gate has passed, removing the
+worktree, merging, pulling, deleting the branch, and re-pointing hooks need no decision, so
+the session runs them: `gh pr merge`, then `{cli} finish`. A step goes to the user only after a call to it
+was actually refused, with the refusal quoted. Before reporting a block, try the command: a
+worktree shown as the working directory after a `cd` is not an isolation block until a command
+run from the main checkout fails. Reach a worktree with a subshell (`(cd .worktrees/<name> &&
+...)`), not a bare `cd` in the persistent shell.
 
 **Print a subcommand's instructions before describing it**, not only before running it:
 `{cli} skill <subcommand>`. A lifecycle step described from memory is described wrongly, and

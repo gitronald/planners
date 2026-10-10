@@ -60,11 +60,11 @@ __all__ = [
 
 # The open statuses, reviewed when no --status is given. `inactive` is parked,
 # and the closed ones are reviewed only for drift, when asked for.
-DEFAULT_STATUSES = (Status.active, Status.draft, Status.blocked)
+DEFAULT_STATUSES = (Status.active, Status.implemented, Status.draft, Status.blocked)
 
 # Plans someone may be working on right now, judged from their branch and only
 # ever reported on, never edited.
-CAREFUL_STATUSES = frozenset({Status.active, Status.blocked})
+CAREFUL_STATUSES = frozenset({Status.active, Status.implemented, Status.blocked})
 
 # The tool-written subjects, which say a plan file moved, not that the repo did.
 _TOOL_SUBJECT_RE = re.compile(r"^(plan|version) \[")
@@ -531,15 +531,8 @@ def _check_ref(
 
 
 def _worktrees(git: _Git) -> dict[str, str]:
-    """``branch name -> worktree path`` from ``git worktree list --porcelain``."""
-    found: dict[str, str] = {}
-    path: str | None = None
-    for line in (git.out(["worktree", "list", "--porcelain"]) or "").splitlines():
-        if line.startswith("worktree "):
-            path = line[len("worktree ") :]
-        elif line.startswith("branch refs/heads/") and path is not None:
-            found[line[len("branch refs/heads/") :]] = path
-    return found
+    """``branch name -> worktree path``, the main checkout included."""
+    return {branch: str(path) for path, branch in proc.worktrees(git.root) if branch}
 
 
 def _gh_available() -> bool:
@@ -550,10 +543,12 @@ def _pr_state(root: Path, target: str, *, enabled: bool) -> PrState | None:
     """The PR's state from ``gh``, or ``None`` when it cannot be asked."""
     if not enabled:
         return None
+    # ``--`` ends the flags, so a frontmatter branch or PR value that starts with
+    # ``-`` is read as the target, never as an option.
     try:
         result = proc.run(
             root,
-            ["gh", "pr", "view", target, "--json", "state,url"],
+            ["gh", "pr", "view", "--json", "state,url", "--", target],
             capture_output=True,
         )
     except OSError:
