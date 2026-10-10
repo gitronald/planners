@@ -145,6 +145,65 @@ def test_the_override_is_forgiving_about_spelling(value: str, tmp_path: Path) ->
     assert classify(root).kind is RemoteKind.single_branch
 
 
+def _commit_config(root: Path, body: str) -> None:
+    path = root / ".planners" / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_the_committed_config_overrides_the_table(tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://git.example.org/o/r")
+    _commit_config(root, '[remote]\nkind = "single-branch"\n')
+    origin = classify(root)
+    assert (origin.kind, origin.source) == (
+        RemoteKind.single_branch,
+        ".planners/config.toml",
+    )
+
+
+def test_the_committed_config_is_found_from_a_subdirectory(tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
+    _commit_config(root, '[remote]\nkind = "bare"\n')
+    sub = root / "src"
+    sub.mkdir()
+    assert classify(sub).kind is RemoteKind.bare
+
+
+def test_git_config_wins_over_the_committed_config(tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
+    _commit_config(root, '[remote]\nkind = "single-branch"\n')
+    git(root, "config", "planners.remoteKind", "github")
+    origin = classify(root)
+    assert (origin.kind, origin.source) == (
+        RemoteKind.github,
+        "git config planners.remoteKind",
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "note"),
+    [
+        ('[remote]\nkind = "gitlab"\n', "remote.kind in .planners/config.toml"),
+        ("[remote\n", ".planners/config.toml cannot be read"),
+    ],
+)
+def test_a_bad_committed_config_is_ignored_with_a_note(
+    body: str, note: str, tmp_path: Path
+) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
+    _commit_config(root, body)
+    origin = classify(root)
+    assert origin.kind is RemoteKind.github
+    assert origin.note is not None and note in origin.note
+
+
+def test_a_config_without_a_remote_table_is_no_override(tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
+    _commit_config(root, "[other]\nkey = 1\n")
+    origin = classify(root)
+    assert (origin.kind, origin.note) == (RemoteKind.github, None)
+
+
 def test_the_override_wins_over_the_table(tmp_path: Path) -> None:
     root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
     git(root, "config", "planners.remoteKind", "single-branch")

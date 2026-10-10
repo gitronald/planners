@@ -9,9 +9,10 @@ forge reviews through a different tool; a bare repo has no review surface at
 all.
 
 :func:`classify` names the kind from the URL and config alone. It never contacts
-the remote. The host table below is the one place host knowledge lives, and the
-``planners.remoteKind`` git config key overrides it for a host the table does
-not know.
+the remote. The host table below is the one place host knowledge lives. Two
+overrides outrank it, for a host the table does not know: ``kind`` under
+``[remote]`` in the committed ``.planners/config.toml``, shared by every clone,
+and the per-clone ``planners.remoteKind`` git config key, which wins over both.
 """
 
 from __future__ import annotations
@@ -19,12 +20,14 @@ from __future__ import annotations
 import enum
 import os
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from planners import proc
 
 __all__ = [
+    "CONFIG_FILE",
     "CONFIG_KEY",
     "Remote",
     "RemoteKind",
@@ -34,10 +37,11 @@ __all__ = [
     "url_host",
 ]
 
-# The git config key that overrides the table: `git config planners.remoteKind
-# single-branch`. A git key rather than a file, so it works in any repo and a
-# clone can set it without a commit.
+# The per-clone override: `git config planners.remoteKind single-branch`.
 CONFIG_KEY = "planners.remoteKind"
+
+# The committed override, repo-relative: `[remote]` then `kind = "single-branch"`.
+CONFIG_FILE = Path(".planners/config.toml")
 
 
 class RemoteKind(enum.StrEnum):
@@ -174,23 +178,58 @@ def gh_hosts() -> set[str]:
     return hosts
 
 
-def _override(root: Path) -> tuple[RemoteKind | None, str | None]:
-    """The kind ``planners.remoteKind`` names, and a note when it names none."""
-    value = proc.git_out(root, ["config", "--get", CONFIG_KEY])
-    if value is None or not value.strip():
-        return None, None
-    value = value.strip()
+def _parse_kind(value: str, where: str) -> tuple[RemoteKind | None, str | None]:
+    """``value`` as a kind, forgiving case and ``_``, or a note naming ``where``."""
     try:
-        return RemoteKind(value.lower().replace("_", "-")), None
+        return RemoteKind(value.strip().lower().replace("_", "-")), None
     except ValueError:
         choices = ", ".join(kind.value for kind in RemoteKind)
-        return None, f"{CONFIG_KEY} is '{value}', not one of {choices}; ignored"
+        return None, f"{where} is '{value}', not one of {choices}; ignored"
+
+
+def _committed_kind(root: Path) -> tuple[RemoteKind | None, str | None]:
+    """The kind ``[remote] kind`` names in the committed config file, if any."""
+    top = proc.git_out(root, ["rev-parse", "--show-toplevel"])
+    path = (Path(top.strip()) if top else root) / CONFIG_FILE
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None, None
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        return None, f"{CONFIG_FILE.as_posix()} cannot be read ({exc}); ignored"
+    remote = data.get("remote")
+    value = remote.get("kind") if isinstance(remote, dict) else None
+    if value is None:
+        return None, None
+    return _parse_kind(str(value), f"remote.kind in {CONFIG_FILE.as_posix()}")
+
+
+def _override(root: Path) -> tuple[RemoteKind | None, str, str | None]:
+    """The overriding kind, where it came from, and any note on a bad value.
+
+    The per-clone git key wins over the committed file, so one clone can differ
+    from what the repo says without a commit.
+    """
+    notes: list[str] = []
+    value = proc.git_out(root, ["config", "--get", CONFIG_KEY])
+    if value is not None and value.strip():
+        kind, note = _parse_kind(value.strip(), CONFIG_KEY)
+        if kind is not None:
+            return kind, f"git config {CONFIG_KEY}", None
+        notes.append(note or "")
+    kind, note = _committed_kind(root)
+    if note:
+        notes.append(note)
+    if kind is not None:
+        return kind, CONFIG_FILE.as_posix(), "; ".join(notes) or None
+    return None, "", "; ".join(notes) or None
 
 
 def classify(root: Path) -> Remote:
     """Classify the ``origin`` remote of the repo at ``root``, offline.
 
-    The ``planners.remoteKind`` override wins. Otherwise no ``origin`` is
+    An override wins: the ``planners.remoteKind`` git key, then ``[remote] kind``
+    in ``.planners/config.toml``. Otherwise no ``origin`` is
     ``none``, a host ``gh`` is configured for is ``github``, the host table
     decides the known single-branch hosts and forges, and anything else, a local
     path included, is ``bare``.
@@ -200,9 +239,9 @@ def classify(root: Path) -> Remote:
     host = url_host(url) if url else None
     if url and host is not None and _is_ssh(url):
         host = _ssh_hostname(root, host)
-    kind, note = _override(root)
+    kind, source, note = _override(root)
     if kind is not None:
-        return Remote(kind, url, host, f"git config {CONFIG_KEY}")
+        return Remote(kind, url, host, source, note)
     if not url:
         return Remote(RemoteKind.none, None, None, "no origin remote", note)
     if host is None:

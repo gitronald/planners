@@ -47,7 +47,9 @@ git rev-list --left-right --count HEAD...@{upstream}
   kind has no PR**: skip step 6, and the plan closes through `close`'s no-PR
   path, so say that now. `single-branch` also changes steps 3, 4, and 7, where
   the push would be rejected or would publish. When the kind is wrong for this
-  repo, `git config planners.remoteKind <kind>` overrides it.
+  repo, commit `.planners/config.toml` with `kind = "<kind>"` under `[remote]`
+  (for every clone), or set `git config planners.remoteKind <kind>` (this
+  clone only, and it wins).
 
 - The activation commit (step 3) lands on the **base**, so be on the base branch
   in the main checkout. `{cli} base --all` prints the branches this repo counts

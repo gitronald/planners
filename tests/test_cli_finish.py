@@ -385,6 +385,29 @@ def test_finish_after_a_local_merge(
     _assert_finished(scene)
 
 
+def test_finish_leaves_a_single_branch_base_unpushed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On a single-branch remote the local merge is the merge; pushing the base
+    # would publish into the live document, so finish neither asks nor pulls.
+    scene = Scene(tmp_path, monkeypatch, pr=None)
+    git(scene.root, "config", "planners.remoteKind", "single-branch")
+
+    unmerged = scene.finish()
+    assert unmerged.exit_code == 1
+    assert f'git merge --no-ff {_BRANCH} -m "merge: {_BRANCH}"\n' in unmerged.output
+    assert "&& git push" not in unmerged.output
+
+    git(scene.root, "merge", "--no-ff", _BRANCH, "-m", f"merge: {_BRANCH}")
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert "main was not pushed" in result.output
+    _assert_finished(scene, published=False)
+    assert git_out(scene.root, "rev-parse", "HEAD") != git_out(
+        scene.root, "rev-parse", "origin/main"
+    )
+
+
 def test_finish_repoints_a_hook_installed_from_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
