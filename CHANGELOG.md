@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
 ### Added
 
 - `planners validate --json` prints one JSON document on stdout: each plan's
