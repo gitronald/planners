@@ -1,10 +1,10 @@
 ---
 id: 14
 slug: non-github-remotes
-status: implemented
+status: done
 branch: feature/non-github-remotes
 created: 2026-10-09T18:26:35-07:00
-concluded:
+concluded: 2026-10-09T20:22:48-07:00
 pr: https://github.com/gitronald/planners/pull/44
 ---
 
@@ -134,22 +134,51 @@ hosts and `owner/repo`, never real projects.
   - Checks: 546 passed, ruff and pyrefly clean.
 - **2026-10-09T20:08:19-07:00** — Implemented: 5 commits ahead of `dev`.
 
+- **2026-10-09T20:22:57-07:00** — Review gate passed; closing.
+  - Review follow-up (`/code-review medium`, posted to PR #44): 8 findings.
+    Fixed with regression tests: GitHub reached through `ssh.github.com` or an
+    SSH config alias classified `bare` (now `ssh -G` resolves aliases offline,
+    and GitHub's alias hosts are known); a `single-branch` branch tracking the
+    bridge was refused for unpushed commits (that kind now checks uncommitted
+    changes only); `effects` promised an unimplemented `activate` change;
+    Windows drive paths parsed as host `c`; the override was case-sensitive;
+    the `implemented` note was misleading; `remote --json` was unindented.
+    Deferred to the user: `finish --no-pr` on `single-branch` (question 2).
+  - Gate answers (2026-10-09): bare remotes keep the planned behavior; fix
+    `finish` in this PR; add a committed override. Then implemented:
+    `finish --no-pr` on `single-branch` checks the merge against the local
+    base, skips the pull, asks for no push, and says the base was left
+    unpushed; `[remote] kind` in a committed `.planners/config.toml` overrides
+    the host table, with the git key still winning per clone.
+  - Checks: ruff check, ruff format --check, pyrefly, pytest (563 passed).
+    The two gate-requested additions were checked by the gate and tests but
+    not by a second review pass.
+
 ## Handoff
 
-State: steps 1-5 committed and pushed on `feature/non-github-remotes` (PR #44).
+Closed. All three gate questions were answered on 2026-10-09:
 
-Open questions for the review gate:
+1. Bare and unknown-host remotes lose the upstream requirement: accepted as
+   planned.
+2. `finish --no-pr` on `single-branch`: fixed in this PR (local-only finish).
+3. Override scope: a committed `.planners/config.toml` `[remote] kind` was
+   added alongside the per-clone git key.
 
-1. A local-path or unknown-host SSH remote now classifies as `bare` and loses
-   the upstream check that `implemented` applied before. That is the plan's
-   rule, but it changes behavior for anyone using a self-hosted bare remote
-   with PR-less review today. Accept, or keep the check for `bare`?
-2. `finish --no-pr` still requires the base's upstream to contain the branch,
-   so on a `single-branch` remote it forces the live publish before cleanup.
-   Left unchanged here (the skill now asks before that push). Follow-up plan,
-   or in scope?
-3. The override is per-clone git config, not a committed file, so collaborators
-   each set it. Acceptable for now?
+Not verified: classification against a real GitHub Enterprise host or a real
+Overleaf project. The fixtures use placeholder hosts by design, with no network
+probes. Opening merge requests on other forges stays out of scope, as the plan
+said; no follow-up plan exists for it yet.
 
-Not verified: classification against a real enterprise GitHub host or a real
-Overleaf project (fixtures only, by design: no network probes).
+## Retrospective
+
+- The plan's "any non-GitHub kind drops the upstream check" was too coarse for
+  `single-branch`, where a tracked upstream is the live document. Review found
+  it, and the kind now picks between three checks rather than two.
+- Classifying by URL host misses real GitHub remotes behind SSH aliases. The
+  offline `ssh -G` lookup closed that without breaking the no-network rule;
+  check it first in any future host-based logic.
+- Existing tests used a local bare repo to stand in for GitHub. Making the kind
+  explicit in those tests (`planners.remoteKind github`) kept the old behavior
+  covered and made the assumption visible.
+- Deferring the `finish` gap to a gate question worked: the user pulled it into
+  scope, along with the committed override, at the one pause.
