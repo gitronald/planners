@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-09
+
 ### Fixed
 
 - `finish` judges the remote branch by the tip `ls-remote` reports and deletes
