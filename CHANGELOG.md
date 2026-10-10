@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-09
+
 ### Added
 
 - `planners remote` classifies `origin` as `github`, `single-branch`,
