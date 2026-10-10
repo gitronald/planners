@@ -92,7 +92,8 @@ decision, a manual check, access only they have. It is an open state, so
 - **A plan:** edit `status:` and run `{cli} index .`. Write what it waits on,
   and who, in the plan's `## Handoff` section. Commit
   `plan [block]: {NNN} - <slug>`. When the wait is over, `{cli} activate {NNN}`
-  sets it back to `active`.
+  sets it back to `active`. It carries the mainline guard, as any activation of
+  a blocked plan does, so run it on the mainline.
 - **A nested subplan:** `{cli} subplans {NNN} --set <letter>=blocked`. Write
   what it waits on in the Note column of its row in the umbrella's table, by
   hand: the command writes the Status column and no other. When the wait is a

@@ -203,9 +203,10 @@ lettered shape by mistake means folding it back by hand.
 This writes a sibling directory `.planners/plans/{NNN}<letter>-<step-slug>/`
 (e.g. `010a-…`, then `010b-…`) that **shares the umbrella's number** and adds the
 next free letter, with `id: {NNN}` and `sub: <letter>` in its frontmatter. Each
-is a normal plan with its own frontmatter, lifecycle, and row in the index,
-where an umbrella and its lettered subplans render as one contiguous block. The
-umbrella stays `active` until every subplan is done.
+is a normal plan with its own frontmatter, lifecycle, and row in the index.
+The index sorts by status first, so the umbrella and its lettered subplans sit
+together only while they share a status. The umbrella stays `active` until
+every subplan is done.
 
 ## Batch / deferred creation
 
