@@ -8,7 +8,14 @@ import pytest
 from typer.testing import CliRunner
 
 from planners.cli import app
-from planners.remote import RemoteKind, classify, effects, gh_hosts, url_host
+from planners.remote import (
+    RemoteKind,
+    classify,
+    effects,
+    gh_hosts,
+    redact_url,
+    url_host,
+)
 from tests.helpers import git, init_git, write_script
 
 runner = CliRunner()
@@ -34,6 +41,23 @@ runner = CliRunner()
 )
 def test_url_host(url: str, host: str | None) -> None:
     assert url_host(url) == host
+
+
+@pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        ("https://user:s3cret@github.com/o/r.git", "https://***@github.com/o/r.git"),
+        ("https://tok3n@github.com/o/r", "https://***@github.com/o/r"),
+        ("HTTPS://tok3n@github.com/o/r", "HTTPS://***@github.com/o/r"),
+        ("ssh://git:s3cret@host/r.git", "ssh://git:***@host/r.git"),
+        ("ssh://git@host/r.git", "ssh://git@host/r.git"),
+        ("git@github.com:o/r.git", "git@github.com:o/r.git"),
+        ("https://github.com/o/r@v1", "https://github.com/o/r@v1"),
+        ("/srv/git/repo.git", "/srv/git/repo.git"),
+    ],
+)
+def test_redact_url(url: str, shown: str) -> None:
+    assert redact_url(url) == shown
 
 
 def _repo_with_origin(root: Path, url: str | None) -> Path:
@@ -128,6 +152,30 @@ def test_classify_keeps_the_name_when_ssh_fails(
     root = _repo_with_origin(tmp_path / "repo", "git@gh-work:owner/repo.git")
     origin = classify(root)
     assert (origin.kind, origin.host) == (RemoteKind.bare, "gh-work")
+
+
+def test_classify_passes_ssh_the_host_after_the_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_ssh(
+        tmp_path,
+        monkeypatch,
+        '[ "$1 $2" = "-G --" ] && [ "$3" = gh-work ] || exit 9\n'
+        'echo "hostname github.com"\n',
+    )
+    root = _repo_with_origin(tmp_path / "repo", "git@gh-work:owner/repo.git")
+    assert classify(root).kind is RemoteKind.github
+
+
+def test_classify_never_hands_ssh_a_dash_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "ssh-ran"
+    _fake_ssh(tmp_path, monkeypatch, f'touch "{marker}"\necho "hostname github.com"\n')
+    root = _repo_with_origin(tmp_path / "repo", "ssh://-oProxyCommand=x/repo.git")
+    origin = classify(root)
+    assert not marker.exists()
+    assert origin.kind is RemoteKind.bare
 
 
 def test_classify_does_not_ask_ssh_about_https(
@@ -244,6 +292,14 @@ def test_remote_command_json(tmp_path: Path) -> None:
     data = json.loads(result.output)
     assert data["kind"] == "none"
     assert data["url"] is None
+
+
+def test_remote_command_json_masks_a_token(tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://tok3n@github.com/o/r.git")
+    result = runner.invoke(app, ["remote", str(root), "--json"])
+    assert result.exit_code == 0, result.output
+    assert "tok3n" not in result.output
+    assert json.loads(result.output)["url"] == "https://***@github.com/o/r.git"
 
 
 def test_remote_command_warns_about_a_bad_override(tmp_path: Path) -> None:
