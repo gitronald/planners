@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- `planners remote` masks a credential in `origin`'s URL (an HTTP(S) userinfo,
+  or any password part) before printing it, including in `--json`
+- The remote classifier never passes `ssh -G` a host starting with `-`, and
+  ends `ssh`'s options with `--` before the host
+
 ## [0.13.0] - 2026-10-09
 
 ### Added
