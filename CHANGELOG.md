@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-09
+
 ### Security
 
 - `planners remote` masks a credential in `origin`'s URL (an HTTP(S) userinfo,
