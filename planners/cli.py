@@ -45,7 +45,12 @@ from planners.metadata import (
     next_sub,
 )
 from planners.subplans import SUBPLANS_DIRNAME, SubplanError, SubplanMetadata
-from planners.utils import is_safe_slug, parse_frontmatter, split_frontmatter
+from planners.utils import (
+    is_safe_slug,
+    parse_frontmatter,
+    parse_instant,
+    split_frontmatter,
+)
 
 app = typer.Typer(
     help="Own a repo's plan-file lifecycle: schema, CLI, and skillstub.",
@@ -320,6 +325,15 @@ def _sync_subplans(
         typer.echo(f"updated the subplan table in {_shown(plan, root)}")
 
 
+def _read_plan(root: Path, path: Path) -> PlanMetadata:
+    """Read plan metadata, reporting a parse failure in the CLI's usual form."""
+    try:
+        return PlanMetadata.from_file(path)
+    except PlanError as exc:
+        _err(f"cannot read {_shown(path, root)}: {exc}")
+        raise typer.Exit(1) from None
+
+
 def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
     """Parse every ``NNN-slug/plan.md``. In non-strict mode, skip unparseable files."""
     metas: list[PlanMetadata] = []
@@ -510,14 +524,8 @@ def _created_key(value: str | None) -> tuple[int, float]:
     which sorts last. Comparing the parsed instant — not the raw string — keeps
     ordering correct across plans written under different UTC offsets.
     """
-    if not value:
-        return (1, 0.0)
-    from datetime import datetime
-
-    try:
-        return (0, datetime.fromisoformat(value).timestamp())
-    except ValueError:
-        return (1, 0.0)
+    instant = parse_instant(value)
+    return (0, instant) if instant is not None else (1, 0.0)
 
 
 def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], str]]:
@@ -675,11 +683,7 @@ def _add_nested(
             "create it first with `planners add`."
         )
         raise typer.Exit(1)
-    try:
-        meta = PlanMetadata.from_file(umbrella)
-    except PlanError as exc:
-        _err(f"cannot read {_shown(umbrella, root)}: {exc}")
-        raise typer.Exit(1) from None
+    meta = _read_plan(root, umbrella)
     if meta.status in CLOSED_STATUSES:
         _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
         raise typer.Exit(1)
@@ -1081,11 +1085,7 @@ def activate(
     # slug check. A closed plan is closed on every branch, so leading with the branch
     # would send the user to switch branches and only then learn the real blocker.
     path = _resolve_plan(root / PLANS_DIR, ref)
-    try:
-        meta = PlanMetadata.from_file(path)
-    except PlanError as exc:
-        _err(f"cannot read {_shown(path, root)}: {exc}")
-        raise typer.Exit(1) from None
+    meta = _read_plan(root, path)
 
     if meta.status in CLOSED_STATUSES:
         _err(
@@ -1222,15 +1222,7 @@ def _current_branch(root: Path) -> str:
 
 def _head_authored(root: Path) -> str | None:
     """The authored date of ``HEAD`` as ISO-8601, or ``None`` when there is none."""
-    try:
-        result = proc.run(
-            root, ["git", "log", "-1", "--format=%aI"], capture_output=True
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+    return (proc.git_out(root, ["log", "-1", "--format=%aI"]) or "").strip() or None
 
 
 @app.command(name="set-pr")
@@ -1267,11 +1259,7 @@ def set_pr(
         slug = nested.stem[2:]
         staged = [nested]
     else:
-        try:
-            meta = PlanMetadata.from_file(plan)
-        except PlanError as exc:
-            _err(f"cannot read {_shown(plan, root)}: {exc}")
-            raise typer.Exit(1) from None
+        meta = _read_plan(root, plan)
         text = plan.read_text(encoding="utf-8")
         _, body = split_frontmatter(text)
         meta.pr = url
@@ -1829,11 +1817,7 @@ def retire(
         typer.echo(f"retired {_shown(nested, root)}")
         staged, slug = [nested, plan], nested.stem[2:]
     else:
-        try:
-            meta = PlanMetadata.from_file(plan)
-        except PlanError as exc:
-            _err(f"cannot read {_shown(plan, root)}: {exc}")
-            raise typer.Exit(1) from None
+        meta = _read_plan(root, plan)
         if meta.status in CLOSED_STATUSES:
             _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
             raise typer.Exit(1)
