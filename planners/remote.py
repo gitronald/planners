@@ -75,17 +75,25 @@ _OTHER_FORGE = {
 
 _GITHUB = "github.com"
 
+# Other names github.com answers to. `ssh.github.com` serves SSH over port 443.
+# Source: https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port
+_GITHUB_ALIASES = {"ssh.github.com", "www.github.com"}
+
 # `scheme://[user@]host[:port]/...`
 _URL = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/]*@)?(?P<host>\[[^\]]+\]|[^:/]+)", re.I)
 # scp-like `[user@]host:path`, which git takes only when no slash precedes the colon.
 _SCP = re.compile(r"^(?:[^@/]*@)?(?P<host>[^:/]+):(?!//)")
+# A Windows drive path (`C:\\repo`, `C:/repo`), which the scp pattern would read
+# as host `c`; git itself treats a one-letter "host" this way.
+_DRIVE = re.compile(r"^[a-z]:[\\/]", re.I)
 
 
 @dataclass(frozen=True)
 class Remote:
     """``origin``'s kind, and what it was decided from.
 
-    ``host`` is ``None`` for a local path or no remote. ``source`` says which rule
+    ``host`` is ``None`` for a local path or no remote; for an SSH URL it is the
+    host the SSH config resolves the name to. ``source`` says which rule
     decided the kind, so a surprising answer can be traced. ``note`` carries a
     warning to show, e.g. an override that names no kind.
     """
@@ -100,13 +108,40 @@ class Remote:
 def url_host(url: str) -> str | None:
     """The lower-cased host in a git remote URL, or ``None`` for a local path."""
     url = url.strip()
-    if url.lower().startswith("file://"):
+    if url.lower().startswith("file://") or _DRIVE.match(url):
         return None
     for pattern in (_URL, _SCP):
         match = pattern.match(url)
         if match:
             return match.group("host").strip("[]").lower()
     return None
+
+
+def _is_ssh(url: str) -> bool:
+    """Whether git reaches ``url`` over SSH, where the host may be a config alias."""
+    lowered = url.lower()
+    if lowered.startswith(("ssh://", "git+ssh://", "ssh+git://")):
+        return True
+    return "://" not in url and _SCP.match(url) is not None
+
+
+def _ssh_hostname(root: Path, host: str) -> str:
+    """The host an SSH config alias stands for, via ``ssh -G``, else ``host``.
+
+    ``ssh -G`` only evaluates the config and prints the result; it opens no
+    connection. A missing ``ssh`` or a failure leaves the name as written.
+    """
+    try:
+        result = proc.run(root, ["ssh", "-G", host], capture_output=True)
+    except OSError:
+        return host
+    if result.returncode != 0:
+        return host
+    for line in (result.stdout or "").splitlines():
+        key, _, value = line.partition(" ")
+        if key == "hostname" and value.strip():
+            return value.strip().lower()
+    return host
 
 
 def _gh_config_dir() -> Path:
@@ -146,7 +181,7 @@ def _override(root: Path) -> tuple[RemoteKind | None, str | None]:
         return None, None
     value = value.strip()
     try:
-        return RemoteKind(value), None
+        return RemoteKind(value.lower().replace("_", "-")), None
     except ValueError:
         choices = ", ".join(kind.value for kind in RemoteKind)
         return None, f"{CONFIG_KEY} is '{value}', not one of {choices}; ignored"
@@ -163,6 +198,8 @@ def classify(root: Path) -> Remote:
     url = proc.git_out(root, ["remote", "get-url", "origin"])
     url = url.strip() if url is not None else None
     host = url_host(url) if url else None
+    if url and host is not None and _is_ssh(url):
+        host = _ssh_hostname(root, host)
     kind, note = _override(root)
     if kind is not None:
         return Remote(kind, url, host, f"git config {CONFIG_KEY}")
@@ -170,7 +207,7 @@ def classify(root: Path) -> Remote:
         return Remote(RemoteKind.none, None, None, "no origin remote", note)
     if host is None:
         return Remote(RemoteKind.bare, url, None, "local path", note)
-    if host in gh_hosts():
+    if host in gh_hosts() or host in _GITHUB_ALIASES:
         return Remote(RemoteKind.github, url, host, "gh host", note)
     if host in _SINGLE_BRANCH:
         return Remote(RemoteKind.single_branch, url, host, "host table", note)
@@ -187,8 +224,8 @@ def effects(kind: RemoteKind) -> list[str]:
     if kind is RemoteKind.single_branch:
         return [
             no_pr,
-            "no feature-branch push: implemented checks commits, not an upstream",
-            "base push publishes live: activate will not suggest pushing",
+            "no feature-branch push: implemented checks only uncommitted changes",
+            "base push publishes live: ask before pushing the base",
         ]
     if kind is RemoteKind.none:
         return [
@@ -196,5 +233,5 @@ def effects(kind: RemoteKind) -> list[str]:
         ]
     return [
         no_pr,
-        "feature-branch push optional: implemented checks commits, not an upstream",
+        "feature-branch push optional: implemented does not require an upstream",
     ]

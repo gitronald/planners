@@ -68,7 +68,8 @@ Log, refreshes the index, commits `plan [implemented]: {NNN} - <slug>`, and
 takes the PR out of draft. It refuses a plan that is not `active`, and a branch
 with uncommitted or unpushed work, naming which, and runs only on the feature
 branch, never the mainline. Off GitHub (`{cli} remote` is not `github`) a
-branch with no upstream is not refused, since there is no PR to see it. It
+branch with no upstream is not refused, since there is no PR to see it, and on
+a `single-branch` remote only uncommitted changes are checked. It
 closes nothing; that stays with `/planners close`.
 
 **Reactivate** — when review asks for more work on an `implemented` plan, run

@@ -1357,6 +1357,7 @@ def _unpublished_work(
     *,
     ignore: tuple[Path, ...] = (),
     require_upstream: bool = True,
+    check_upstream: bool = True,
 ) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
@@ -1367,7 +1368,9 @@ def _unpublished_work(
 
     ``require_upstream=False`` drops the no-upstream problem, for a remote whose
     review does not happen on a pushed branch (see :mod:`planners.remote`). A
-    branch that does have an upstream is still checked for unpushed commits.
+    branch that does have an upstream is still checked for unpushed commits,
+    unless ``check_upstream=False``: on a single-branch remote the upstream is
+    the live document, and pushing to it is a publish, not a precondition.
 
     ``ignore`` names files whose changes are not counted: the ones an earlier run
     wrote and then failed to commit, which this run is about to commit itself.
@@ -1384,6 +1387,8 @@ def _unpublished_work(
     )
     if changed:
         problems.append(f"{changed} uncommitted change(s); commit them first")
+    if not check_upstream:
+        return problems
     upstream = proc.git_out(
         root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
@@ -1557,10 +1562,19 @@ def implemented(
     # may be unpushable (a single-branch bridge) or simply unreviewed there.
     origin = remote_mod.classify(root)
     require_upstream = origin.kind is remote_mod.RemoteKind.github
-    if not require_upstream and origin.kind is not remote_mod.RemoteKind.none:
-        typer.echo(f"origin is {origin.kind.value}: the branch needs no upstream")
+    check_upstream = origin.kind is not remote_mod.RemoteKind.single_branch
+    if not check_upstream:
+        typer.echo(
+            f"origin is {origin.kind.value}: only uncommitted changes are checked"
+        )
+    elif not require_upstream and origin.kind is not remote_mod.RemoteKind.none:
+        typer.echo(f"origin is {origin.kind.value}: a missing upstream is not refused")
     problems = _unpublished_work(
-        root, mainline, ignore=ignore, require_upstream=require_upstream
+        root,
+        mainline,
+        ignore=ignore,
+        require_upstream=require_upstream,
+        check_upstream=check_upstream,
     )
     if problems:
         _err(f"{kind} {label} is not marked implemented: the branch has")
@@ -2354,7 +2368,8 @@ def remote(
                     "host": origin.host,
                     "source": origin.source,
                     "effects": remote_mod.effects(origin.kind),
-                }
+                },
+                indent=2,
             )
         )
         return

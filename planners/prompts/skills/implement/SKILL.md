@@ -235,9 +235,11 @@ git push
 ```
 
 Off GitHub, `implemented` does not require the feature branch to have an
-upstream (it prints `origin is <kind>: the branch needs no upstream`), but it
-still refuses uncommitted changes, and unpushed commits on a branch that has an
-upstream. On a `single-branch` remote, skip the `git push`.
+upstream (it prints `origin is <kind>: ...`), but it still refuses uncommitted
+changes, and unpushed commits on a branch that has an upstream. On a
+`single-branch` remote it checks uncommitted changes only, since the branch's
+upstream, if any, is the live document. Skip the `git push` on a
+`single-branch` remote, and on `none`, where there is nothing to push to.
 
 It flips `active` to `implemented`, appends an `Implemented: <n> commits ahead
 of <base>` Log entry, refreshes the index, commits `plan [implemented]: {NNN} -

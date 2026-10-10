@@ -185,8 +185,44 @@ def test_implemented_needs_no_upstream_off_github(
     monkeypatch.chdir(root)
     result = runner.invoke(app, ["implemented", "005"])
     assert result.exit_code == 0, result.output
-    assert f"origin is {kind}: the branch needs no upstream" in result.output
+    expected = (
+        "only uncommitted changes are checked"
+        if kind == "single-branch"
+        else "a missing upstream is not refused"
+    )
+    assert f"origin is {kind}: {expected}" in result.output
     assert "status: implemented" in path.read_text(encoding="utf-8")
+
+
+def test_implemented_ignores_unpushed_commits_on_a_single_branch_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A branch that tracks the bridge's one branch: pushing there would publish.
+    root = tmp_path / "repo"
+    path = _repo(root)
+    _with_remote(root, tmp_path / "remote.git")
+    git(root, "config", "planners.remoteKind", "single-branch")
+    (root / "late.txt").write_text("late\n", encoding="utf-8")
+    commit_all(root, "late work")
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 0, result.output
+    assert "status: implemented" in path.read_text(encoding="utf-8")
+
+
+def test_implemented_still_refuses_unpushed_commits_on_other_forges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    _repo(root)
+    _with_remote(root, tmp_path / "remote.git")
+    git(root, "config", "planners.remoteKind", "other-forge")
+    (root / "late.txt").write_text("late\n", encoding="utf-8")
+    commit_all(root, "late work")
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "1 commit(s) not pushed" in result.output
 
 
 def test_implemented_still_refuses_uncommitted_work_off_github(

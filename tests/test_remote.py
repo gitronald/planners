@@ -1,6 +1,7 @@
 """Tests for ``planners.remote`` and the ``remote`` command."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from typer.testing import CliRunner
 
 from planners.cli import app
 from planners.remote import RemoteKind, classify, effects, gh_hosts, url_host
-from tests.helpers import git, init_git
+from tests.helpers import git, init_git, write_script
 
 runner = CliRunner()
 
@@ -27,6 +28,8 @@ runner = CliRunner()
         ("/srv/git/repo.git", None),
         ("../repo.git", None),
         ("file:///srv/git/repo.git", None),
+        ("C:\\repos\\x.git", None),
+        ("C:/repos/x.git", None),
     ],
 )
 def test_url_host(url: str, host: str | None) -> None:
@@ -93,6 +96,53 @@ def test_classify_reads_gh_host_from_the_environment(
     monkeypatch.setenv("GH_HOST", "GitHub.Example.com")
     root = _repo_with_origin(tmp_path / "repo", "https://github.example.com/o/r")
     assert classify(root).kind is RemoteKind.github
+
+
+def test_classify_knows_github_s_ssh_over_https_host(tmp_path: Path) -> None:
+    root = _repo_with_origin(
+        tmp_path / "repo", "ssh://git@ssh.github.com:443/owner/repo.git"
+    )
+    assert classify(root).kind is RemoteKind.github
+
+
+def _fake_ssh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_script(bin_dir / "ssh", body)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_classify_resolves_an_ssh_config_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_ssh(tmp_path, monkeypatch, 'echo "user git"\necho "hostname github.com"\n')
+    root = _repo_with_origin(tmp_path / "repo", "git@gh-work:owner/repo.git")
+    origin = classify(root)
+    assert (origin.kind, origin.host) == (RemoteKind.github, "github.com")
+
+
+def test_classify_keeps_the_name_when_ssh_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_ssh(tmp_path, monkeypatch, "exit 255\n")
+    root = _repo_with_origin(tmp_path / "repo", "git@gh-work:owner/repo.git")
+    origin = classify(root)
+    assert (origin.kind, origin.host) == (RemoteKind.bare, "gh-work")
+
+
+def test_classify_does_not_ask_ssh_about_https(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_ssh(tmp_path, monkeypatch, 'echo "hostname github.com"\n')
+    root = _repo_with_origin(tmp_path / "repo", "https://gitlab.com/owner/repo")
+    assert classify(root).kind is RemoteKind.other_forge
+
+
+@pytest.mark.parametrize("value", ["Single-Branch", "single_branch"])
+def test_the_override_is_forgiving_about_spelling(value: str, tmp_path: Path) -> None:
+    root = _repo_with_origin(tmp_path / "repo", "https://github.com/owner/repo")
+    git(root, "config", "planners.remoteKind", value)
+    assert classify(root).kind is RemoteKind.single_branch
 
 
 def test_the_override_wins_over_the_table(tmp_path: Path) -> None:
