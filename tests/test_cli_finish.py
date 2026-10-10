@@ -2,13 +2,14 @@
 
 import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner, Result
 
-from planners.cli import app
+from planners.cli import _merge_command, app
 from planners.finish import (
     PullRequest,
     Stop,
@@ -371,7 +372,7 @@ def test_finish_after_a_local_merge(
     assert unmerged.exit_code == 1
     assert f"{_BRANCH} is not merged into main yet" in unmerged.output
     assert (
-        f'git merge --no-ff {_BRANCH} -m "merge: {_BRANCH}" && git push'
+        f"git merge --no-ff {_BRANCH} -m 'merge: {_BRANCH}' && git push"
         in unmerged.output
     )
     _assert_untouched(scene)
@@ -395,7 +396,7 @@ def test_finish_leaves_a_single_branch_base_unpushed(
 
     unmerged = scene.finish()
     assert unmerged.exit_code == 1
-    assert f'git merge --no-ff {_BRANCH} -m "merge: {_BRANCH}"\n' in unmerged.output
+    assert f"git merge --no-ff {_BRANCH} -m 'merge: {_BRANCH}'\n" in unmerged.output
     assert "&& git push" not in unmerged.output
 
     git(scene.root, "merge", "--no-ff", _BRANCH, "-m", f"merge: {_BRANCH}")
@@ -558,3 +559,16 @@ def test_delete_remote_branch_stops_on_a_push_made_after_the_fetch(
             root, "feature/x", "main", said.append, against="origin/main"
         )
     assert git_out(root, "ls-remote", "--heads", "origin", "feature/x").strip()
+
+
+def test_merge_command_quotes_a_hostile_branch_name() -> None:
+    branch = "feature/x$(touch pwned);y"
+    command = _merge_command(branch)
+    assert shlex.split(command) == [
+        "git",
+        "merge",
+        "--no-ff",
+        branch,
+        "-m",
+        f"merge: {branch}",
+    ]

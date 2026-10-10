@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -229,7 +230,7 @@ def delete_local_branch(root: Path, branch: str, base: str, say: Say) -> None:
     if not is_ancestor(root, f"refs/heads/{branch}", base):
         raise Stop(
             f"{branch} holds commits {base} does not; it was not deleted. "
-            f"`git log {base}..{branch}` lists them"
+            f"`git log {shlex.quote(f'{base}..{branch}')}` lists them"
         )
     must(root, ["git", "branch", "-d", branch])
     say(f"deleted {branch} locally")
