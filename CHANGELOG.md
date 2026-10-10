@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners remote` masks a credential in `origin`'s URL (an HTTP(S) userinfo,
   or any password part) before printing it, including in `--json`
 - The remote classifier never passes `ssh -G` a host starting with `-`, and
-  ends `ssh`'s options with `--` before the host
+  ends `ssh`'s options with `--` before the host, and skips `ssh` entirely
+  when an override already decides the kind
+- `finish` and `implemented` shell-quote the `git merge`, `git push`, and
+  `git log` commands they print to paste, so a branch name holding `$(...)` or
+  `;` cannot run anything when the line is pasted
 
 ## [0.13.0] - 2026-10-09
 
