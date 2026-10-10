@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from planners.utils import render_frontmatter_line
+
 __all__ = [
     "append_to_section",
     "fenced_lines",
@@ -187,12 +189,7 @@ def set_frontmatter_key(text: str, key: str, value: str | None) -> str:
     ``None`` as ``key: null``, the empty-versus-null convention the plan schema
     uses. Text with no frontmatter gains a block holding only this key.
     """
-    if value is None:
-        rendered = f"{key}: null"
-    elif value == "":
-        rendered = f"{key}:"
-    else:
-        rendered = f"{key}: {value}"
+    rendered = render_frontmatter_line(key, value)
 
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "---":

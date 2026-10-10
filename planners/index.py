@@ -8,11 +8,12 @@ curated content to preserve)."""
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from planners.metadata import PlanMetadata, Status
+from planners.utils import parse_instant
 
 # The index's own location, relative to the repo root. It lives here rather than
 # in the CLI because two unrelated modules need it — the CLI writes the file, and
@@ -43,28 +44,9 @@ CURATED_HEADER = ("#", "Plan", "Status", "Concluded", "PR")
 WIDE_HEADER = ("#", "Plan", "Status", "Branch", "Created", "Concluded", "PR")
 
 
-def _instant(value: str | None) -> float | None:
-    """Parse an ISO-8601 timestamp to a comparable UTC instant (epoch seconds).
-
-    Returns ``None`` for empty/null or unparseable values. Comparing the parsed
-    instant — rather than the raw string — keeps ordering correct across plans
-    written with different UTC offsets, where lexical order does not match
-    chronological order.
-    """
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.timestamp()
-
-
 def _concluded_key(meta: PlanMetadata) -> tuple[int, float]:
     # Present instants sort before missing/unparseable; newer instant first.
-    instant = _instant(meta.concluded)
+    instant = parse_instant(meta.concluded, naive_utc=True)
     return (1, instant) if instant is not None else (0, 0.0)
 
 

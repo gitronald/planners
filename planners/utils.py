@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, fields
+from datetime import UTC, datetime
 
 # kebab-case: lowercase alphanumeric words joined by single hyphens
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -22,7 +23,7 @@ class FieldDoc:
     description: str
 
 
-class _Serializable:
+class Serializable:
     """Mixin giving a dataclass schema introspection over its frontmatter fields.
 
     A field is excluded from the schema when its metadata carries
@@ -111,3 +112,31 @@ def is_safe_slug(slug: str) -> bool:
     if "/" in slug or "\\" in slug or ".." in slug or "\x00" in slug:
         return False
     return bool(SLUG_RE.fullmatch(slug))
+
+
+def render_frontmatter_line(key: str, value: str | None) -> str:
+    """Render one frontmatter line, honoring the empty-vs-null convention."""
+    if value is None:
+        return f"{key}: null"
+    if value == "":
+        return f"{key}:"
+    return f"{key}: {value}"
+
+
+def parse_instant(value: str | None, *, naive_utc: bool = False) -> float | None:
+    """Parse an ISO-8601 timestamp to a comparable UTC instant (epoch seconds).
+
+    Returns ``None`` for empty/null or unparseable values. Comparing the parsed
+    instant — rather than the raw string — keeps ordering correct across plans
+    written with different UTC offsets, where lexical order does not match
+    chronological order. Naive values use local time unless ``naive_utc`` is set.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        if naive_utc and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
+    except ValueError:
+        return None

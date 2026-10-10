@@ -17,9 +17,10 @@ from enum import StrEnum
 from pathlib import Path
 
 from planners.utils import (
-    _Serializable,
+    Serializable,
     is_safe_slug,
     parse_frontmatter,
+    render_frontmatter_line,
     split_frontmatter,
 )
 
@@ -58,16 +59,6 @@ class Status(StrEnum):
     retired = "retired"
 
 
-# Open or parked: nullable fields stay empty (pending), never YAML null.
-OPEN_STATUSES = frozenset(
-    {
-        Status.draft,
-        Status.active,
-        Status.implemented,
-        Status.blocked,
-        Status.inactive,
-    }
-)
 # Terminal: concluded is required; a genuinely-absent branch/pr renders as null.
 CLOSED_STATUSES = frozenset({Status.done, Status.retired})
 
@@ -99,17 +90,8 @@ def _parses_iso(value: str) -> bool:
     return True
 
 
-def _kv(key: str, value: str | None) -> str:
-    """Render one frontmatter line, honoring the empty-vs-null convention."""
-    if value is None:
-        return f"{key}: null"
-    if value == "":
-        return f"{key}:"
-    return f"{key}: {value}"
-
-
 @dataclass
-class PlanMetadata(_Serializable):
+class PlanMetadata(Serializable):
     """A plan file's frontmatter plus its title.
 
     The nullable fields (``branch``, ``concluded``, ``pr``) carry a meaningful
@@ -236,10 +218,10 @@ class PlanMetadata(_Serializable):
             lines.append(f"sub: {self.sub}")
         lines += [
             f"status: {self.status.value}",
-            _kv("branch", self.branch),
-            _kv("created", self.created),
-            _kv("concluded", self.concluded),
-            _kv("pr", self.pr),
+            render_frontmatter_line("branch", self.branch),
+            render_frontmatter_line("created", self.created),
+            render_frontmatter_line("concluded", self.concluded),
+            render_frontmatter_line("pr", self.pr),
             "---",
         ]
         return "\n".join(lines) + "\n"
@@ -322,6 +304,7 @@ class PlanMetadata(_Serializable):
             elif not _parses_iso(self.concluded):
                 errors.append(f"concluded {self.concluded!r} is not ISO-8601")
         else:
+            # Open or parked: nullable fields stay empty (pending), never YAML null.
             for name in ("branch", "pr", "concluded"):
                 if getattr(self, name) is None:
                     errors.append(
