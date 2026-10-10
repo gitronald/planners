@@ -334,6 +334,22 @@ def _read_plan(root: Path, path: Path) -> PlanMetadata:
         raise typer.Exit(1) from None
 
 
+def _taken_numbers(plans_dir: Path) -> list[int]:
+    """Every plan number in use, read from the directory names.
+
+    Read from names rather than frontmatter, so a plan whose frontmatter does not
+    parse (skipped with a warning by :func:`_collect_metas`) still holds its
+    number and the next ``add`` does not reuse it.
+    """
+    if not plans_dir.is_dir():
+        return []
+    return [
+        int(match.group(1))
+        for child in plans_dir.iterdir()
+        if child.is_dir() and (match := DIRNAME_RE.match(child.name))
+    ]
+
+
 def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
     """Parse every ``NNN-slug/plan.md``. In non-strict mode, skip unparseable files."""
     metas: list[PlanMetadata] = []
@@ -849,7 +865,7 @@ def add(
     existing = _collect_metas(plans_dir, strict=False)
     if parent is None:
         # Top-level plan: next free number, no subplan letter.
-        plan_id, sub = next_number([m.id for m in existing]), ""
+        plan_id, sub = next_number(_taken_numbers(plans_dir)), ""
     else:
         # Subplan: share the umbrella's number and take the next free letter. The
         # umbrella must already exist — a subplan with no umbrella is invalid.
@@ -936,8 +952,7 @@ def finalize(
 
     plans_dir = root / PLANS_DIR
     plans_dir.mkdir(parents=True, exist_ok=True)
-    existing = _collect_metas(plans_dir, strict=False)
-    start_id = next_number([m.id for m in existing])
+    start_id = next_number(_taken_numbers(plans_dir))
 
     # Pass 1 — validate and resolve every staged plan WITHOUT touching the
     # filesystem. A bad entry aborts the batch before any plan is moved out of

@@ -249,12 +249,27 @@ def test_add_parent_clean_error_when_letters_exhausted(
 def test_add_refuses_existing_plan_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A plan dir already at the next number must not be clobbered.
-    (tmp_path / ".planners" / "plans" / "000-my-feature").mkdir(parents=True)
+    # A plan dir already at the next number must not be clobbered: its name
+    # holds the number even with no plan.md in it, so the new plan moves past it.
+    taken = tmp_path / ".planners" / "plans" / "000-my-feature"
+    taken.mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["add", "my-feature", "--no-commit"])
-    assert result.exit_code == 1
-    assert "refusing to overwrite" in result.output
+    assert result.exit_code == 0, result.output
+    assert list(taken.iterdir()) == []
+    assert (tmp_path / ".planners" / "plans" / "001-my-feature" / "plan.md").exists()
+
+
+def test_add_does_not_reuse_the_number_of_an_unparseable_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / ".planners" / "plans" / "004-broken" / "plan.md"
+    broken.parent.mkdir(parents=True)
+    broken.write_text("no frontmatter here\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["add", "next-thing", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".planners" / "plans" / "005-next-thing").is_dir()
 
 
 def test_add_rejects_unsafe_slug(
