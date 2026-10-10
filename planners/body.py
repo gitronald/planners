@@ -184,7 +184,8 @@ def append_to_section(
 def set_frontmatter_key(text: str, key: str, value: str | None) -> str:
     """Set one ``key: value`` line in ``text``'s frontmatter, leaving the rest alone.
 
-    An existing line for ``key`` is replaced where it stands. A new key is added
+    An existing line for ``key`` is replaced where it stands, and any later
+    duplicate of it is removed. A new key is added
     as the last line of the block. ``""`` renders as the bare ``key:`` and
     ``None`` as ``key: null``, the empty-versus-null convention the plan schema
     uses. Text with no frontmatter gains a block holding only this key.
@@ -202,11 +203,18 @@ def set_frontmatter_key(text: str, key: str, value: str | None) -> str:
     if close is None:
         return f"---\n{rendered}\n---\n\n{text}"
 
+    matches: list[int] = []
     for i in range(1, close):
         name, sep, _ = lines[i].partition(":")
         if sep and name.strip() == key and not lines[i].lstrip().startswith("#"):
-            lines[i] = rendered + "\n"
-            return "".join(lines)
+            matches.append(i)
+    if not matches:
+        lines.insert(close, rendered + "\n")
+        return "".join(lines)
 
-    lines.insert(close, rendered + "\n")
+    # A hand edit can leave a key twice. The parser keeps the last, so replacing
+    # only the first would write a value nothing reads; drop the later copies.
+    lines[matches[0]] = rendered + "\n"
+    for i in reversed(matches[1:]):
+        del lines[i]
     return "".join(lines)

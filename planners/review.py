@@ -249,8 +249,9 @@ def last_review(body: str) -> str | None:
         return None
     lines = body.splitlines()[span[0] : span[1]]
     best: tuple[float, str] | None = None
-    for line in lines:
-        match = _MARKER_RE.match(line)
+    # A fenced marker is an example of the format, not a review that happened.
+    for line, fenced in zip(lines, fenced_lines(lines), strict=True):
+        match = None if fenced else _MARKER_RE.match(line)
         if not match:
             continue
         stamp = match.group(1).strip()
