@@ -1,11 +1,11 @@
 ---
 id: 14
 slug: non-github-remotes
-status: draft
-branch:
+status: done
+branch: feature/non-github-remotes
 created: 2026-10-09T18:26:35-07:00
-concluded:
-pr:
+concluded: 2026-10-09T20:22:48-07:00
+pr: https://github.com/gitronald/planners/pull/44
 ---
 
 # Detect remotes that cannot host a PR
@@ -100,3 +100,85 @@ hosts and `owner/repo`, never real projects.
 - Mis-classifying a GitHub remote as `other` would silently drop the upstream
   check. Default unknown `https` hosts to `bare` only after checking `gh`'s
   configured hosts, and print the kind in every command that branches on it.
+
+## Log
+
+- **2026-10-09T20:03:52-07:00** — Activated.
+  - Branch: `feature/non-github-remotes`
+  - Base: `dev` at `458ecf9`
+  - Worktree: `.worktrees/non-github-remotes`
+  - PR: pending
+- **2026-10-09T20:06:50-07:00** — PR opened: https://github.com/gitronald/planners/pull/44
+- **2026-10-09T20:08:05-07:00** — Steps 1-5 implemented.
+  - `planners/remote.py`: `RemoteKind`, `classify`, `url_host`, `gh_hosts`,
+    `effects`. The host table holds `git.overleaf.com` (single-branch, checked
+    against Overleaf's git docs: "The Overleaf Git system does not support
+    branching") and `gitlab.com`, `bitbucket.org`, `codeberg.org`, `gitea.com`,
+    `git.sr.ht` (other-forge). `gh` hosts come from `GH_HOST` and the top-level
+    keys of `hosts.yml` (`GH_CONFIG_DIR`, then `XDG_CONFIG_HOME/gh`, then
+    `~/.config/gh`), parsed without a YAML dependency.
+  - Decision: the override is the git config key `planners.remoteKind`. The
+    repo had no config file to extend, and a git key works in any repo; an
+    unknown value is ignored with a warning.
+  - `planners remote [--json]` prints the kind, host, deciding rule, and
+    effects. `implemented` drops the no-upstream refusal for every kind but
+    `github` and prints `origin is <kind>: the branch needs no upstream`.
+  - Skills: `implement` (steps 2, 3, 4, 6, 7), `close` (opening), `update`
+    (activate, implemented), and `pipeline` (handoff contract) branch on
+    `planners remote`. README and CHANGELOG updated.
+  - Tests: `tests/test_remote.py` (URL forms, every kind, gh hosts, override,
+    command output); `implemented` parametrized over kinds. The conftest now
+    points `GH_CONFIG_DIR` at an empty directory so a developer's gh hosts do
+    not leak in. The existing no-upstream test used a local bare repo as its
+    "GitHub" remote and now pins `planners.remoteKind github`.
+  - Checks: 546 passed, ruff and pyrefly clean.
+- **2026-10-09T20:08:19-07:00** — Implemented: 5 commits ahead of `dev`.
+
+- **2026-10-09T20:22:57-07:00** — Review gate passed; closing.
+  - Review follow-up (`/code-review medium`, posted to PR #44): 8 findings.
+    Fixed with regression tests: GitHub reached through `ssh.github.com` or an
+    SSH config alias classified `bare` (now `ssh -G` resolves aliases offline,
+    and GitHub's alias hosts are known); a `single-branch` branch tracking the
+    bridge was refused for unpushed commits (that kind now checks uncommitted
+    changes only); `effects` promised an unimplemented `activate` change;
+    Windows drive paths parsed as host `c`; the override was case-sensitive;
+    the `implemented` note was misleading; `remote --json` was unindented.
+    Deferred to the user: `finish --no-pr` on `single-branch` (question 2).
+  - Gate answers (2026-10-09): bare remotes keep the planned behavior; fix
+    `finish` in this PR; add a committed override. Then implemented:
+    `finish --no-pr` on `single-branch` checks the merge against the local
+    base, skips the pull, asks for no push, and says the base was left
+    unpushed; `[remote] kind` in a committed `.planners/config.toml` overrides
+    the host table, with the git key still winning per clone.
+  - Checks: ruff check, ruff format --check, pyrefly, pytest (563 passed).
+    The two gate-requested additions were checked by the gate and tests but
+    not by a second review pass.
+
+## Handoff
+
+Closed. All three gate questions were answered on 2026-10-09:
+
+1. Bare and unknown-host remotes lose the upstream requirement: accepted as
+   planned.
+2. `finish --no-pr` on `single-branch`: fixed in this PR (local-only finish).
+3. Override scope: a committed `.planners/config.toml` `[remote] kind` was
+   added alongside the per-clone git key.
+
+Not verified: classification against a real GitHub Enterprise host or a real
+Overleaf project. The fixtures use placeholder hosts by design, with no network
+probes. Opening merge requests on other forges stays out of scope, as the plan
+said; no follow-up plan exists for it yet.
+
+## Retrospective
+
+- The plan's "any non-GitHub kind drops the upstream check" was too coarse for
+  `single-branch`, where a tracked upstream is the live document. Review found
+  it, and the kind now picks between three checks rather than two.
+- Classifying by URL host misses real GitHub remotes behind SSH aliases. The
+  offline `ssh -G` lookup closed that without breaking the no-network rule;
+  check it first in any future host-based logic.
+- Existing tests used a local bare repo to stand in for GitHub. Making the kind
+  explicit in those tests (`planners.remoteKind github`) kept the old behavior
+  covered and made the assumption visible.
+- Deferring the `finish` gap to a gate question worked: the user pulled it into
+  scope, along with the committed override, at the one pause.

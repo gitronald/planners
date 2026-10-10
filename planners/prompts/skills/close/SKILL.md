@@ -27,6 +27,15 @@ change the steps, and each is read literally rather than reinterpreted:
 Both can be combined ("no PR, minimal review, just merge into dev"). When the
 request is silent, run the default.
 
+**The remote can select the no-PR path too.** Run `{cli} remote` in step 1. Any
+kind other than `github` has no PR to merge through, so it takes the no-PR path
+without the user saying "no PR", and the gate summary says so ("origin is
+single-branch: closing through the no-PR path"). On a `single-branch` remote,
+the push of the base in the no-PR step 6 publishes into the live document:
+show what it would publish and ask before running it. `{cli} finish` takes the
+local merge as the merge there, so it does not need that push to clean up, and
+it says the base was left unpushed.
+
 ## Steps
 
 ### 1. Read the plan and gather context

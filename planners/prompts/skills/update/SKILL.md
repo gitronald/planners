@@ -57,7 +57,9 @@ appends the activation entry to the Log (branch, base and commit, worktree, PR;
 the mainline**, before the branch or worktree exists, and refuses if HEAD is
 elsewhere — `{cli} base --all` prints the branches that qualify, so switch to one
 first rather than reaching for `--allow-branch`. Do not hand-edit the frontmatter
-for this; the CLI owns it.
+for this; the CLI owns it. When `{cli} remote` says `single-branch`, do not
+follow it with a routine `git push` of the base: that push publishes into the
+live document, so show the ahead count and ask.
 
 **Implemented** — once the work is finished, committed, and pushed, run
 `{cli} implemented {NNN}` on the feature branch, then `git push`. It sets
@@ -65,8 +67,10 @@ for this; the CLI owns it.
 Log, refreshes the index, commits `plan [implemented]: {NNN} - <slug>`, and
 takes the PR out of draft. It refuses a plan that is not `active`, and a branch
 with uncommitted or unpushed work, naming which, and runs only on the feature
-branch, never the mainline. It closes nothing; that stays
-with `/planners close`.
+branch, never the mainline. Off GitHub (`{cli} remote` is not `github`) a
+branch with no upstream is not refused, since there is no PR to see it, and on
+a `single-branch` remote only uncommitted changes are checked. It
+closes nothing; that stays with `/planners close`.
 
 **Reactivate** — when review asks for more work on an `implemented` plan, run
 `{cli} activate {NNN}` on the feature branch. The return from `implemented` is

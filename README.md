@@ -76,6 +76,7 @@ planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under 
 planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees
 planners review                          # report what changed around each open plan (-s all, --json); reads only
 planners base                            # print the repo's mainline branch (--all: every one)
+planners remote                          # classify origin (github, single-branch, other-forge, bare, none) and what changes
 planners index .                         # regenerate .planners/README.md
 planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check; --json prints parsed records)
 planners schema                          # show the plan metadata schema
