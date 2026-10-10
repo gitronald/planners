@@ -193,7 +193,8 @@ def delete_remote_branch(
 
     ``against`` is the ref the test runs on, ``base`` by default; the caller
     passes ``origin/<base>`` so the test does not hang on whether the local base
-    was pulled. Compared as last fetched, so the caller fetches first. A remote
+    was pulled. ``against`` is compared as last fetched, so the caller fetches
+    first; the branch's own tip is read from the remote at the time. A remote
     branch with commits the base lacks is a stop: deleting it would lose them.
     """
     remotes = (proc.git_out(root, ["remote"]) or "").split()
@@ -203,10 +204,19 @@ def delete_remote_branch(
     if not listed.strip():
         say(f"{branch} is already gone from origin")
         return
-    tracking = f"refs/remotes/origin/{branch}"
-    if not is_ancestor(root, tracking, against or base):
+    # Judge the tip the remote reports now, not the tracking ref from the last
+    # fetch, and delete under a lease on that tip: a push that lands after the
+    # check makes the delete fail instead of discarding it.
+    tip = listed.split()[0]
+    if proc.git_out(root, ["cat-file", "-e", f"{tip}^{{commit}}"]) is None:
+        raise Stop(
+            f"origin/{branch} is at {tip[:12]}, which has not been fetched; "
+            "it was not deleted"
+        )
+    if not is_ancestor(root, tip, against or base):
         raise Stop(f"origin/{branch} holds commits {base} does not; it was not deleted")
-    must(root, ["git", "push", "origin", "--delete", branch])
+    lease = f"--force-with-lease=refs/heads/{branch}:{tip}"
+    must(root, ["git", "push", lease, "origin", "--delete", branch])
     say(f"deleted {branch} on origin")
 
 

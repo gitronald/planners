@@ -9,7 +9,13 @@ import pytest
 from typer.testing import CliRunner, Result
 
 from planners.cli import app
-from planners.finish import PullRequest, Stop, is_ancestor, merge_subject
+from planners.finish import (
+    PullRequest,
+    Stop,
+    delete_remote_branch,
+    is_ancestor,
+    merge_subject,
+)
 from tests.helpers import (
     bare_remote,
     commit_all,
@@ -495,3 +501,37 @@ def test_merge_subject_truncates_the_label() -> None:
 def test_pull_request_names_a_fork_by_owner() -> None:
     assert PullRequest.from_json(_pr()).label == _BRANCH
     assert PullRequest.from_json(_pr(fork=True)).label == f"owner/{_BRANCH}"
+
+
+def test_delete_remote_branch_stops_on_a_push_made_after_the_fetch(
+    tmp_path: Path,
+) -> None:
+    root, remote, other = tmp_path / "repo", tmp_path / "remote.git", tmp_path / "other"
+    root.mkdir()
+    init_git(root)
+    (root / "a.txt").write_text("a\n", encoding="utf-8")
+    commit_all(root, "a")
+    bare_remote(root, remote)
+    git(root, "push", "-q", "origin", "main", "main:feature/x")
+    git(root, "fetch", "-q", "origin")
+    # A collaborator pushes to the branch after this checkout last fetched; the
+    # tracking ref still says the branch is merged.
+    subprocess.run(
+        ["git", "clone", "-q", "-b", "feature/x", str(remote), str(other)], check=True
+    )
+    set_identity(other)
+    (other / "b.txt").write_text("b\n", encoding="utf-8")
+    commit_all(other, "b")
+    git(other, "push", "-q", "origin", "feature/x")
+
+    said: list[str] = []
+    with pytest.raises(Stop, match="has not been fetched"):
+        delete_remote_branch(
+            root, "feature/x", "main", said.append, against="origin/main"
+        )
+    git(root, "fetch", "-q", "origin")
+    with pytest.raises(Stop, match="holds commits main does not"):
+        delete_remote_branch(
+            root, "feature/x", "main", said.append, against="origin/main"
+        )
+    assert git_out(root, "ls-remote", "--heads", "origin", "feature/x").strip()
