@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `finish` judges the remote branch by the tip `ls-remote` reports and deletes
+  it under a lease on that tip, so a push made after the last fetch stops the
+  deletion instead of being lost.
+- Lifecycle commits (`add`, `finalize`, `activate`, `set-pr`, `implemented`,
+  `retire`, and `finish`'s index commit) take only their own files; anything
+  else already staged stays staged and out of the plan's commit.
+- `implemented` refuses on a branch other than the one the plan (or the
+  subplan, or its umbrella) records.
+- `finalize` validates each staged plan before moving any, so an invalid
+  value such as an unparseable `created` leaves the batch in staging.
+- `retire` refuses an umbrella whose subplans cannot be read, instead of
+  treating them as finished.
+- `review` ignores fenced example `Review:` markers in a Log, and subplan table
+  updates ignore fenced example tables between the markers.
+- Setting a frontmatter key that a hand edit left twice rewrites the first
+  line and drops the later copy, which the parser would otherwise read.
+- `validate` reports a missing or unreadable file as a violation (and in the
+  `--json` document) instead of crashing.
+
 ## [0.12.0] - 2026-10-09
 
 ### Added
