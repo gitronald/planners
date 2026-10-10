@@ -1,8 +1,8 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
 Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``implemented``,
-``finish``, ``retire``,
-``subplans``, ``review``, ``base``, ``index``, ``schema``, and ``validate``, plus
+``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
+``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
 subprocess (git) work is confined to this module and the ``add`` helpers; the
@@ -28,6 +28,7 @@ from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import entries, proc
 from planners import finish as finish_mod
+from planners import remote as remote_mod
 from planners import review as review_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
@@ -1351,7 +1352,11 @@ def set_pr(
 
 
 def _unpublished_work(
-    root: Path, mainline: base_mod.Mainline, *, ignore: tuple[Path, ...] = ()
+    root: Path,
+    mainline: base_mod.Mainline,
+    *,
+    ignore: tuple[Path, ...] = (),
+    require_upstream: bool = True,
 ) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
@@ -1359,6 +1364,10 @@ def _unpublished_work(
     upstream at all in a repo that has a remote. A repo with no remote has nothing
     to publish to, so only its uncommitted changes count. Outside a repo there is
     nothing to check, and the commit that follows reports that on its own.
+
+    ``require_upstream=False`` drops the no-upstream problem, for a remote whose
+    review does not happen on a pushed branch (see :mod:`planners.remote`). A
+    branch that does have an upstream is still checked for unpushed commits.
 
     ``ignore`` names files whose changes are not counted: the ones an earlier run
     wrote and then failed to commit, which this run is about to commit itself.
@@ -1380,7 +1389,8 @@ def _unpublished_work(
     )
     if upstream is None:
         if (
-            mainline.current is not None
+            require_upstream
+            and mainline.current is not None
             and (proc.git_out(root, ["remote"]) or "").strip()
         ):
             branch = mainline.current
@@ -1543,7 +1553,15 @@ def implemented(
         raise typer.Exit(1)
 
     ignore = (target, plan, root / INDEX_PATH) if resuming else ()
-    problems = _unpublished_work(root, mainline, ignore=ignore)
+    # Only a GitHub origin reviews the pushed branch; elsewhere the feature branch
+    # may be unpushable (a single-branch bridge) or simply unreviewed there.
+    origin = remote_mod.classify(root)
+    require_upstream = origin.kind is remote_mod.RemoteKind.github
+    if not require_upstream and origin.kind is not remote_mod.RemoteKind.none:
+        typer.echo(f"origin is {origin.kind.value}: the branch needs no upstream")
+    problems = _unpublished_work(
+        root, mainline, ignore=ignore, require_upstream=require_upstream
+    )
     if problems:
         _err(f"{kind} {label} is not marked implemented: the branch has")
         for problem in problems:
@@ -2307,6 +2325,43 @@ def base(
 
     if mainline.thin:
         _err(f"note: {base_mod.THIN_NOTE}")
+
+
+@app.command()
+def remote(
+    repo_path: Path = typer.Argument(Path("."), help="Repo root (a git worktree)."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print the classification as a JSON object."
+    ),
+) -> None:
+    """Print what kind of remote ``origin`` is and what the lifecycle does about it.
+
+    The kind is one of github, single-branch, other-forge, bare, or none, read
+    from the URL and config only; the remote is never contacted. Set
+    ``git config planners.remoteKind <kind>`` to override the built-in host table.
+    The lifecycle skills branch on this: a non-github kind skips the draft PR and
+    closes through the no-PR path.
+    """
+    origin = remote_mod.classify(repo_path)
+    if origin.note:
+        _warn(f"warning: {origin.note}")
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "kind": origin.kind.value,
+                    "url": origin.url,
+                    "host": origin.host,
+                    "source": origin.source,
+                    "effects": remote_mod.effects(origin.kind),
+                }
+            )
+        )
+        return
+    where = origin.host or origin.url or "no remote"
+    typer.echo(f"origin: {origin.kind.value} ({where}; {origin.source})")
+    for line in remote_mod.effects(origin.kind):
+        typer.echo(f"  {line}")
 
 
 @app.command()

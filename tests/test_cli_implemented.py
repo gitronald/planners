@@ -8,7 +8,14 @@ import pytest
 from typer.testing import CliRunner
 
 from planners.cli import app
-from tests.helpers import bare_remote, commit_all, git_out, init_git, write_script
+from tests.helpers import (
+    bare_remote,
+    commit_all,
+    git,
+    git_out,
+    init_git,
+    write_script,
+)
 
 runner = CliRunner()
 
@@ -146,10 +153,53 @@ def test_implemented_refuses_a_branch_with_no_upstream(
     root = tmp_path / "repo"
     _repo(root)
     _with_remote(root, tmp_path / "remote.git", push=False)
+    # A local bare repo classifies as `bare`; pin it to the GitHub behavior.
+    git(root, "config", "planners.remoteKind", "github")
     monkeypatch.chdir(root)
     result = runner.invoke(app, ["implemented", "005"])
     assert result.exit_code == 1
     assert "feature/my-thing has no upstream" in result.output
+
+
+@pytest.mark.parametrize(
+    ("url", "override", "kind"),
+    [
+        ("https://git.overleaf.com/0123456789abcdef", None, "single-branch"),
+        ("git@gitlab.com:owner/repo.git", None, "other-forge"),
+        ("ssh://git@git.example.org/srv/repo.git", None, "bare"),
+        ("https://github.com/owner/repo.git", "single-branch", "single-branch"),
+    ],
+)
+def test_implemented_needs_no_upstream_off_github(
+    url: str,
+    override: str | None,
+    kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root)
+    git(root, "remote", "add", "origin", url)
+    if override is not None:
+        git(root, "config", "planners.remoteKind", override)
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 0, result.output
+    assert f"origin is {kind}: the branch needs no upstream" in result.output
+    assert "status: implemented" in path.read_text(encoding="utf-8")
+
+
+def test_implemented_still_refuses_uncommitted_work_off_github(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    _repo(root)
+    git(root, "remote", "add", "origin", "https://git.overleaf.com/0123456789abcdef")
+    (root / "loose.txt").write_text("not committed\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "1 uncommitted change(s)" in result.output
 
 
 def test_implemented_takes_the_pr_out_of_draft(
