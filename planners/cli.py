@@ -387,6 +387,16 @@ def _git(root: Path, args: list[str]) -> None:
         raise typer.Exit(1)
 
 
+def _commit(root: Path, message: str, paths: list[str]) -> None:
+    """Stage ``paths`` and commit them, and only them.
+
+    The pathspec keeps anything else the user had already staged out of the
+    plan's commit; it stays staged, as it was.
+    """
+    _git(root, ["add", *paths])
+    _git(root, ["commit", "-m", message, "--", *paths])
+
+
 def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
     """Refuse to commit ``action`` when HEAD is off the repo's mainline.
 
@@ -715,8 +725,11 @@ def _add_nested(
     if no_commit:
         return
 
-    _git(root, ["add", str(path.relative_to(root)), str(umbrella.relative_to(root))])
-    _git(root, ["commit", "-m", f"plan [add]: {meta.prefix}{letter} - {slug}"])
+    _commit(
+        root,
+        f"plan [add]: {meta.prefix}{letter} - {slug}",
+        [str(path.relative_to(root)), str(umbrella.relative_to(root))],
+    )
 
 
 @app.command()
@@ -879,8 +892,11 @@ def add(
         return
 
     readme = _refresh_index(root, cols="curated")
-    _git(root, ["add", str(path.relative_to(root)), str(readme.relative_to(root))])
-    _git(root, ["commit", "-m", f"plan [add]: {prefix} - {slug}"])
+    _commit(
+        root,
+        f"plan [add]: {prefix} - {slug}",
+        [str(path.relative_to(root)), str(readme.relative_to(root))],
+    )
 
 
 @app.command()
@@ -973,6 +989,21 @@ def finalize(
             concluded=data.get("concluded", "") or "",
             pr=data.get("pr", "") or "",
         )
+        # Validate the exact text pass 2 will write, so a value the self-check
+        # would reject (an unparseable `created`, say) stops the batch here,
+        # while every plan is still in staging and a re-run can find it.
+        try:
+            problems = PlanMetadata.from_text(
+                meta.render_frontmatter() + body, dirname=plan_dir.name
+            ).validate()
+        except PlanError as exc:
+            problems = [str(exc)]
+        if problems:
+            _err(
+                f"staged plan {src_dir.name!r} is not valid: {'; '.join(problems)}. "
+                "Fix it and re-run."
+            )
+            raise typer.Exit(1)
         resolved.append((meta, body, src_dir, plan_dir))
 
     # Pass 2 — materialize: every entry is validated, so this only moves files.
@@ -1017,7 +1048,7 @@ def finalize(
         if len(finalized) == 1
         else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
     )
-    _git(root, ["commit", "-m", message])
+    _git(root, ["commit", "-m", message, "--", *rels])
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
 
@@ -1174,7 +1205,17 @@ def activate(
     # name, while a title can be reworded until the subject no longer names the plan
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
-    _git(root, ["commit", "-m", f"plan [activate]: {meta.prefix} - {meta.slug}"])
+    _git(
+        root,
+        [
+            "commit",
+            "-m",
+            f"plan [activate]: {meta.prefix} - {meta.slug}",
+            "--",
+            str(path.relative_to(root)),
+            str(readme.relative_to(root)),
+        ],
+    )
     current = _current_branch(root)
     typer.echo(f"committed the activation on {current}")
     # The skill pushes next, and that push carries every unpushed commit on the
@@ -1287,8 +1328,11 @@ def set_pr(
 
     if nested is None:
         staged.append(_refresh_index(root, cols="curated"))
-    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
-    _git(root, ["commit", "-m", f"plan [pr]: {label} - {slug}"])
+    _commit(
+        root,
+        f"plan [pr]: {label} - {slug}",
+        [str(path.relative_to(root)) for path in staged],
+    )
 
 
 def _unpublished_work(
@@ -1434,9 +1478,12 @@ def implemented(
         if nested is not None:
             sub_meta = SubplanMetadata.from_text(text, nested.name)
             status, pr, slug = sub_meta.status, sub_meta.pr, sub_meta.step
+            # An empty subplan branch means the umbrella's.
+            recorded = sub_meta.branch or PlanMetadata.from_file(plan).branch
         else:
             meta = PlanMetadata.from_text(text, plan.parent.name)
             status, pr, slug = meta.status, meta.pr, meta.slug
+            recorded = meta.branch
     except (PlanError, SubplanError, OSError, UnicodeDecodeError) as exc:
         _err(f"cannot read {_shown(target, root)}: {exc}")
         raise typer.Exit(1) from None
@@ -1469,6 +1516,14 @@ def implemented(
         _err(
             f"error: {kind} {label} is not marked implemented: {where}. "
             "Run it on the plan's feature branch."
+        )
+        raise typer.Exit(1)
+    # The checks below inspect the current branch, so on any branch but the
+    # recorded one they would vouch for work that is not this plan's.
+    if not no_commit and recorded and mainline.current != recorded:
+        _err(
+            f"error: {kind} {label} is not marked implemented: it records branch "
+            f"'{recorded}', but HEAD is on '{mainline.current}'."
         )
         raise typer.Exit(1)
 
@@ -1507,8 +1562,11 @@ def implemented(
 
     if nested is None:
         staged.append(_refresh_index(root, cols="curated"))
-    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
-    _git(root, ["commit", "-m", f"plan [implemented]: {label} - {slug}"])
+    _commit(
+        root,
+        f"plan [implemented]: {label} - {slug}",
+        [str(path.relative_to(root)) for path in staged],
+    )
     if pr:
         _mark_pr_ready(root, pr)
     typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
@@ -1716,7 +1774,17 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         _refresh_index(root, cols="curated")
     if not _is_unmodified(root, root / INDEX_PATH):
         finish_mod.must(root, ["git", "add", INDEX_PATH.as_posix()])
-        finish_mod.must(root, ["git", "commit", "-m", "update plan index after merge"])
+        finish_mod.must(
+            root,
+            [
+                "git",
+                "commit",
+                "-m",
+                "update plan index after merge",
+                "--",
+                INDEX_PATH.as_posix(),
+            ],
+        )
         say(f"committed the regenerated plan index; push {base} to publish it")
 
     finish_mod.repoint_hooks(root, say)
@@ -1824,9 +1892,20 @@ def retire(
         # An umbrella does not close over unfinished subplans, by either door:
         # `close` checks it with `subplans --require-closed`, and this is the
         # same check for the plan that is retired instead.
+        subs, unreadable = _load_subplans(plan)
+        # A subplan that does not parse could be unfinished; it cannot be
+        # cleared, so it blocks the umbrella like an unfinished one.
+        if unreadable:
+            for error in unreadable:
+                _err(error)
+            _err(
+                f"plan {meta.prefix} has subplans that cannot be read; fix them "
+                "before retiring it."
+            )
+            raise typer.Exit(1)
         unfinished = [
             f"{sub.letter} ({sub.status.value})"
-            for sub in _load_subplans(plan)[0]
+            for sub in subs
             if sub.status in subplans_mod.UNFINISHED_STATUSES
         ]
         if unfinished:
@@ -1853,8 +1932,11 @@ def retire(
 
     if nested is None:
         staged.append(_refresh_index(root, cols="curated"))
-    _git(root, ["add", *(str(path.relative_to(root)) for path in staged)])
-    _git(root, ["commit", "-m", f"plan [retire]: {label} - {slug}"])
+    _commit(
+        root,
+        f"plan [retire]: {label} - {slug}",
+        [str(path.relative_to(root)) for path in staged],
+    )
 
 
 def _plan_status(
@@ -2055,10 +2137,8 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
     _guard_base_branch(root, "plan [review]", allow_branch=allow_branch)
     readme = _refresh_index(root, cols="curated")
     paths = [*staged, str(readme.relative_to(root))]
-    _git(root, ["add", *paths])
     noun = "plan" if len(staged) == 1 else "plans"
-    # The pathspec keeps anything else already staged out of the commit.
-    _git(root, ["commit", "-m", f"plan [review]: {len(staged)} {noun}", "--", *paths])
+    _commit(root, f"plan [review]: {len(staged)} {noun}", paths)
     typer.echo(f"committed review notes for {len(staged)} {noun}")
 
 
@@ -2387,7 +2467,7 @@ def validate(
     for path in files:
         try:
             meta = PlanMetadata.from_file(path)
-        except PlanError as exc:
+        except (PlanError, OSError, UnicodeDecodeError) as exc:
             report(f"{path}: {exc}")
             failures += 1
             records.append({"path": str(path), "plan": None, "errors": [str(exc)]})

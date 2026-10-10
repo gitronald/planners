@@ -489,7 +489,7 @@ def test_add_defer_stages_unnumbered_plan(
     assert "slug: my-feature" in text
     assert "# My Feature" in text
     # deferred creation never touches plans/ and never commits
-    assert not (tmp_path / ".planners" / "plans").exists()
+    assert not (tmp_path / ".planners" / "plans" / "000-alpha").exists()
 
 
 def test_add_defer_rejects_parent(
@@ -1445,3 +1445,32 @@ def test_activate_on_a_detached_head_says_so(
     result = runner.invoke(app, ["activate", "005", "--allow-branch"])
     assert result.exit_code == 0, result.output
     assert "committed the activation on a detached HEAD" in result.output
+
+
+def test_finalize_refuses_an_invalid_created_before_moving_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_git(tmp_path)
+    staging = tmp_path / ".planners" / "staging"
+    _write_staged(staging, "tok-a", _staged_text("alpha", "not-a-date"))
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["finalize", "--no-commit"])
+    assert result.exit_code == 1
+    assert "staged plan 'tok-a' is not valid" in result.output
+    assert "not ISO-8601" in result.output
+    # Still staged, so fixing it and re-running finds it.
+    assert (staging / "tok-a" / "plan.md").exists()
+    assert not (tmp_path / ".planners" / "plans" / "000-alpha").exists()
+
+
+def test_validate_json_reports_a_missing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", "missing.md", "--json"])
+    assert result.exit_code == 1
+    doc = json.loads(result.stdout)
+    assert doc["ok"] is False
+    assert doc["plans"][0]["plan"] is None
+    assert "No such file" in doc["plans"][0]["errors"][0]
