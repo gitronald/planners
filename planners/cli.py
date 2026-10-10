@@ -1,8 +1,8 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
 Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``implemented``,
-``finish``, ``retire``,
-``subplans``, ``review``, ``base``, ``index``, ``schema``, and ``validate``, plus
+``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
+``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
 subprocess (git) work is confined to this module and the ``add`` helpers; the
@@ -28,6 +28,7 @@ from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import entries, proc
 from planners import finish as finish_mod
+from planners import remote as remote_mod
 from planners import review as review_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
@@ -1351,7 +1352,12 @@ def set_pr(
 
 
 def _unpublished_work(
-    root: Path, mainline: base_mod.Mainline, *, ignore: tuple[Path, ...] = ()
+    root: Path,
+    mainline: base_mod.Mainline,
+    *,
+    ignore: tuple[Path, ...] = (),
+    require_upstream: bool = True,
+    check_upstream: bool = True,
 ) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
@@ -1359,6 +1365,12 @@ def _unpublished_work(
     upstream at all in a repo that has a remote. A repo with no remote has nothing
     to publish to, so only its uncommitted changes count. Outside a repo there is
     nothing to check, and the commit that follows reports that on its own.
+
+    ``require_upstream=False`` drops the no-upstream problem, for a remote whose
+    review does not happen on a pushed branch (see :mod:`planners.remote`). A
+    branch that does have an upstream is still checked for unpushed commits,
+    unless ``check_upstream=False``: on a single-branch remote the upstream is
+    the live document, and pushing to it is a publish, not a precondition.
 
     ``ignore`` names files whose changes are not counted: the ones an earlier run
     wrote and then failed to commit, which this run is about to commit itself.
@@ -1375,12 +1387,15 @@ def _unpublished_work(
     )
     if changed:
         problems.append(f"{changed} uncommitted change(s); commit them first")
+    if not check_upstream:
+        return problems
     upstream = proc.git_out(
         root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
     if upstream is None:
         if (
-            mainline.current is not None
+            require_upstream
+            and mainline.current is not None
             and (proc.git_out(root, ["remote"]) or "").strip()
         ):
             branch = mainline.current
@@ -1543,7 +1558,24 @@ def implemented(
         raise typer.Exit(1)
 
     ignore = (target, plan, root / INDEX_PATH) if resuming else ()
-    problems = _unpublished_work(root, mainline, ignore=ignore)
+    # Only a GitHub origin reviews the pushed branch; elsewhere the feature branch
+    # may be unpushable (a single-branch bridge) or simply unreviewed there.
+    origin = remote_mod.classify(root)
+    require_upstream = origin.kind is remote_mod.RemoteKind.github
+    check_upstream = origin.kind is not remote_mod.RemoteKind.single_branch
+    if not check_upstream:
+        typer.echo(
+            f"origin is {origin.kind.value}: only uncommitted changes are checked"
+        )
+    elif not require_upstream and origin.kind is not remote_mod.RemoteKind.none:
+        typer.echo(f"origin is {origin.kind.value}: a missing upstream is not refused")
+    problems = _unpublished_work(
+        root,
+        mainline,
+        ignore=ignore,
+        require_upstream=require_upstream,
+        check_upstream=check_upstream,
+    )
     if problems:
         _err(f"{kind} {label} is not marked implemented: the branch has")
         for problem in problems:
@@ -1613,17 +1645,24 @@ def _closed_plan(root: Path, plan: Path, branch: str, base: str) -> PlanMetadata
         raise finish_mod.Stop(f"cannot read {rel} on {branch}: {exc}") from None
 
 
-def _sync_base(root: Path, base: str, say: finish_mod.Say) -> None:
+def _sync_base(
+    root: Path, base: str, say: finish_mod.Say, *, local_only: bool = False
+) -> None:
     """Check ``base`` out in ``root`` and fast-forward it to the merged base.
 
     That is its upstream, or ``origin/<base>`` for a base with no upstream set:
     the branch deletions that follow test against the local base, and a base
     left behind the merge would read the merged branch as holding unmerged work.
     The caller has fetched already, once, at the start of ``finish``.
+
+    ``local_only`` leaves the base where it is: on a single-branch remote the
+    local base is the merged one, and its upstream is the live document.
     """
     if _current_branch(root) != base:
         finish_mod.must(root, ["git", "checkout", base])
         say(f"checked out {base}")
+    if local_only:
+        return
     if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is not None:
         finish_mod.must(root, ["git", "pull", "--ff-only"])
         say(f"pulled {base}")
@@ -1664,13 +1703,20 @@ def _unmerged_work(worktree: Path, merged: str, base: str) -> list[str]:
 
 
 def _check_merged(
-    root: Path, branch: str, base: str, *, pr_url: str | None
+    root: Path,
+    branch: str,
+    base: str,
+    *,
+    pr_url: str | None,
+    local_only: bool = False,
 ) -> finish_mod.PullRequest | None:
     """The merged PR, or ``None`` on the no-PR path; a stop when not merged yet.
 
     The merge is the session's own command, never ``finish``'s (see
     :mod:`planners.finish`), so a branch that is not merged is a stop that
-    prints the command to run before the re-run.
+    prints the command to run before the re-run. ``local_only`` checks the
+    no-PR merge against the local base and asks for no push: on a single-branch
+    remote that push is a publish, which stays the user's call.
     """
     if pr_url is not None:
         pr = finish_mod.view_pr(root, pr_url)
@@ -1691,14 +1737,18 @@ def _check_merged(
         ),
         None,
     )
-    if source is not None and not finish_mod.is_ancestor(
-        root, source, _remote_or_local(root, base)
-    ):
+    target = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
+    if source is not None and not finish_mod.is_ancestor(root, source, target):
         subject = finish_mod.merge_subject(branch)
+        merge = f'git merge --no-ff {branch} -m "{subject}"'
+        if local_only:
+            raise finish_mod.Stop(
+                f"{branch} is not merged into {base} yet. From {base}, merge it, "
+                f"then run finish again:\n  {merge}"
+            )
         raise finish_mod.Stop(
             f"{branch} is not merged into {base} yet. From {base}, merge and push "
-            "it, then run finish again:\n"
-            f'  git merge --no-ff {branch} -m "{subject}" && git push'
+            f"it, then run finish again:\n  {merge} && git push"
         )
     return None
 
@@ -1748,14 +1798,26 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         )
     if no_pr and not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
+    # A single-branch remote's base is the live document: the local merge is
+    # the merge, and publishing it is left to the user.
+    local_only = (
+        no_pr and remote_mod.classify(root).kind is remote_mod.RemoteKind.single_branch
+    )
 
-    pr = _check_merged(root, branch, base or "", pr_url=None if no_pr else meta.pr)
+    pr = _check_merged(
+        root,
+        branch,
+        base or "",
+        pr_url=None if no_pr else meta.pr,
+        local_only=local_only,
+    )
     if pr is not None:
         base = pr.base
     if not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
     merged = f"PR #{pr.number}" if pr is not None else "a local merge"
     say(f"plan {label}: {branch} is merged into {base} by {merged}")
+    merged_ref = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
 
     worktree = finish_mod.find_worktree(root, branch)
     if worktree is None:
@@ -1766,7 +1828,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
                 f"this is the worktree being removed; run finish from the main "
                 f"checkout ({root})"
             )
-        problems = _unmerged_work(worktree, _remote_or_local(root, base), base)
+        problems = _unmerged_work(worktree, merged_ref, base)
         if problems:
             raise finish_mod.Stop(
                 f"the worktree {_shown(worktree, root)} has\n"
@@ -1779,10 +1841,8 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         finish_mod.must(root, ["git", "worktree", "remove", str(worktree)])
         say(f"removed the worktree {_shown(worktree, root)}")
 
-    _sync_base(root, base, say)
-    finish_mod.delete_remote_branch(
-        root, branch, base, say, against=_remote_or_local(root, base)
-    )
+    _sync_base(root, base, say, local_only=local_only)
+    finish_mod.delete_remote_branch(root, branch, base, say, against=merged_ref)
     finish_mod.delete_local_branch(root, branch, base, say)
 
     if _index_is_stale(root):
@@ -1803,6 +1863,11 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         say(f"committed the regenerated plan index; push {base} to publish it")
 
     finish_mod.repoint_hooks(root, say)
+    if local_only:
+        say(
+            f"origin is single-branch: {base} was not pushed; pushing it "
+            "publishes into the live document"
+        )
     say(f"finished plan {label}")
 
 
@@ -2307,6 +2372,46 @@ def base(
 
     if mainline.thin:
         _err(f"note: {base_mod.THIN_NOTE}")
+
+
+@app.command()
+def remote(
+    repo_path: Path = typer.Argument(Path("."), help="Repo root (a git worktree)."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print the classification as a JSON object."
+    ),
+) -> None:
+    """Print what kind of remote ``origin`` is and what the lifecycle does about it.
+
+    The kind is one of github, single-branch, other-forge, bare, or none, read
+    from the URL and config only; the remote is never contacted. To override the
+    built-in host table for every clone, commit ``.planners/config.toml`` with
+    ``kind = "<kind>"`` under ``[remote]``; ``git config planners.remoteKind
+    <kind>`` overrides it for one clone.
+    The lifecycle skills branch on this: a non-github kind skips the draft PR and
+    closes through the no-PR path.
+    """
+    origin = remote_mod.classify(repo_path)
+    if origin.note:
+        _warn(f"warning: {origin.note}")
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "kind": origin.kind.value,
+                    "url": origin.url,
+                    "host": origin.host,
+                    "source": origin.source,
+                    "effects": remote_mod.effects(origin.kind),
+                },
+                indent=2,
+            )
+        )
+        return
+    where = origin.host or origin.url or "no remote"
+    typer.echo(f"origin: {origin.kind.value} ({where}; {origin.source})")
+    for line in remote_mod.effects(origin.kind):
+        typer.echo(f"  {line}")
 
 
 @app.command()

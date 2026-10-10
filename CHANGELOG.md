@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners remote` classifies `origin` as `github`, `single-branch`,
+  `other-forge`, `bare`, or `none` from its URL and `gh`'s configured hosts,
+  without contacting it; `[remote] kind` in a committed `.planners/config.toml`
+  overrides the built-in host table for every clone, and
+  `git config planners.remoteKind` for one clone
+
+### Changed
+
+- `implemented` no longer requires the feature branch to have an upstream when
+  `origin` is not GitHub
+- `finish --no-pr` on a single-branch remote takes the local merge as the merge
+  and leaves the base unpushed, since that push publishes into the live document
+- The `implement`, `close`, `update`, and `pipeline` skills skip the draft PR
+  off GitHub, close through the no-PR path, and ask before pushing the base to
+  a single-branch remote
+
 ## [0.12.1] - 2026-10-09
 
 ### Fixed

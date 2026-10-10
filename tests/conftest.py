@@ -40,3 +40,9 @@ def _isolate_git_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # any repo that encloses pytest's basetemp. The ceiling is the temp dir's
     # parent so the test's own repo (at tmp_path or below) is still found.
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    # Remote classification reads gh's configured hosts; a developer's enterprise
+    # host must not change what a test's remote classifies as.
+    gh_config = tmp_path / ".gh-config-empty"
+    gh_config.mkdir()
+    monkeypatch.setenv("GH_CONFIG_DIR", str(gh_config))
+    monkeypatch.delenv("GH_HOST", raising=False)
