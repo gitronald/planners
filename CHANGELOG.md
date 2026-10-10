@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   line and drops the later copy, which the parser would otherwise read.
 - `validate` reports a missing or unreadable file as a violation (and in the
   `--json` document) instead of crashing.
+- `add` and `finalize` take the next plan number from the directory names, so
+  a plan whose frontmatter does not parse keeps its number instead of having
+  it reused.
+- A timestamp with no UTC offset is read as UTC everywhere. `review` and
+  `finalize` read it in the machine's local zone, so their order could differ
+  from the index's and from one machine to another.
 
 ## [0.12.0] - 2026-10-09
 
