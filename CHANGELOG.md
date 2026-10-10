@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
 ### Added
 
 - An `implemented` status: the implementation is finished and pushed, and
