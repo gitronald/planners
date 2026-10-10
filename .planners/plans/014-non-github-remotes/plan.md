@@ -1,7 +1,7 @@
 ---
 id: 14
 slug: non-github-remotes
-status: active
+status: implemented
 branch: feature/non-github-remotes
 created: 2026-10-09T18:26:35-07:00
 concluded:
@@ -132,6 +132,7 @@ hosts and `owner/repo`, never real projects.
     not leak in. The existing no-upstream test used a local bare repo as its
     "GitHub" remote and now pins `planners.remoteKind github`.
   - Checks: 546 passed, ruff and pyrefly clean.
+- **2026-10-09T20:08:19-07:00** — Implemented: 5 commits ahead of `dev`.
 
 ## Handoff
 

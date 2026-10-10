@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 014 | [Detect remotes that cannot host a PR](plans/014-non-github-remotes/plan.md) | active | — | [#44](https://github.com/gitronald/planners/pull/44) |
+| 014 | [Detect remotes that cannot host a PR](plans/014-non-github-remotes/plan.md) | implemented | — | [#44](https://github.com/gitronald/planners/pull/44) |
 | 013 | [Run the close cleanup without handing it to the user](plans/013-harden-close-cleanup/plan.md) | done | 2026-10-09 16:52 PT | [#38](https://github.com/gitronald/planners/pull/38) |
 | 012 | [Add an implemented status and a standard activation log entry](plans/012-review-status-and-activation-log/plan.md) | done | 2026-10-09 15:22 PT | [#37](https://github.com/gitronald/planners/pull/37) |
 | 011 | [Add a review subcommand that checks plans against the repo](plans/011-plan-review/plan.md) | done | 2026-10-09 13:00 PT | [#35](https://github.com/gitronald/planners/pull/35) |
