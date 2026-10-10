@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners validate --json` prints one JSON document on stdout: each plan's
+  path, its parsed frontmatter and title (`null` when the frontmatter does not
+  parse), and its violations, plus subplan errors, stale index files, and an
+  `ok` that agrees with the exit code. A caller can read plans through the CLI
+  instead of carrying its own copy of the frontmatter parser.
+
 ## [0.11.0] - 2026-10-09
 
 ### Added

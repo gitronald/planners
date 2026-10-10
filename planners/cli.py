@@ -2294,6 +2294,23 @@ def _subplan_violations(plan: Path) -> list[str]:
     return found
 
 
+def _echo_validate_json(
+    records: list[dict[str, object]],
+    subplan_errors: list[str],
+    stale_index: list[str],
+    *,
+    ok: bool,
+) -> None:
+    """Print ``validate --json``'s document on stdout."""
+    document = {
+        "ok": ok,
+        "plans": records,
+        "subplan_errors": subplan_errors,
+        "stale_index": stale_index,
+    }
+    typer.echo(json.dumps(document, indent=2, ensure_ascii=False))
+
+
 @app.command()
 def validate(
     paths: list[Path] | None = typer.Argument(
@@ -2319,6 +2336,13 @@ def validate(
         help="Skip the stale-index comparison and check frontmatter alone — for "
         "a caller validating plans in a repo whose index it cannot regenerate.",
     ),
+    json_: bool = typer.Option(
+        False,
+        "--json",
+        help="Print each plan's parsed frontmatter and violations as JSON on "
+        "stdout, for a caller that reads plans without importing planners. The "
+        "exit code is unchanged.",
+    ),
 ) -> None:
     """Validate plan frontmatter; exit non-zero on any violation or no match.
 
@@ -2336,6 +2360,13 @@ def validate(
     frontmatter; ``--no-index`` skips that comparison and checks frontmatter
     alone, for a caller validating plans in a repo whose index it cannot
     regenerate.
+
+    ``--json`` replaces the human-readable report with one JSON document: each
+    plan's ``path``, its parsed ``plan`` record (``null`` when the frontmatter
+    does not parse), and its ``errors``, plus ``subplan_errors``, ``stale_index``,
+    and an overall ``ok`` that agrees with the exit code. A plan that parses but
+    breaks a rule still carries its record, so a reader can index plans it would
+    not accept.
     """
     files: list[Path] = []
     for p in paths or [Path(".")]:
@@ -2352,8 +2383,11 @@ def validate(
             files.append(p)
 
     if not files:
+        if json_:
+            _echo_validate_json([], [], [], ok=allow_empty)
         if allow_empty:
-            typer.echo("ok: 0 file(s) — no plans to validate (--allow-empty)")
+            if not json_:
+                typer.echo("ok: 0 file(s) — no plans to validate (--allow-empty)")
             return
         _err(
             "no plan files matched; nothing was validated. Point at a repo root, a "
@@ -2362,23 +2396,30 @@ def validate(
         )
         raise typer.Exit(1)
 
+    # In JSON mode the violations go into the document instead of stderr.
+    report = (lambda _message: None) if json_ else _err
     failures = 0
+    records: list[dict[str, object]] = []
     for path in files:
         try:
             meta = PlanMetadata.from_file(path)
         except PlanError as exc:
-            _err(f"{path}: {exc}")
+            report(f"{path}: {exc}")
             failures += 1
+            records.append({"path": str(path), "plan": None, "errors": [str(exc)]})
             continue
         errors = meta.validate()
         for error in errors:
-            _err(f"{path}: {error}")
+            report(f"{path}: {error}")
         failures += len(errors)
+        records.append({"path": str(path), "plan": meta.to_record(), "errors": errors})
 
+    subplan_errors: list[str] = []
     if subplans_:
         for path in files:
             for error in _subplan_violations(path):
-                _err(error)
+                report(error)
+                subplan_errors.append(error)
                 failures += 1
 
     # The index is generated from exactly the frontmatter just validated, so a
@@ -2409,10 +2450,18 @@ def validate(
             if (root / INDEX_PATH).is_file() and _index_is_stale(root)
         )
     for root in stale:
-        _err(
+        report(
             f"{root / INDEX_PATH}: stale — it does not match a fresh render of "
             "the plan frontmatter; run `planners index .` to regenerate it."
         )
+
+    if json_:
+        stale_paths = [str(root / INDEX_PATH) for root in stale]
+        ok = not (failures or stale)
+        _echo_validate_json(records, subplan_errors, stale_paths, ok=ok)
+        if not ok:
+            raise typer.Exit(1)
+        return
 
     if failures or stale:
         # One summary covering both kinds of failure. A stale-index-only run is a
