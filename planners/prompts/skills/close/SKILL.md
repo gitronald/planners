@@ -56,9 +56,9 @@ subplans, run:
 ```
 
 It exits non-zero and lists every subplan that is `draft`, `active`,
-`implemented`, or `blocked`, and any row where the umbrella's table disagrees with the subplan
-frontmatter. Refuse to close while it fails. Each listed subplan is finished, or
-moved:
+`implemented`, or `blocked`, and any row where the umbrella's table disagrees
+with the subplan frontmatter. Refuse to close while it fails. Resolve each listed
+subplan by finishing it or moving it:
 
 - **Finished** — its checks ran and passed, its Log entry is written, and
   `{cli} subplans {NNN} --set <letter>=done` records it.
@@ -100,17 +100,18 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
 - Review the PR diff with the project's review skill (`/code-review`, or
   `/review PR <number>`).
 - Post it: `gh pr comment <number> --body-file <file>`. Under Claude Code's
-  auto-permission mode this self-authored external write is often **blocked by
-  the classifier** (closing a plan doesn't obviously request posting a comment).
+  auto-permission mode, the classifier often **blocks** this self-authored
+  external write (closing a plan doesn't obviously request posting a comment).
   If it's denied, don't retry or stall — surface the review inline and note it
   wasn't posted, then carry on. To post automatically, pre-authorize the command
   with a Bash allow-rule `Bash(gh pr comment:*)` (and optionally
-  `Bash(gh pr ready:*)`): `{cli} permissions --level assist` writes the planners
-  profile that includes them, or add the rule by hand via `/update-config`. It
-  lives in the repo's `.claude/settings.local.json` (or `~/.claude/settings.json`
-  for all repos); precedence is deny > allow > classifier. `gh pr merge` is
-  irreversible, so by default it stays behind the classifier — the `full` level
-  (`{cli} permissions --level full`) is the explicit opt-in to pre-authorize it.
+  `Bash(gh pr ready:*)`). `{cli} permissions --level assist` writes the planners
+  profile that includes them, or add the rule by hand via `/update-config`. The
+  rule lives in the repo's `.claude/settings.local.json` (or
+  `~/.claude/settings.json` for all repos); precedence is deny > allow >
+  classifier. `gh pr merge` is irreversible, so by default it stays behind the
+  classifier — the `full` level (`{cli} permissions --level full`) is the
+  explicit opt-in to pre-authorize it.
 - Fix actionable findings at the source, each with a paired regression test.
   Record intentional skips as conscious no-ops.
 - Run the full check gate until clean, then commit fixes and push. **Mirror the
@@ -118,8 +119,8 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   `uv run ruff check . && uv run ruff format --check . && uv run pyrefly check &&
   uv run pytest` (the `ruff format --check` is easy to omit locally and is the
   usual reason CI fails a run that passed on the machine).
-- `gh pr ready <number>` — usually done already by `{cli} implemented`; run it
-  for a plan that skipped that step (still `active`), and it is harmless on a PR
+- `gh pr ready <number>` — `{cli} implemented` usually did this already. Run it
+  for a plan that skipped that step (still `active`); it is harmless on a PR
   that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
   PR is still a draft and stop before the merge (a draft can't be merged). The
@@ -191,8 +192,8 @@ Below it, the merge goes to the permission prompt or the classifier.
 
 `finish` does the rest in order, and prints a line for each step:
 
-1. It fetches with `--prune` and confirms the PR reads `MERGED`. If it does not, it stops and prints the
-   merge command.
+1. It fetches with `--prune` and confirms the PR reads `MERGED`. If it does not,
+   it stops and prints the merge command.
 2. It checks that the worktree has nothing uncommitted and no commit the merged
    base lacks (not its upstream, which GitHub may have deleted). It runs
    `.planners/hooks/pre-worktree-remove` when the repo defines one (the
@@ -210,9 +211,9 @@ Below it, the merge goes to the permission prompt or the classifier.
 **When `finish` stops.** It exits 1 and leaves the state as it was when there is
 something to look at: a branch that is not merged, a worktree with uncommitted
 changes or commits the base lacks, a branch that holds such commits, an
-uncommitted edit to the plan index, or a `git` or `gh` call that was refused. Deal with what it names, then run `{cli} finish {NNN}` again.
-Each step that is already done is skipped, so the re-run picks up where the last
-one ended.
+uncommitted edit to the plan index, or a `git` or `gh` call that was refused.
+Deal with what it names, then run `{cli} finish {NNN}` again. Each step that is
+already done is skipped, so the re-run picks up where the last one ended.
 
 Report: review run, plan closed, PR merged, and what `finish` printed.
 

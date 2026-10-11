@@ -18,7 +18,7 @@ A reference with a letter (e.g. `012d`) that matches no plan directory names a
 activate on the mainline and no branch to create, so skip the steps below and
 follow *Implementing one nested subplan*.
 
-The worktree, commit, and push steps below each shell out to git; if they prompt
+The worktree, commit, and push steps below each shell out to git. If they prompt
 for permission on every command, `{cli} permissions` writes an allow-rule profile
 (default `assist`) that pre-authorizes the reversible ones — see *Automation
 levels* in the planners rule.
@@ -60,9 +60,8 @@ git rev-list --left-right --count HEAD...@{upstream}
 - **Do not create the branch or worktree first.** Running add/activate from
   inside a feature branch puts both commits only on that branch, so the mainline
   never records the plan if the branch does not land. `{cli} add` and
-  `{cli} activate` both refuse outright in that position, so this check is what
-  keeps you from hitting a refusal in step 3 rather than the only thing
-  protecting it.
+  `{cli} activate` both refuse outright in that position. This check keeps you
+  from hitting that refusal in step 3; it is not the only protection.
 - If `{cli} base` exits non-zero, the repo's mainline could not be detected
   (no `dev`, no `refs/remotes/origin/HEAD`, no `main`/`master`). Ask the user
   which branch is the base rather than guessing — and note that
@@ -72,8 +71,8 @@ git rev-list --left-right --count HEAD...@{upstream}
   the latest, and so the report in step 3 compares against a current upstream.
 - **The base may live in a worktree of its own**, not in the main checkout. When
   the main checkout is on some other branch, find the base with
-  `git worktree list` and run step 3 from that worktree, rather than checking
-  the base out a second time (git refuses a branch that is already checked out).
+  `git worktree list` and run step 3 from that worktree. Do not check the base out
+  a second time (git refuses a branch that is already checked out).
 - The activation commit stages only the plan file and the index, so unrelated
   uncommitted changes in the checkout are left untouched.
 
@@ -113,14 +112,17 @@ not a backup. Show the ahead count from the report and ask before pushing.
 branches: the branch it **recorded** in the frontmatter, where the work will
 go, and the branch it **committed on**, which is the base.
 
-One command sets `status: active`, fills `branch:` (the plan's own field if set,
-otherwise `feature/<slug>`; `--branch <name>` to choose), appends the activation
-entry to the plan's Log (branch, base and commit, worktree, PR), refreshes the
-index, and commits as `plan [activate]: {NNN} - <slug>`. The entry records the
-worktree step 4 creates, `.worktrees/<branch-suffix>`; pass `--worktree <path>`
-(repo-relative) or `--no-worktree` when the work will be somewhere else. It carries the same mainline guard as
-`{cli} add` and refuses here if you are already on a feature branch — which is the
-check step 2 exists to pass, now enforced rather than remembered.
+One command does all of the following. It sets `status: active`. It fills
+`branch:` (the plan's own field if set, otherwise `feature/<slug>`; `--branch
+<name>` to choose). It appends the activation entry to the plan's Log (branch,
+base and commit, worktree, PR). It refreshes the index, and commits as
+`plan [activate]: {NNN} - <slug>`.
+
+The entry records the worktree step 4 creates, `.worktrees/<branch-suffix>`; pass
+`--worktree <path>` (repo-relative) or `--no-worktree` when the work will be
+somewhere else. The command carries the same mainline guard as `{cli} add` and
+refuses here if you are already on a feature branch. That is the check step 2
+exists to pass, now enforced rather than remembered.
 
 Do not edit the frontmatter, run `{cli} index`, or write the commit yourself; the
 CLI handles all of it. `--no-commit` writes the file only, and is unguarded because
@@ -247,9 +249,10 @@ It flips `active` to `implemented`, appends an `Implemented: <n> commits ahead
 of <base>` Log entry, refreshes the index, commits `plan [implemented]: {NNN} -
 <slug>` on the feature branch, and takes the PR out of draft with `gh pr ready`.
 It refuses while the branch has uncommitted changes or unpushed commits, and
-says which, and refuses on the mainline or a detached HEAD, so the status always matches what the reviewer sees. Push its
-commit so the PR shows it. A failing `gh pr ready` is reported as a warning
-with the commit kept; run it by hand.
+says which. It also refuses on the mainline or a detached HEAD. Together these
+keep the status matching what the reviewer sees. Push its commit so the PR shows
+it. A failing `gh pr ready` is reported as a warning with the commit kept; run it
+by hand.
 
 `implemented` closes nothing. The merge, Retrospective, and `concluded` stay
 with `/planners close`, which runs only when the user asks for it. Review that

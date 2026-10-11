@@ -51,8 +51,8 @@ previous one landed before it starts:
   the run will take.
 - For an umbrella with **nested subplans**, the work is finished when
   `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
-  `active`, `implemented`, or `blocked`, and the umbrella's table agrees with the subplan
-  frontmatter. `close` refuses until it does.
+  `active`, `implemented`, or `blocked`, and the umbrella's table agrees with
+  the subplan frontmatter. `close` refuses until it does.
 
 Check the contract between stages; do not paper over a missing piece.
 
@@ -92,9 +92,10 @@ does to a bare `implement`. Two of its points shape the pipeline itself:
 `close` stops at a **mandatory review gate** (review the PR diff, post it
 best-effort, fix or consciously no-op every finding; or the minimal gate when
 the user asked for "minimal review") before it merges. The pipeline **pauses**
-at that gate — it does not abort and does not merge unreviewed. Surface the review, wait for approval, then resume `close` from the
-gate (final log, retrospective, closing frontmatter, merge, cleanup). This is
-the one expected pause in an otherwise unattended run.
+at that gate — it does not abort and does not merge unreviewed. Surface the
+review and wait for approval. Then resume `close` from the gate (final log,
+retrospective, closing frontmatter, merge, cleanup). This is the one expected
+pause in an otherwise unattended run.
 
 ## Steps
 
