@@ -1,8 +1,8 @@
 ---
 id: 16
 slug: log-command
-status: draft
-branch:
+status: active
+branch: feature/log-command
 created: 2026-10-11T15:18:30-07:00
 concluded:
 pr:
@@ -88,6 +88,14 @@ It is not required if decision 6 removes the reason to hand-write entries.
 - Rewriting existing plans' timestamps. A blame check of every Log line in this
   repo against the commit that added it found no drift beyond the example entry
   in plan 012's spec.
+
+## Log
+
+- **2026-10-11T15:21:13-07:00** — Activated.
+  - Branch: `feature/log-command`
+  - Base: `dev` at `689fe01`
+  - Worktree: `.worktrees/log-command`
+  - PR: pending
 
 ## Handoff
 
