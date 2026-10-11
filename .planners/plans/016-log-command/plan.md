@@ -104,6 +104,10 @@ It is not required if decision 6 removes the reason to hand-write entries.
   - Refactor: retire's unfinished-subplan check moved to `_refuse_open_subplans`, shared with `conclude`; `ahead.commits()` split out of `ahead.count()`.
   - Not done: the global rule was not reinstalled. `install --check` reports it as drifted, and a diff of the installed rule against the new source shows only this plan's edits. Reinstall after the release.
 - **2026-10-11T15:27:51-07:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-10-11T15:39:22-07:00** — Close review (/code-review, medium) on PR #50, with one fix commit (f18137d).
+  - Review follow-up: 17 candidates from two finders, 8 verified, 3 survived, all fixed in f18137d. (1) `_work_authored` listed `origin/<base>..HEAD`, so a local-base commit that a stale `origin/<base>` lacks, merged into the branch, could date `concluded`; it now lists `HEAD` past both refs (`ahead.commits` takes `*revs`), with the regression test `test_conclude_leaves_out_base_commits_a_stale_remote_lacks`, checked to fail on the pre-fix code. (2) The base lookup shared with `finish` moved to `_plan_base`. (3) `_head_authored` became `_authored(root, rev="HEAD")`, which `_work_authored` now uses.
+  - Conscious no-ops (rejected on verification): conclude's resume path and its `pr: null` default match `implemented`/`retire` and the close skill's set-pr step; `log`'s inline append matches the sibling commands; the two prompt-consistency candidates found no contradiction.
+  - Checks: ruff, ruff format --check, pyrefly, and 602 tests, all passing. The review was posted to the PR.
 
 ## Handoff
 
