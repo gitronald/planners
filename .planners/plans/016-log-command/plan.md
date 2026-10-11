@@ -1,7 +1,7 @@
 ---
 id: 16
 slug: log-command
-status: active
+status: implemented
 branch: feature/log-command
 created: 2026-10-11T15:18:30-07:00
 concluded:
@@ -103,6 +103,7 @@ It is not required if decision 6 removes the reason to hand-write entries.
   - Departures from the spec: the review skill's `now` line also offers `planners log <NNN> "<entry>" --no-commit` for review entries, beside the line the plan asked for.
   - Refactor: retire's unfinished-subplan check moved to `_refuse_open_subplans`, shared with `conclude`; `ahead.commits()` split out of `ahead.count()`.
   - Not done: the global rule was not reinstalled. `install --check` reports it as drifted, and a diff of the installed rule against the new source shows only this plan's edits. Reinstall after the release.
+- **2026-10-11T15:27:51-07:00** — Implemented: 6 commits ahead of `dev`.
 
 ## Handoff
 
