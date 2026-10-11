@@ -80,13 +80,17 @@ recording what the user said.
   directory name; `index` states every sort key after status as descending;
   `pipeline` scopes "always opens a draft PR" to GitHub. `uv run pytest`: 576
   passed after the edits.
+- **2026-10-10T19:33:01-07:00** — Settled open question 1: `close`'s minimal
+  gate fixes at the source or records a conscious no-op, as the full gate does,
+  and needs no paired regression test. This is the one deliberate meaning change
+  in the plan; it resolves an ambiguity rather than rewording.
 
 ## Handoff
 
 ### State
 
 Order steps 1 to 3 are committed. In step 4, questions 2 to 5 are settled and
-committed; question 1 waits on the user's decision.
+committed. Question 1 is settled and committed.
 
 ### Open questions
 
@@ -119,6 +123,7 @@ skill text on 2026-10-10; the finding is under each.
    word out of line.
 
 Questions 2 to 5 were settled on 2026-10-10: the user chose to edit each on this
-branch so the text matches the code, one commit per question. Question 1 has a
-recommendation (no paired test on the minimal path, since what the skim looks
-for mostly has no behavior to test) awaiting the user's answer.
+branch so the text matches the code, one commit per question. Question 1 was
+settled the same day: no paired regression test on the minimal path, since what
+the skim looks for mostly has no behavior to test and a test per fix would undo
+the lighter gate the user asked for.
