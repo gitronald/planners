@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-10-10
+
 ### Changed
 
 - The plans rule says to record what the user said as the decision it set, in
