@@ -48,8 +48,8 @@ deterministic threshold date, not "now", so re-runs are idempotent. Leave
 
 ### 2. Read frontmatter
 
-Read each plan's frontmatter (filename, status, branch, created, concluded, pr),
-marking empty fields. Delegate bulk reads to an Explore subagent if there are many.
+Read each plan's directory name and its frontmatter (status, branch, created,
+concluded, pr), marking empty fields. Delegate bulk reads to an Explore subagent if there are many.
 
 ### 3. Match plans to PRs (in the main context)
 
