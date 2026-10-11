@@ -5,7 +5,7 @@ status: active
 branch: update/skill-language-review
 created: 2026-10-10T18:29:26-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/47
 ---
 
 # Clarify skill prompt language without changing meaning
@@ -65,6 +65,7 @@ recording what the user said.
   - Base: `dev` at `e69c4e2`
   - Worktree: `.worktrees/skill-language-review`
   - PR: pending
+- **2026-10-10T18:30:23-07:00** — PR opened: https://github.com/gitronald/planners/pull/47
 
 ## Handoff
 
