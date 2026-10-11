@@ -1278,9 +1278,19 @@ def _current_branch(root: Path) -> str:
     return base_mod.detect(root).current or "a detached HEAD"
 
 
-def _head_authored(root: Path) -> str | None:
-    """The authored date of ``HEAD`` as ISO-8601, or ``None`` when there is none."""
-    return (proc.git_out(root, ["log", "-1", "--format=%aI"]) or "").strip() or None
+def _plan_base(text: str, mainline: base_mod.Mainline) -> str | None:
+    """The base a plan's work sits on: the one its activation entry recorded in
+    ``text``, else the detected mainline. ``None`` when neither is known."""
+    base = entries.recorded_base(text)
+    if base is None and mainline.resolved:
+        base = mainline.branches[0]
+    return base
+
+
+def _authored(root: Path, rev: str = "HEAD") -> str | None:
+    """The authored date of ``rev`` as ISO-8601, or ``None`` when there is none."""
+    out = proc.git_out(root, ["log", "-1", "--format=%aI", rev])
+    return (out or "").strip() or None
 
 
 @app.command(name="set-pr")
@@ -1775,9 +1785,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
             "them before finishing"
         )
 
-    base = entries.recorded_base(plan.read_text(encoding="utf-8"))
-    if base is None and mainline.resolved:
-        base = mainline.branches[0]
+    base = _plan_base(plan.read_text(encoding="utf-8"), mainline)
     finish_mod.must(root, ["git", "fetch", "--prune"])
     meta = _closed_plan(root, plan, branch, base or "")
     if meta.status != Status.done:
@@ -1998,7 +2006,7 @@ def retire(
         _refuse_open_subplans(plan, meta.prefix, "retiring")
         _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
         meta.status = Status.retired
-        meta.concluded = _head_authored(root) or _now()
+        meta.concluded = _authored(root) or _now()
         meta.branch = meta.branch or None
         meta.pr = meta.pr or None
         body = append_to_section(
@@ -2095,25 +2103,24 @@ def _work_authored(root: Path, plan: Path, text: str) -> str | None:
     such commit past it: a plan worked on the mainline, or one whose work is all
     in its own directory.
     """
-    base = entries.recorded_base(text)
-    if base is None:
-        mainline = base_mod.detect(root)
-        if mainline.resolved:
-            base = mainline.branches[0]
+    base = _plan_base(text, base_mod.detect(root))
     if base is None:
         return None
+    # Past both the remote base and the local one: either can lag the other, and
+    # a commit on whichever is ahead is the base's work, not the plan's, even when
+    # the branch merged it in.
+    excluded = [
+        f"^{ref}"
+        for ref in (f"origin/{base}", base)
+        if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+    ]
+    if not excluded:
+        return None
+    found = ahead_mod.commits(root, "HEAD", *excluded, merges=False)
     plan_dir = plan.parent.relative_to(root).as_posix()
-    # The remote base first: it is what the PR is compared with, and a local base
-    # can lag it.
-    for ref in (f"origin/{base}", base):
-        found = ahead_mod.commits(root, f"{ref}..HEAD", merges=False)
-        if found is None:
-            continue
-        for commit in found:
-            if not commit.is_own(plan_dir):
-                out = proc.git_out(root, ["log", "-1", "--format=%aI", commit.sha])
-                return (out or "").strip() or None
-        return None
+    for commit in found or []:
+        if not commit.is_own(plan_dir):
+            return _authored(root, commit.sha)
     return None
 
 
@@ -2185,9 +2192,7 @@ def conclude(
         text = plan.read_text(encoding="utf-8")
         _, body = split_frontmatter(text)
         meta.status = Status.done
-        meta.concluded = (
-            _work_authored(root, plan, text) or _head_authored(root) or _now()
-        )
+        meta.concluded = _work_authored(root, plan, text) or _authored(root) or _now()
         meta.branch = meta.branch or None
         meta.pr = None if no_pr else meta.pr or None
         plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")

@@ -124,6 +124,29 @@ def test_conclude_falls_back_to_head_without_a_work_commit(
     assert "branch: null\n" in plan.read_text(encoding="utf-8")
 
 
+def test_conclude_leaves_out_base_commits_a_stale_remote_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # origin/main stops at the first commit; the local main moves on, and the
+    # branch merges it in. That later main commit is the base's work, not the
+    # plan's, though it lies past the stale remote ref.
+    plan = _repo(tmp_path, git_repo=True)
+    git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _branch_with_work(tmp_path, plan)
+    git(tmp_path, "checkout", "-q", "main")
+    (tmp_path / "other.py").write_text("y = 2\n", encoding="utf-8")
+    # The newest committer date, so `git log` lists it first.
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2030-01-01T00:00:00+00:00")
+    commit_all(tmp_path, "unrelated work on main", date=_PAPERWORK)
+    monkeypatch.delenv("GIT_COMMITTER_DATE")
+    git(tmp_path, "checkout", "-q", "feature/parser")
+    git(tmp_path, "merge", "-q", "--no-edit", "main")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["conclude", "5", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert PlanMetadata.from_file(plan).concluded == _WORK
+
+
 def test_conclude_resumes_a_run_whose_commit_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

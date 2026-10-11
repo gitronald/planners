@@ -103,10 +103,12 @@ def parse_log(text: str) -> list[Commit]:
     return commits
 
 
-def commits(root: Path, rev_range: str, *, merges: bool = True) -> list[Commit] | None:
-    """The commits in ``rev_range``, newest first, with the paths each touches.
+def commits(root: Path, *revs: str, merges: bool = True) -> list[Commit] | None:
+    """The commits ``revs`` select, newest first, with the paths each touches.
 
-    ``None`` when git cannot list them: an unknown ref, no repo, or no git.
+    ``revs`` are what ``git log`` takes: a range (``a..HEAD``), or a tip and the
+    ``^ref`` exclusions to leave out. ``None`` when git cannot list them: an
+    unknown ref, no repo, or no git.
     ``merges=False`` leaves merge commits out.
     """
     # ``core.quotepath=off`` so a path with a non-ASCII byte prints as itself
@@ -123,7 +125,7 @@ def commits(root: Path, rev_range: str, *, merges: bool = True) -> list[Commit] 
     ]
     if not merges:
         args.append("--no-merges")
-    log = proc.git_out(root, [*args, rev_range])
+    log = proc.git_out(root, [*args, *revs])
     return None if log is None else parse_log(log)
 
 
