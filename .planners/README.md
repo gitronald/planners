@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 016 | [Stamp Log entries and concluded from the CLI, not by hand](plans/016-log-command/plan.md) | active | — | — |
+| 016 | [Stamp Log entries and concluded from the CLI, not by hand](plans/016-log-command/plan.md) | active | — | [#50](https://github.com/gitronald/planners/pull/50) |
 | 015 | [Clarify skill prompt language without changing meaning](plans/015-skill-language-review/plan.md) | done | 2026-10-10 19:50 PT | [#47](https://github.com/gitronald/planners/pull/47) |
 | 014 | [Detect remotes that cannot host a PR](plans/014-non-github-remotes/plan.md) | done | 2026-10-09 20:22 PT | [#44](https://github.com/gitronald/planners/pull/44) |
 | 013 | [Run the close cleanup without handing it to the user](plans/013-harden-close-cleanup/plan.md) | done | 2026-10-09 16:52 PT | [#38](https://github.com/gitronald/planners/pull/38) |

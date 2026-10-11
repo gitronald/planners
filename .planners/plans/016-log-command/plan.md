@@ -5,7 +5,7 @@ status: active
 branch: feature/log-command
 created: 2026-10-11T15:18:30-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/50
 ---
 
 # Stamp Log entries and concluded from the CLI, not by hand
@@ -96,6 +96,7 @@ It is not required if decision 6 removes the reason to hand-write entries.
   - Base: `dev` at `689fe01`
   - Worktree: `.worktrees/log-command`
   - PR: pending
+- **2026-10-11T15:25:26-07:00** — PR opened: https://github.com/gitronald/planners/pull/50
 
 ## Handoff
 
