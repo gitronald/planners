@@ -97,12 +97,32 @@ It is not required if decision 6 removes the reason to hand-write entries.
   - Worktree: `.worktrees/log-command`
   - PR: pending
 - **2026-10-11T15:25:26-07:00** — PR opened: https://github.com/gitronald/planners/pull/50
+- **2026-10-11T15:27:44-07:00** — Implemented the plan's Order, steps 1-5.
+  - What was done: `entries.log_entry` and `planners log` (e707dd3); `planners conclude`, with `--no-pr` added for local merges (e707dd3, then the `--no-pr` commit); the prompt, rule, and README edits; the changelog entry. Checks: ruff, ruff format --check, pyrefly, and 601 tests, all passing.
+  - Departures from the spec: `concluded` is the authored date of the last commit past the recorded base that touches more than the plan's own files and the index (merges left out), else HEAD. HEAD alone would date the final `log` commit, which now lands just before `conclude`. `conclude` also takes `--no-pr`, since the no-PR close records `pr: null` even when a PR was opened and closed unmerged. Both written up in decision 5's terms in the close skill.
+  - Departures from the spec: the review skill's `now` line also offers `planners log <NNN> "<entry>" --no-commit` for review entries, beside the line the plan asked for.
+  - Refactor: retire's unfinished-subplan check moved to `_refuse_open_subplans`, shared with `conclude`; `ahead.commits()` split out of `ahead.count()`.
+  - Not done: the global rule was not reinstalled. `install --check` reports it as drifted, and a diff of the installed rule against the new source shows only this plan's edits. Reinstall after the release.
 
 ## Handoff
 
-Open questions:
+State: every step in the Order is committed and pushed on `feature/log-command`
+(PR #50). The plan is marked `implemented`, awaiting review.
+
+Questions:
 
 1. Should the `concluded` step be a new command (`close-plan`/`conclude`) or a
    flag on an existing one? `finish` runs after the merge, on the mainline,
    which is too late for a `concluded` committed on the feature branch.
+   **Answered 2026-10-11 (in implementation):** a new command, `planners
+   conclude`, the `done` counterpart of `retire`. It commits `plan [close]`, so
+   the close skill's hand-written commit is gone too. Open for the reviewer to
+   overrule.
 2. Is the pre-commit backstop wanted, or does the command alone suffice?
+   **Answered 2026-10-11 (in implementation):** not built. Decision 6 removes
+   the reason to hand-write a stamp, which the plan named as the condition for
+   leaving it out. Open for the reviewer to ask for it as a follow-up plan.
+
+Not verified: the new close flow (`log` -> `conclude` -> push -> merge ->
+`finish`) has not been run end to end on a real plan. Closing this plan is its
+first run.
