@@ -195,3 +195,19 @@ def test_conclude_refuses_a_nested_subplan_and_unfinished_subplans(
     unreadable = runner.invoke(app, ["conclude", "5", "--no-commit"])
     assert unreadable.exit_code == 1
     assert "fix them before concluding it" in unreadable.output
+
+
+def test_conclude_keeps_a_recorded_pr_unless_told_there_was_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://github.com/owner/repo/pull/7"
+    text = _plan().replace("pr:\n", f"pr: {url}\n")
+    plan = _repo(tmp_path, text=text)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["conclude", "5", "--no-commit"]).exit_code == 0
+    assert PlanMetadata.from_file(plan).pr == url
+
+    plan.write_text(text, encoding="utf-8")
+    result = runner.invoke(app, ["conclude", "5", "--no-pr", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert "pr: null\n" in plan.read_text(encoding="utf-8")

@@ -2120,6 +2120,11 @@ def _work_authored(root: Path, plan: Path, text: str) -> str | None:
 @app.command()
 def conclude(
     ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    no_pr: bool = typer.Option(
+        False,
+        "--no-pr",
+        help="Record pr: null; the branch merges locally, not through a PR.",
+    ),
     no_commit: bool = typer.Option(
         False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
@@ -2133,6 +2138,8 @@ def conclude(
     ``pr`` that was never filled becomes ``null``, since the plan is closed and
     they are confirmed absent. The commit is ``plan [close]`` and carries the plan
     file as it stands, so a Retrospective written by hand goes in with it.
+    ``--no-pr`` is the close that merges locally: ``pr`` is ``null`` even when a
+    PR was opened and then closed unmerged.
 
     Refuses a nested subplan (``subplans --set <letter>=done`` closes one), a
     plan that is not ``active`` or ``implemented``, an umbrella with unfinished
@@ -2182,7 +2189,7 @@ def conclude(
             _work_authored(root, plan, text) or _head_authored(root) or _now()
         )
         meta.branch = meta.branch or None
-        meta.pr = meta.pr or None
+        meta.pr = None if no_pr else meta.pr or None
         plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
         typer.echo(f"concluded {_shown(plan, root)} at {meta.concluded}")
 
