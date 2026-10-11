@@ -25,9 +25,9 @@ reconcile.
 7. `retired` — neutrally dead: superseded or no longer needed (closed; fill
    `concluded` = the date it was retired)
 
-Closure is always `retired` — there is no separate failed status. Closed states
-(`done`/`retired`) fill `concluded` and use explicit `null` for a
-genuinely-absent `branch`/`pr`. `inactive` keeps those fields empty (pending).
+Closure is always `retired` — there is no separate failed status. For the closed
+states (`done`/`retired`), fill `concluded` and use explicit `null` for a
+genuinely-absent `branch`/`pr`. For `inactive`, keep those fields empty (pending).
 
 ## Auto-retire: inactive → retired (90-day rule)
 
@@ -48,8 +48,9 @@ deterministic threshold date, not "now", so re-runs are idempotent. Leave
 
 ### 2. Read frontmatter
 
-Read each plan's frontmatter (filename, status, branch, created, concluded, pr),
-marking empty fields. Delegate bulk reads to an Explore subagent if there are many.
+Read each plan's directory name and its frontmatter (status, branch, created,
+concluded, pr), marking empty fields. Delegate bulk reads to an Explore subagent
+if there are many.
 
 ### 3. Match plans to PRs (in the main context)
 
@@ -63,8 +64,9 @@ merge commits. Build a full assignment table before editing.
 
 Edit only the frontmatter fields (`branch`, `concluded`, `pr`, and `status` for
 auto-retire flips). **Empty vs `null`:** empty = pending (open plans); explicit
-`null` = closed and confirmed absent (only on `done`/`retired`). Never the
-string `none`. Split large batches across edit subagents given explicit values.
+`null` = closed and confirmed absent (only on `done`/`retired`). Never write the
+string `none`. Split large batches across edit subagents, giving each the explicit
+values to write.
 
 ### 5. Refresh the index and validate
 

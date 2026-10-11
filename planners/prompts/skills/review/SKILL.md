@@ -29,8 +29,8 @@ only status changes are retirements the user confirms.
 ```
 
 `--stale-days N` (default 14) sets when an active, implemented, or blocked plan's branch
-counts as idle. A repo on the legacy `docs/plans/` + `TODO.md` layout is
-refused; it needs migrating to `.planners/` first.
+counts as idle. The command refuses a repo on the legacy `docs/plans/` + `TODO.md`
+layout until it is migrated to `.planners/`.
 
 The report holds:
 
@@ -55,7 +55,7 @@ false. Say so where it matters rather than reading it as absence.
 
 ### 2. Check each plan against the code
 
-The report is where to look, not the verdict. For each plan:
+The report shows where to look; it is not the verdict. For each plan:
 
 - Read the plan's spec and the commits in its window. Open the ones whose
   subjects or paths touch what the plan describes.
@@ -129,8 +129,8 @@ write. Wait for the user before committing.
 It commits only plan files whose `## Log` changed, as `plan [review]: <N>
 plans`, with a refreshed index, on the mainline (it refuses elsewhere;
 `--allow-branch` overrides). It refuses the whole commit when one of those
-files changed outside its Log or is an active, implemented, or blocked plan, so revert the
-stray edit rather than forcing it.
+files changed outside its Log or is an active, implemented, or blocked plan. In
+that case, revert the stray edit rather than forcing the commit.
 
 Then retire only the plans the user confirms, one `{cli} retire` each, which
 commits separately:
