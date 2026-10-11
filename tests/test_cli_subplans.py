@@ -219,7 +219,7 @@ def test_activate_points_a_nested_reference_at_subplans(
     assert "no plan 012e found" in missing.output
 
 
-def test_add_nested_scaffolds_from_b_and_fills_the_table(
+def test_add_nested_scaffolds_from_a_and_fills_the_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     plan_dir = _repo(tmp_path)
@@ -240,7 +240,7 @@ def test_add_nested_scaffolds_from_b_and_fills_the_table(
         ],
     )
     assert first.exit_code == 0, first.output
-    sub = plan_dir / "subplans" / "b-build-it.md"
+    sub = plan_dir / "subplans" / "a-build-it.md"
     text = sub.read_text(encoding="utf-8")
     assert text.startswith(
         "---\nstatus: draft\nbranch: feature/big-effort-build\n---\n"
@@ -252,20 +252,20 @@ def test_add_nested_scaffolds_from_b_and_fills_the_table(
         app, ["add", "review", "--parent", "12", "--nested", "--no-commit"]
     )
     assert second.exit_code == 0, second.output
-    assert (plan_dir / "subplans" / "c-review.md").is_file()
+    assert (plan_dir / "subplans" / "b-review.md").is_file()
 
     look = runner.invoke(
         app,
-        ["add", "look", "--parent", "12", "--nested", "--letter", "a", "--no-commit"],
+        ["add", "look", "--parent", "12", "--nested", "--letter", "d", "--no-commit"],
     )
     assert look.exit_code == 0, look.output
-    assert (plan_dir / "subplans" / "a-look.md").is_file()
+    assert (plan_dir / "subplans" / "d-look.md").is_file()
 
     umbrella = (plan_dir / "plan.md").read_text(encoding="utf-8")
-    assert "| [b](subplans/b-build-it.md) | Build it | draft |  |" in umbrella
-    assert "| [a](subplans/a-look.md) |" in umbrella
+    assert "| [a](subplans/a-build-it.md) | Build it | draft |  |" in umbrella
+    assert "| [d](subplans/d-look.md) |" in umbrella
     # No lettered sibling plan and no index: a nested subplan has neither.
-    assert not (tmp_path / ".planners" / "plans" / "012a-look").exists()
+    assert not (tmp_path / ".planners" / "plans" / "012d-look").exists()
     assert not (tmp_path / ".planners" / "README.md").exists()
     assert runner.invoke(app, ["subplans", "012"]).exit_code == 0
 
@@ -354,15 +354,15 @@ def test_add_nested_commits_on_the_branch_of_an_active_umbrella(
     result = runner.invoke(app, ["add", "build", "--parent", "12", "--nested"])
     assert result.exit_code == 0, result.output
     assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
-        "plan [add]: 012b - build"
+        "plan [add]: 012a - build"
     )
     changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert sorted(changed) == [
         ".planners/plans/012-big-effort/plan.md",
-        ".planners/plans/012-big-effort/subplans/b-build.md",
+        ".planners/plans/012-big-effort/subplans/a-build.md",
     ]
     assert git_out(tmp_path, "status", "--porcelain") == ""
-    assert (plan_dir / "subplans" / "b-build.md").is_file()
+    assert (plan_dir / "subplans" / "a-build.md").is_file()
 
 
 def test_add_nested_guards_the_mainline_for_a_draft_umbrella(
@@ -383,7 +383,7 @@ def test_add_nested_guards_the_mainline_for_a_draft_umbrella(
         app, ["add", "build", "--parent", "12", "--nested", "--allow-branch"]
     )
     assert allowed.exit_code == 0, allowed.output
-    assert "plan [add]: 012b - build" in git_out(tmp_path, "log", "--oneline")
+    assert "plan [add]: 012a - build" in git_out(tmp_path, "log", "--oneline")
 
 
 def test_add_parent_without_nested_still_makes_a_lettered_plan(

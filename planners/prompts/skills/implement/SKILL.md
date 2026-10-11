@@ -299,9 +299,10 @@ to create.
    its own works on that sub-branch, in its own worktree, and merges back into
    the umbrella's branch with `--no-ff`.
 6. **Close it when its own work is finished**, not when the effort is: append
-   its Log entry, then `{cli} subplans 012 --set d=done`. The entry is dated like
-   any other (`- **{timestamp}** — ...`), and the headings the `add` skill
-   suggests go inside it. Mark it done only when
+   its Log entry with `{cli} log 012d -` (the note on stdin), then
+   `{cli} subplans 012 --set d=done`. The command stamps the entry from the
+   clock, as it does every Log entry, and the headings the `add` skill suggests
+   go inside it as nested lines. Mark it done only when
    its checks ran and passed. A step waiting on a person is `blocked`, with what
    it waits on in the table's Note column. A step that lands through a PR of its
    own (its `pr:` is set) is marked `{cli} implemented 012d` when that PR is

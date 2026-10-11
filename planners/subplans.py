@@ -28,7 +28,6 @@ from planners.metadata import Status, extract_title
 from planners.utils import parse_frontmatter, split_frontmatter
 
 __all__ = [
-    "FIRST_STEP_LETTER",
     "SUBPLANS_DIRNAME",
     "TABLE_END",
     "TABLE_START",
@@ -50,10 +49,6 @@ SUBPLANS_DIRNAME = "subplans"
 # <letter>-<step>.md. The letter is the subplan's identity inside its umbrella,
 # as the number is a plan's. Groups: (letter, step).
 FILENAME_RE = re.compile(r"^([a-z])-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
-
-# `a` is the investigation, reserved from the first split whether or not one is
-# written yet. Making room for it later would shift every letter after it.
-FIRST_STEP_LETTER = "b"
 
 # The statuses an umbrella cannot close over: work that has not started, is in
 # progress, is waiting on review, or is waiting on someone. `inactive` is set
@@ -228,17 +223,18 @@ def render_subplan(title: str, umbrella_title: str, branch: str = "") -> str:
 
 
 def next_letter(existing: list[str]) -> str:
-    """The next free step letter: one past the highest taken, and never ``a``.
+    """The next free letter: one past the highest taken, or ``a`` when none is.
 
-    ``a`` is reserved for the investigation, so the first step is ``b`` whether or
-    not an investigation exists. Raises ``ValueError`` when ``b``-``z`` is used up.
+    Letters follow creation order and no letter is held back for a kind of
+    subplan, so an investigation takes the next letter like any other step.
+    Raises ``ValueError`` when ``a``-``z`` is used up.
     """
-    taken = [s for s in existing if len(s) == 1 and FIRST_STEP_LETTER <= s <= "z"]
+    taken = [s for s in existing if len(s) == 1 and "a" <= s <= "z"]
     if not taken:
-        return FIRST_STEP_LETTER
+        return "a"
     following = chr(ord(max(taken)) + 1)
     if following > "z":
-        raise ValueError("subplan letters b-z are exhausted")
+        raise ValueError("subplan letters a-z are exhausted")
     return following
 
 
