@@ -131,9 +131,22 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
 
 ### 3. Final log entry
 
-If commits (including review fixes) are not yet in `## Log`, append a dated
-entry. If the gate produced fixes, include a **"Review follow-up"** sub-entry:
-what was raised, what was actioned (with tests), what was a conscious no-op.
+If commits (including review fixes) are not yet in `## Log`, append an entry
+with `{cli} log`, which stamps it from the clock and commits it. If the gate
+produced fixes, include a **"Review follow-up"** sub-entry: what was raised,
+what was actioned (with tests), what was a conscious no-op. A note of more than
+one line goes on stdin, and each line after the first nests under it:
+
+```bash
+(cd .worktrees/<branch-suffix> && {cli} log {NNN} - --summary "final log" <<'EOF'
+<what the commits did>
+- Review follow-up: <raised>, <actioned, with tests>, <conscious no-ops>.
+EOF
+)
+```
+
+Never write the entry's timestamp by hand, and never back-fill entries from
+commit times.
 
 ### 4. Handoff and retrospective
 
@@ -147,29 +160,40 @@ changed, key decisions, and what would help next time. Insight, not a summary.
 
 ### 5. Closing frontmatter and index
 
-- `concluded` = the last implementation commit's authored date
-  (`git log --format="%aI" -1`), not now.
-- `pr` = the PR URL (`gh pr list --head "$(git branch --show-current)" --state all --json url --jq '.[0].url'`);
-  if merged with no dedicated PR, write `pr: null` — never the string `none`.
-  `implement` records it with `{cli} set-pr` when the PR opens, so it is
-  usually filled already; check it, and fill it only when it is not. On the
-  no-PR path it is `pr: null`, including when a PR was opened and then closed
-  unmerged in favor of the local merge (see *The no-PR path*).
-- Set `status: done`.
-- `{cli} index .` and commit the regenerated `.planners/README.md`.
+Check `pr:` first. `implement` records it with `{cli} set-pr` when the PR
+opens, so it is usually filled already; when it is not, run `{cli} set-pr {NNN}
+<url>` with the URL from `gh pr list --head "$(git branch --show-current)"
+--state all --json url --jq '.[0].url'`. Then, on the feature branch:
+
+```bash
+(cd .worktrees/<branch-suffix> && {cli} conclude {NNN})
+```
+
+It sets `status: done` and fills `concluded` from git: the authored date of the
+last work commit on the branch (one that touches more than the plan's own files
+and the index), else of `HEAD`. A `branch` or `pr` that was never filled becomes
+`null`. It refreshes the index and commits `plan [close]: {NNN} - <slug>`,
+carrying the plan file as it stands, so the Handoff and Retrospective from
+step 4 go in with it. Do not edit the frontmatter or write `concluded` by
+hand; the CLI owns it. On the no-PR path pass `--no-pr`, which writes `pr: null`
+even when a PR was opened and then closed unmerged in favor of the local merge
+(see *The no-PR path*).
+
+`conclude` refuses a plan that is not `active` or `implemented`, an umbrella
+with an unfinished subplan, and a HEAD off the plan's recorded branch. When its
+commit fails (a rejecting hook), fix the cause and run it again: it commits the
+change it already wrote.
 
 ### 6. Commit, then finish from the main checkout
 
 The session runs this step itself, start to finish. See *Who runs the
 cleanup* below.
 
-First commit and push the closing plan edit on the feature branch. Reach the
+First push the closing commit `conclude` made on the feature branch. Reach the
 worktree with a subshell, so the session's shell stays on the main checkout:
 
 ```bash
-(cd .worktrees/<branch-suffix> \
-  && git add .planners/plans/{NNN}-<slug>/plan.md .planners/README.md \
-  && git commit -m "plan [close]: {NNN} - <slug>" && git push)
+(cd .worktrees/<branch-suffix> && git status --short && git push)
 ```
 
 Then, from the **main checkout**, merge the PR and finish:
@@ -262,8 +286,8 @@ Ask before step 1, but do not close the PR yet: a gate that finds a blocker
 can still end the close, and a PR closed early with a "merging locally"
 comment would then say something false.
 
-**Step 6 on the no-PR path.** Commit and push the closing plan edit on the
-feature branch as in step 6. Then, when the user chose to close an existing PR
+**Step 6 on the no-PR path.** Push the closing commit on the feature branch as
+in step 6 (`conclude --no-pr` made it in step 5). Then, when the user chose to close an existing PR
 unmerged, close it now:
 
 ```bash

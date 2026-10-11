@@ -78,16 +78,31 @@ not guarded, and it logs a short `Reactivated` entry rather than a second
 activation entry. A nested subplan returns with
 `{cli} subplans {NNN} --set <letter>=active`.
 
-**Log** — append under `## Log` (create it before `## Retrospective` or at the
-end if absent), using a real timestamp from `date -Iseconds`:
+**Log** — run the command; do not write the entry by hand:
 
-```markdown
-## Log
-
-- **{timestamp}** — {note}
+```bash
+{cli} log {NNN} "<note>" --summary "<brief summary>"
 ```
 
-Commit `plan [log]: {NNN} - {brief summary}`.
+It appends `- **<now>** — <note>` under `## Log` (creating the section before
+`## Handoff` and `## Retrospective` when absent), with `<now>` read from the
+clock as the entry is written, and commits `plan [log]: {NNN} - <brief
+summary>` (the slug when `--summary` is left out). No option sets the time:
+an entry is dated when it is written. For a nested subplan pass
+`{NNN}<letter>`, and the entry goes in the subplan's own Log. For a note of more
+than one line, pass `-` and give it on stdin. The first line is the entry's
+sentence, and each later line is indented under it as written, so `- ` lines
+become sub-bullets:
+
+```bash
+{cli} log {NNN} - --summary "<brief summary>" <<'EOF'
+<sentence>
+- <detail>
+EOF
+```
+
+`--no-commit` writes only. There is no mainline guard: a Log entry belongs on
+the feature branch, with the work.
 
 **Block** — set `status: blocked` for work that is waiting on a person: a
 decision, a manual check, access only they have. It is an open state, so

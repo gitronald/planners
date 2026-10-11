@@ -34,8 +34,11 @@ layout until it is migrated to `.planners/`.
 
 The report holds:
 
-- `now`: the command's own timestamp. **Stamp every Log entry with it**, or
-  with a fresh `date -Iseconds`. Never type a timestamp from memory.
+- `now`: the command's own timestamp. **Stamp every review entry with it**, or
+  write the entry with `{cli} log <NNN> "<entry>" --no-commit`, which stamps it
+  from the clock and leaves the commit to `review --commit`. Never type a
+  timestamp from memory. For any entry written outside a review, prefer
+  `{cli} log`.
 - `summary`: one row per status (plans, commits that touched those plans,
   earliest `created`, latest `concluded`, newest commit date) and a `total`.
   It covers every status whatever was selected, so show it to the user first:

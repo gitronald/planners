@@ -172,8 +172,10 @@ first tends to pay for itself, because its findings change the steps after it.
 
 ### A subplan's Log entry
 
-A subplan's Log entry is dated like any other: `- **{timestamp}** — ...`, with
-a real timestamp from `date -Iseconds`. These headings go inside the entry. They
+A subplan's Log entry is written like any other, with `{cli} log
+{NNN}<letter> -` and the note on stdin, which stamps it from the clock. The
+first line is the entry's sentence and each later line nests under it, so the
+headings below go in as `- ` lines. These headings go inside the entry. They
 are a suggestion, not a schema. Each has earned its place by being the thing a
 later session went looking for:
 
