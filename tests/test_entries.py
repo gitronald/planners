@@ -81,6 +81,35 @@ def test_one_line_entries() -> None:
     )
 
 
+def test_log_entry_is_one_stamped_line() -> None:
+    assert entries.log_entry(_WHEN, "  Fixed the parser.  \n") == (
+        f"- **{_WHEN}** — Fixed the parser."
+    )
+
+
+def test_log_entry_nests_later_lines_as_written() -> None:
+    note = (
+        "\nReview follow-up.\n"
+        "- Raised: a missing guard.\n"
+        "  - Fixed, with a test.\n"
+        "\n"
+        "- No-op: naming.   \n\n"
+    )
+    assert entries.log_entry(_WHEN, note) == (
+        f"- **{_WHEN}** — Review follow-up.\n"
+        "  - Raised: a missing guard.\n"
+        "    - Fixed, with a test.\n"
+        "\n"
+        "  - No-op: naming."
+    )
+
+
+@pytest.mark.parametrize("note", ["", "   ", "\n \n\t\n"])
+def test_log_entry_refuses_an_empty_note(note: str) -> None:
+    with pytest.raises(ValueError, match="empty"):
+        entries.log_entry(_WHEN, note)
+
+
 def test_recorded_base_reads_the_last_activation_in_the_log() -> None:
     text = (
         "# Thing\n\n## Plan\n\n```markdown\n- Base: `example` at `0000000`\n```\n\n"
