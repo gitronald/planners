@@ -39,20 +39,20 @@ previous one landed before it starts:
   stop and report rather than improvising. A plan still `active` means the
   implement stage did not finish: `{cli} implemented` refused (uncommitted or
   unpushed work, which it names) or was never run.
-- A pipeline run always opens a draft PR, so a request for a **no-PR close**
-  ("no PR, just merge into dev") meets `close`'s conflict rule at the gate: the
-  PR exists, and the request says there should be none. `close` asks which the
-  user wants rather than reinterpreting; that question joins the review-gate
-  pause rather than adding a second one. Say so up front when the request
-  names both a pipeline and no PR.
+- On GitHub, a pipeline run always opens a draft PR, so a request for a
+  **no-PR close** ("no PR, just merge into dev") meets `close`'s conflict rule
+  at the gate: the PR exists, and the request says there should be none.
+  `close` asks which the user wants rather than reinterpreting; that question
+  joins the review-gate pause rather than adding a second one. Say so up front
+  when the request names both a pipeline and no PR.
 - The exception is a remote that is not GitHub. When `{cli} remote` reports any
   other kind, implement opens no PR and close takes the no-PR path on its own,
   so a "no PR" request there raises no conflict. Say at the start which path
   the run will take.
 - For an umbrella with **nested subplans**, the work is finished when
   `{cli} subplans {NNN} --require-closed` passes: no subplan is `draft`,
-  `active`, `implemented`, or `blocked`, and the umbrella's table agrees with the subplan
-  frontmatter. `close` refuses until it does.
+  `active`, `implemented`, or `blocked`, and the umbrella's table agrees with
+  the subplan frontmatter. `close` refuses until it does.
 
 Check the contract between stages; do not paper over a missing piece.
 
@@ -92,9 +92,10 @@ does to a bare `implement`. Two of its points shape the pipeline itself:
 `close` stops at a **mandatory review gate** (review the PR diff, post it
 best-effort, fix or consciously no-op every finding; or the minimal gate when
 the user asked for "minimal review") before it merges. The pipeline **pauses**
-at that gate — it does not abort and does not merge unreviewed. Surface the review, wait for approval, then resume `close` from the
-gate (final log, retrospective, closing frontmatter, merge, cleanup). This is
-the one expected pause in an otherwise unattended run.
+at that gate — it does not abort and does not merge unreviewed. Surface the
+review and wait for approval. Then resume `close` from the gate (final log,
+retrospective, closing frontmatter, merge, cleanup). This is the one expected
+pause in an otherwise unattended run.
 
 ## Steps
 

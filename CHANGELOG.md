@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-10-10
+
+### Changed
+
+- The plans rule says to record what the user said as the decision it set, in
+  the plan's own voice
+- The `close` skill's minimal review gate no longer asks for a paired
+  regression test with each fix
+- The skill bodies read more plainly, with the same instructions. Four
+  ambiguous passages now match the CLI: which `single-branch` push publishes
+  and which is rejected (`implement`), plan identity from the directory name
+  (`backfill`), the index sort direction (`index`), and the draft PR on GitHub
+  only (`pipeline`)
+
 ## [0.13.1] - 2026-10-09
 
 ### Security

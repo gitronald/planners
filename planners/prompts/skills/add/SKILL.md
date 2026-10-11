@@ -33,13 +33,14 @@ Derive a kebab-case `<slug>` from the request, then run:
   `.planners/README.md`, and commits both on the current branch
   (`plan [add]: NNN - <slug>`).
 - **The commit must land on the mainline**, so the plan is recorded there even if
-  a feature branch never merges. `add` refuses when HEAD is off it — `dev` when
-  that branch exists, plus the repo's default branch; `{cli} base --all` prints
-  the set. Switch to a mainline branch rather than reaching for the override.
-  `--allow-branch` exists for a repo whose mainline genuinely is not detectable
-  by name, not as a way past the refusal.
+  a feature branch never merges. `add` refuses when HEAD is off the mainline.
+  The mainline is `dev` when that branch exists, plus the repo's default branch;
+  `{cli} base --all` prints the set. Switch to a mainline branch rather than
+  reaching for the override. `--allow-branch` exists for a repo whose mainline
+  genuinely is not detectable by name. Do not use it to get past the refusal.
 - Pass `--no-commit` to write the file only — no index refresh, no commit — when
-  you want to author the `## Plan` body before committing, or are batching.
+  you want to author the `## Plan` body before committing, or when you are
+  batching.
 - Pass `--parent <N> --nested` to scaffold a **nested subplan** of umbrella `N`
   (see *Nested subplans* below) instead of a top-level plan.
 
@@ -95,12 +96,12 @@ already exist. Always pass `--nested`: `--parent` without it makes a lettered
 sibling plan (see below).
 
 The first nested `add` **writes the table itself**, under a `### Subplans`
-heading of its own, after the first subsection of the umbrella's `## Plan`
-section (the opening summary), or at the top of it when there are no
-subsections yet. Do not write a heading or a table for it beforehand, or the
-umbrella ends up with two. To place the table somewhere else, put the two
-marker comments there first, with nothing between them, and the command fills
-them in.
+heading of its own. It places the table after the first subsection of the
+umbrella's `## Plan` section (the opening summary), or at the top of that
+section when there are no subsections yet. Do not write a heading or a table
+beforehand, or the umbrella ends up with two. To place the table somewhere
+else, put the two marker comments there first, with nothing between them, and
+the command fills them in.
 
 - **Letters are fixed once assigned**, as plan numbers are. The command takes
   the next free letter from `b`. `a` is reserved for the investigation from the

@@ -42,9 +42,9 @@ go through `{cli} subplans`, not a hand edit:
 That changes the subplan's frontmatter, which is the status of record, and
 regenerates the umbrella's table in the same step. Several `--set` options are
 applied together or not at all, and a file with no frontmatter is refused
-rather than given one. Its log entries go in the
-subplan's own `## Log`. `retire`, `set-pr`, and `implemented` take the lettered
-reference directly (`{cli} retire 012d --into 015`).
+rather than given one. The subplan's log entries go in its own `## Log`.
+`retire`, `set-pr`, and `implemented` take the lettered reference directly
+(`{cli} retire 012d --into 015`).
 
 ### 2. Apply the action
 
@@ -53,24 +53,24 @@ derived `feature/<slug>`). It sets `status: active`, fills `branch` if empty,
 appends the activation entry to the Log (branch, base and commit, worktree, PR;
 `--worktree <path>` or `--no-worktree` when the work is not in
 `.worktrees/<branch-suffix>`), refreshes the index, and commits
-`plan [activate]: {NNN} - <slug>`. **It commits on
-the mainline**, before the branch or worktree exists, and refuses if HEAD is
-elsewhere — `{cli} base --all` prints the branches that qualify, so switch to one
-first rather than reaching for `--allow-branch`. Do not hand-edit the frontmatter
-for this; the CLI owns it. When `{cli} remote` says `single-branch`, do not
-follow it with a routine `git push` of the base: that push publishes into the
-live document, so show the ahead count and ask.
+`plan [activate]: {NNN} - <slug>`. **It commits on the mainline**, before the
+branch or worktree exists, and refuses if HEAD is elsewhere. `{cli} base --all`
+prints the branches that qualify, so switch to one first rather than reaching
+for `--allow-branch`. Do not hand-edit the frontmatter for this; the CLI owns
+it. When `{cli} remote` says `single-branch`, do not follow it with a routine
+`git push` of the base: that push publishes into the live document, so show the
+ahead count and ask.
 
 **Implemented** — once the work is finished, committed, and pushed, run
 `{cli} implemented {NNN}` on the feature branch, then `git push`. It sets
 `status: implemented`, appends `Implemented: <n> commits ahead of <base>` to the
 Log, refreshes the index, commits `plan [implemented]: {NNN} - <slug>`, and
-takes the PR out of draft. It refuses a plan that is not `active`, and a branch
-with uncommitted or unpushed work, naming which, and runs only on the feature
-branch, never the mainline. Off GitHub (`{cli} remote` is not `github`) a
-branch with no upstream is not refused, since there is no PR to see it, and on
-a `single-branch` remote only uncommitted changes are checked. It
-closes nothing; that stays with `/planners close`.
+takes the PR out of draft. It refuses a plan that is not `active`, and it
+refuses a branch with uncommitted or unpushed work, naming which. It runs only
+on the feature branch, never the mainline. Off GitHub (`{cli} remote` is not
+`github`) a branch with no upstream is not refused, since there is no PR to see
+it, and on a `single-branch` remote only uncommitted changes are checked.
+`implemented` closes nothing; that stays with `/planners close`.
 
 **Reactivate** — when review asks for more work on an `implemented` plan, run
 `{cli} activate {NNN}` on the feature branch. The return from `implemented` is
@@ -122,9 +122,9 @@ so from a feature branch it is not there yet. The order is:
 1. Add the follow-up plan from the base's checkout (`{cli} add <slug>`).
 2. Merge the base into the feature branch (`git merge --no-ff <base>`), from the
    feature branch's worktree.
-3. Retire with `--into`, from that worktree. It refuses an umbrella that still has a `draft`,
-`active`, `implemented`, or `blocked` nested subplan: finish each, or retire it first
-(`{cli} retire {NNN}<letter>`).
+3. Retire with `--into`, from that worktree. `retire` refuses an umbrella that
+   still has a `draft`, `active`, `implemented`, or `blocked` nested subplan:
+   finish each, or retire it first (`{cli} retire {NNN}<letter>`).
 
 **Handoff** — for an effort that spans sessions, keep a `## Handoff` section
 between Log and Retrospective. It is **rewritten in place**, the one exception
