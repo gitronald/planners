@@ -45,8 +45,9 @@ git rev-list --left-right --count HEAD...@{upstream}
   bridge that takes one branch, where every push lands in the live document),
   `other-forge`, `bare`, or `none`. The steps below assume `github`. **Any other
   kind has no PR**: skip step 6, and the plan closes through `close`'s no-PR
-  path, so say that now. `single-branch` also changes steps 3, 4, and 7, where
-  the push would be rejected or would publish. When the kind is wrong for this
+  path, so say that now. `single-branch` also changes steps 3, 4, and 7: step
+  3's push of the base would publish, step 4's push of the new branch would be
+  rejected, and step 7 skips its push. When the kind is wrong for this
   repo, commit `.planners/config.toml` with `kind = "<kind>"` under `[remote]`
   (for every clone), or set `git config planners.remoteKind <kind>` (this
   clone only, and it wins).
