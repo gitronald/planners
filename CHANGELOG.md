@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - The plans rule says to record what the user said as the decision it set, in
   the plan's own voice
+- The `close` skill's minimal review gate no longer asks for a paired
+  regression test with each fix
 
 ## [0.13.1] - 2026-10-09
 
