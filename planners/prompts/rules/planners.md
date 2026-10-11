@@ -25,7 +25,7 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 `{cli} validate` fails when the tracked index disagrees with the plan frontmatter, so an
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
 with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
-`implemented`, `retire`) already do that; a hand-written `log`/`close` edit is the case to remember — run
+`implemented`, `conclude`, `retire`) already do that; a hand edit to the frontmatter is the case to remember — run
 `{cli} index .` before committing. (`validate --no-index` skips the index comparison, for a
 caller checking plans in a repo whose index it cannot regenerate.) The same check catches a
 merge: `install` marks the index `merge=union` in `.gitattributes`, so a **local** merge
@@ -116,10 +116,13 @@ mechanism. Unlike `inactive` it will not resume; it carries no failure connotati
 was met another way, or made moot) — the neutral "this is dead" state. Fill `concluded` with
 the date it was retired, and treat absent `branch`/`pr` as explicit `null` (it's
 closed), the same as `done`.
-Use real timestamps — run `date -Iseconds`. Never fabricate or guess timestamps.
-For `concluded`, use the timestamp from the relevant git commit (`git log --format="%aI"`),
-not the current time or an estimate. Fill it for `done` and `retired`; leave it empty for
-`inactive` plans (they were parked, not concluded).
+Never type a timestamp. The CLI writes them: `{cli} log` stamps a Log entry from the
+clock as it writes it, and `{cli} conclude` (for `done`) and `{cli} retire` (for `retired`)
+fill `concluded` from git — `conclude` from the authored date of the branch's last work
+commit, not the plan's own paperwork after it. None takes an option that sets the time.
+Leave `concluded` empty for `inactive` plans (they were parked, not concluded). Where no
+command covers a stamp, read it from the clock (`date -Iseconds`) or from git
+(`git log --format="%aI"`), never from memory.
 Fill `pr` with the full PR URL (e.g., `https://github.com/owner/repo/pull/1`), not just the
 number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 
@@ -325,19 +328,20 @@ Activation is `{cli} activate {NNN}`, which carries the same guard — it flips 
 status, fills `branch`, logs the activation entry, refreshes the index, and commits, so the
 ordering is enforced rather than remembered. The guard covers activating a `draft`,
 `blocked`, or `inactive` plan; returning one from `implemented` happens on the feature
-branch and is not guarded. `log` and `close` updates are still hand-written
-commits and belong on the feature branch, where the work is. `{cli} set-pr`,
-`{cli} implemented`, and `{cli} retire` commit where they are run and carry no guard: a PR
-exists once the branch does, the work is implemented on its branch, and a plan is retired
-wherever the decision is made.
+branch and is not guarded. `{cli} log` and `{cli} conclude` commit on the feature branch,
+where the work is. `{cli} set-pr`, `{cli} implemented`, `{cli} log`, `{cli} conclude`, and
+`{cli} retire` commit where they are run and carry no mainline guard: a PR exists once the
+branch does, the work is implemented and logged on its branch, and a plan is retired
+wherever the decision is made. `conclude` checks instead that HEAD is on the plan's
+recorded branch, since the date it records is that branch's.
 
 ### Plan commit subjects name the slug
 
 `plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`,
-`{cli} finalize`, `{cli} activate`, `{cli} set-pr`, `{cli} implemented`, and `{cli} retire` write, so the
-remaining hand-written subjects (`log`, `close`) match them. A slug is fixed by the directory name; a title can
-be reworded, so a title-derived subject drifts from the plan it names. (`log` is
-the exception: its subject is a brief summary of the entry.)
+`{cli} finalize`, `{cli} activate`, `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
+`{cli} conclude` (`plan [close]`), and `{cli} retire` write. A slug is fixed by the directory
+name; a title can be reworded, so a title-derived subject drifts from the plan it names.
+(`log` is the exception: `--summary` replaces the slug with a brief summary of the entry.)
 
 ## No Separate Summaries
 

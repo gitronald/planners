@@ -1,11 +1,11 @@
 ---
 id: 16
 slug: log-command
-status: active
+status: done
 branch: feature/log-command
 created: 2026-10-11T15:18:30-07:00
-concluded:
-pr:
+concluded: 2026-10-11T15:39:01-07:00
+pr: https://github.com/gitronald/planners/pull/50
 ---
 
 # Stamp Log entries and concluded from the CLI, not by hand
@@ -96,12 +96,55 @@ It is not required if decision 6 removes the reason to hand-write entries.
   - Base: `dev` at `689fe01`
   - Worktree: `.worktrees/log-command`
   - PR: pending
+- **2026-10-11T15:25:26-07:00** — PR opened: https://github.com/gitronald/planners/pull/50
+- **2026-10-11T15:27:44-07:00** — Implemented the plan's Order, steps 1-5.
+  - What was done: `entries.log_entry` and `planners log` (e707dd3); `planners conclude`, with `--no-pr` added for local merges (e707dd3, then the `--no-pr` commit); the prompt, rule, and README edits; the changelog entry. Checks: ruff, ruff format --check, pyrefly, and 601 tests, all passing.
+  - Departures from the spec: `concluded` is the authored date of the last commit past the recorded base that touches more than the plan's own files and the index (merges left out), else HEAD. HEAD alone would date the final `log` commit, which now lands just before `conclude`. `conclude` also takes `--no-pr`, since the no-PR close records `pr: null` even when a PR was opened and closed unmerged. Both written up in decision 5's terms in the close skill.
+  - Departures from the spec: the review skill's `now` line also offers `planners log <NNN> "<entry>" --no-commit` for review entries, beside the line the plan asked for.
+  - Refactor: retire's unfinished-subplan check moved to `_refuse_open_subplans`, shared with `conclude`; `ahead.commits()` split out of `ahead.count()`.
+  - Not done: the global rule was not reinstalled. `install --check` reports it as drifted, and a diff of the installed rule against the new source shows only this plan's edits. Reinstall after the release.
+- **2026-10-11T15:27:51-07:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-10-11T15:39:22-07:00** — Close review (/code-review, medium) on PR #50, with one fix commit (f18137d).
+  - Review follow-up: 17 candidates from two finders, 8 verified, 3 survived, all fixed in f18137d. (1) `_work_authored` listed `origin/<base>..HEAD`, so a local-base commit that a stale `origin/<base>` lacks, merged into the branch, could date `concluded`; it now lists `HEAD` past both refs (`ahead.commits` takes `*revs`), with the regression test `test_conclude_leaves_out_base_commits_a_stale_remote_lacks`, checked to fail on the pre-fix code. (2) The base lookup shared with `finish` moved to `_plan_base`. (3) `_head_authored` became `_authored(root, rev="HEAD")`, which `_work_authored` now uses.
+  - Conscious no-ops (rejected on verification): conclude's resume path and its `pr: null` default match `implemented`/`retire` and the close skill's set-pr step; `log`'s inline append matches the sibling commands; the two prompt-consistency candidates found no contradiction.
+  - Checks: ruff, ruff format --check, pyrefly, and 602 tests, all passing. The review was posted to the PR.
 
 ## Handoff
 
-Open questions:
+State: every step in the Order, and the close review's fix (f18137d), is
+committed and pushed on `feature/log-command` (PR #50). The plan is closed.
+
+Questions:
 
 1. Should the `concluded` step be a new command (`close-plan`/`conclude`) or a
    flag on an existing one? `finish` runs after the merge, on the mainline,
    which is too late for a `concluded` committed on the feature branch.
+   **Answered 2026-10-11 (in implementation):** a new command, `planners
+   conclude`, the `done` counterpart of `retire`. It commits `plan [close]`, so
+   the close skill's hand-written commit is gone too. **Settled 2026-10-11 (at
+   close):** kept; the review did not overrule it.
 2. Is the pre-commit backstop wanted, or does the command alone suffice?
+   **Answered 2026-10-11 (in implementation):** not built. Decision 6 removes
+   the reason to hand-write a stamp, which the plan named as the condition for
+   leaving it out. **Settled 2026-10-11 (at close):** not wanted now; a
+   follow-up plan can add it if hand-typed stamps turn up again.
+
+Verified at close: `planners log`, run from this branch's code, wrote this
+plan's final Log entry (stdin, multi-line, `--summary`). `planners conclude`,
+from the same code, is the command that closes the plan; this text is written
+before it runs.
+
+Not verified here: `conclude` and the push -> merge -> `finish` legs run after
+this text is written, so their result is not recorded in the plan; the
+`plan [close]` commit, the PR thread, and the mainline's history carry it.
+
+Remaining, outside this plan: the global rule (`planners install --force`) is
+reinstalled after the next release ships these prompt edits; until then
+`install --check` reports it as drifted.
+
+## Retrospective
+
+- The spec held: both stamps (Log entries and `concluded`) moved into commands that read the clock or git, and the prompts stopped asking for typed timestamps. The one real design change was the `concluded` rule. HEAD would date the final `log` commit, so `conclude` dates the last commit that touches more than the plan's own files.
+- That rule is what the review caught. "Past the base" depends on which ref stands for the base, and a stale `origin/<base>` let base commits that came in through a merge count as the plan's work. Excluding both the remote and the local ref closes it. A rule that chooses one commit from a range is worth a test that merges the base in.
+- Making `conclude` the `done` counterpart of `retire` (the same refusals, the same resume after a failed commit, the same `null` fill) kept it small, and let the verifier reject three candidates as "matches the sibling command" instead of debating them.
+- Closing the plan that ships the close flow was a useful dogfood: the final Log entry came from `planners log` itself. The installed CLI lags the branch until release, so the close ran the branch's code through `uv run`, a detail the close skill does not mention.

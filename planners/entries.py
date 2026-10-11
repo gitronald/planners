@@ -4,7 +4,8 @@
 plan's ``## Log``, so every plan records where its work lives and when it moved
 in the same words: activated, PR opened, implemented. The entries are generated
 here rather than hand-written, which is what keeps their fields the same from
-plan to plan, and what lets a later command read one back.
+plan to plan, and what lets a later command read one back. ``log`` writes the
+free-form entries the same way, so their stamp comes from the clock as well.
 
 Everything here is a pure transform of strings: no filesystem, no git, no clock.
 """
@@ -21,6 +22,7 @@ __all__ = [
     "activation_entry",
     "default_worktree",
     "implemented_entry",
+    "log_entry",
     "pr_entry",
     "reactivation_entry",
     "recorded_base",
@@ -119,6 +121,29 @@ def implemented_entry(when: str, ahead: int | None, base: str | None) -> str:
         return _stamp(when, "Implemented.")
     noun = "commit" if ahead == 1 else "commits"
     return _stamp(when, f"Implemented: {ahead} {noun} ahead of `{base}`.")
+
+
+def log_entry(when: str, note: str) -> str:
+    """The entry ``log`` writes: ``note``, stamped with ``when``.
+
+    The note's first line is the entry's sentence. Each later line is indented
+    two spaces under it and otherwise kept as written, so a ``- `` line nests as
+    a sub-bullet and a deeper indent nests further. Blank lines at either end are
+    dropped, and trailing whitespace on every line.
+
+    Raises ``ValueError`` when the note has no text.
+    """
+    lines = [line.rstrip() for line in note.splitlines()]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    if not lines:
+        raise ValueError("the note is empty")
+    first, *rest = lines
+    return "\n".join(
+        [_stamp(when, first.strip()), *(f"  {line}" if line else "" for line in rest)]
+    )
 
 
 def recorded_base(text: str) -> str | None:

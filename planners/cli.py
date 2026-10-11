@@ -1278,9 +1278,19 @@ def _current_branch(root: Path) -> str:
     return base_mod.detect(root).current or "a detached HEAD"
 
 
-def _head_authored(root: Path) -> str | None:
-    """The authored date of ``HEAD`` as ISO-8601, or ``None`` when there is none."""
-    return (proc.git_out(root, ["log", "-1", "--format=%aI"]) or "").strip() or None
+def _plan_base(text: str, mainline: base_mod.Mainline) -> str | None:
+    """The base a plan's work sits on: the one its activation entry recorded in
+    ``text``, else the detected mainline. ``None`` when neither is known."""
+    base = entries.recorded_base(text)
+    if base is None and mainline.resolved:
+        base = mainline.branches[0]
+    return base
+
+
+def _authored(root: Path, rev: str = "HEAD") -> str | None:
+    """The authored date of ``rev`` as ISO-8601, or ``None`` when there is none."""
+    out = proc.git_out(root, ["log", "-1", "--format=%aI", rev])
+    return (out or "").strip() or None
 
 
 @app.command(name="set-pr")
@@ -1775,9 +1785,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
             "them before finishing"
         )
 
-    base = entries.recorded_base(plan.read_text(encoding="utf-8"))
-    if base is None and mainline.resolved:
-        base = mainline.branches[0]
+    base = _plan_base(plan.read_text(encoding="utf-8"), mainline)
     finish_mod.must(root, ["git", "fetch", "--prune"])
     meta = _closed_plan(root, plan, branch, base or "")
     if meta.status != Status.done:
@@ -1901,6 +1909,37 @@ def finish(
         raise typer.Exit(1) from None
 
 
+def _refuse_open_subplans(plan: Path, prefix: str, doing: str) -> None:
+    """Exit when the umbrella ``plan`` has a subplan that is not closed.
+
+    An umbrella does not close over unfinished subplans, by any door: ``close``
+    checks it with ``subplans --require-closed``, and ``retire`` and ``conclude``
+    run this. A subplan that does not parse could be unfinished; it cannot be
+    cleared, so it blocks the umbrella like an unfinished one.
+    """
+    subs, unreadable = _load_subplans(plan)
+    if unreadable:
+        for error in unreadable:
+            _err(error)
+        _err(
+            f"plan {prefix} has subplans that cannot be read; fix them "
+            f"before {doing} it."
+        )
+        raise typer.Exit(1)
+    unfinished = [
+        f"{sub.letter} ({sub.status.value})"
+        for sub in subs
+        if sub.status in subplans_mod.UNFINISHED_STATUSES
+    ]
+    if unfinished:
+        _err(
+            f"plan {prefix} has unfinished subplans: "
+            f"{', '.join(unfinished)}. Finish each, or retire it first with "
+            f"`planners retire {prefix}<letter>`."
+        )
+        raise typer.Exit(1)
+
+
 @app.command()
 def retire(
     ref: str = typer.Argument(
@@ -1964,35 +2003,10 @@ def retire(
         if meta.status in CLOSED_STATUSES:
             _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
             raise typer.Exit(1)
-        # An umbrella does not close over unfinished subplans, by either door:
-        # `close` checks it with `subplans --require-closed`, and this is the
-        # same check for the plan that is retired instead.
-        subs, unreadable = _load_subplans(plan)
-        # A subplan that does not parse could be unfinished; it cannot be
-        # cleared, so it blocks the umbrella like an unfinished one.
-        if unreadable:
-            for error in unreadable:
-                _err(error)
-            _err(
-                f"plan {meta.prefix} has subplans that cannot be read; fix them "
-                "before retiring it."
-            )
-            raise typer.Exit(1)
-        unfinished = [
-            f"{sub.letter} ({sub.status.value})"
-            for sub in subs
-            if sub.status in subplans_mod.UNFINISHED_STATUSES
-        ]
-        if unfinished:
-            _err(
-                f"plan {meta.prefix} has unfinished subplans: "
-                f"{', '.join(unfinished)}. Finish each, or retire it first with "
-                f"`planners retire {meta.prefix}<letter>`."
-            )
-            raise typer.Exit(1)
+        _refuse_open_subplans(plan, meta.prefix, "retiring")
         _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
         meta.status = Status.retired
-        meta.concluded = _head_authored(root) or _now()
+        meta.concluded = _authored(root) or _now()
         meta.branch = meta.branch or None
         meta.pr = meta.pr or None
         body = append_to_section(
@@ -2010,6 +2024,186 @@ def retire(
     _commit(
         root,
         f"plan [retire]: {label} - {slug}",
+        [str(path.relative_to(root)) for path in staged],
+    )
+
+
+@app.command(name="log")
+def log_(
+    ref: str = typer.Argument(
+        ..., help="Plan number, e.g. 005 (or 005d for a nested subplan)."
+    ),
+    note: str = typer.Argument(
+        ...,
+        help="The entry's text, or - to read it from stdin. Lines after the "
+        "first nest under it.",
+    ),
+    summary: str | None = typer.Option(
+        None, "--summary", help="The commit subject's summary; the slug if omitted."
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no commit."
+    ),
+) -> None:
+    """Append a dated entry to a plan's Log, and commit it.
+
+    The stamp is the current time, read here from the clock as the other
+    lifecycle commands read it, and no option sets it: an entry is dated when it
+    is written, never typed in. ``## Log`` is created ahead of ``## Handoff`` and
+    ``## Retrospective`` when the plan has none.
+
+    A nested subplan's entry goes in the subplan's own Log. There is no mainline
+    guard, since a Log entry belongs with the work, on the feature branch, and the
+    index is left alone, since it shows nothing a Log entry changes.
+    """
+    root = Path.cwd()
+    plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
+    target = nested or plan
+
+    if summary is not None and (not summary.strip() or "\n" in summary.strip()):
+        _err("--summary must be one line of text.")
+        raise typer.Exit(1)
+    if note == "-":
+        note = sys.stdin.read()
+    try:
+        entry = entries.log_entry(_now(), note)
+    except ValueError:
+        _err("the note is empty; nothing to log.")
+        raise typer.Exit(1) from None
+
+    slug = nested.stem[2:] if nested is not None else _read_plan(root, plan).slug
+    try:
+        text = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        _err(f"cannot read {_shown(target, root)}: {exc}")
+        raise typer.Exit(1) from None
+    target.write_text(
+        append_to_section(text, "Log", entry, before=("Handoff", "Retrospective")),
+        encoding="utf-8",
+    )
+    typer.echo(f"logged to {_shown(target, root)}")
+
+    if no_commit:
+        return
+    _commit(
+        root,
+        f"plan [log]: {label} - {summary.strip() if summary else slug}",
+        [str(target.relative_to(root))],
+    )
+
+
+def _work_authored(root: Path, plan: Path, text: str) -> str | None:
+    """The authored date of the plan's last work commit, or ``None`` when unknown.
+
+    That is the newest commit past the plan's base that touches something besides
+    the plan's own files and the index, merges left out. The plan's own commits
+    come after the work (the final Log entry, the Retrospective), so the date of
+    ``HEAD`` would date the paperwork. The base is the one the activation entry
+    recorded, else the detected mainline. ``None`` when there is no base, or no
+    such commit past it: a plan worked on the mainline, or one whose work is all
+    in its own directory.
+    """
+    base = _plan_base(text, base_mod.detect(root))
+    if base is None:
+        return None
+    # Past both the remote base and the local one: either can lag the other, and
+    # a commit on whichever is ahead is the base's work, not the plan's, even when
+    # the branch merged it in.
+    excluded = [
+        f"^{ref}"
+        for ref in (f"origin/{base}", base)
+        if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+    ]
+    if not excluded:
+        return None
+    found = ahead_mod.commits(root, "HEAD", *excluded, merges=False)
+    plan_dir = plan.parent.relative_to(root).as_posix()
+    for commit in found or []:
+        if not commit.is_own(plan_dir):
+            return _authored(root, commit.sha)
+    return None
+
+
+@app.command()
+def conclude(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    no_pr: bool = typer.Option(
+        False,
+        "--no-pr",
+        help="Record pr: null; the branch merges locally, not through a PR.",
+    ),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Close a finished plan as done: frontmatter, index, and commit.
+
+    The ``done`` counterpart of ``retire``, run by ``close`` on the feature branch
+    after the final Log entry and the Retrospective, before the merge.
+    ``concluded`` is the authored date of the last work commit on the branch,
+    else of ``HEAD``, so it is read from git rather than typed. A ``branch`` or
+    ``pr`` that was never filled becomes ``null``, since the plan is closed and
+    they are confirmed absent. The commit is ``plan [close]`` and carries the plan
+    file as it stands, so a Retrospective written by hand goes in with it.
+    ``--no-pr`` is the close that merges locally: ``pr`` is ``null`` even when a
+    PR was opened and then closed unmerged.
+
+    Refuses a nested subplan (``subplans --set <letter>=done`` closes one), a
+    plan that is not ``active`` or ``implemented``, an umbrella with unfinished
+    subplans, and, when committing, a HEAD off the plan's recorded branch.
+    """
+    root = Path.cwd()
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    meta = _read_plan(root, plan)
+
+    # An earlier run that wrote the frontmatter and then failed to commit (a
+    # rejecting hook, say) left the plan reading `done` with its change
+    # uncommitted. That run is finished here rather than refused.
+    resuming = (
+        meta.status == Status.done and not no_commit and not _is_unmodified(root, plan)
+    )
+    if meta.status not in (Status.active, Status.implemented) and not resuming:
+        closed = meta.status in CLOSED_STATUSES
+        _err(
+            f"plan {meta.prefix} is {meta.status.value}; "
+            + (
+                "it is closed."
+                if closed
+                else "only an active or implemented plan can be concluded."
+            )
+        )
+        raise typer.Exit(1)
+
+    # `concluded` dates the branch HEAD is on, so it must be the plan's.
+    if not no_commit and meta.branch:
+        current = base_mod.detect(root).current
+        if current != meta.branch:
+            _err(
+                f"error: plan {meta.prefix} is not concluded: it records branch "
+                f"'{meta.branch}', but HEAD is on "
+                f"'{current or 'a detached HEAD'}'."
+            )
+            raise typer.Exit(1)
+
+    if resuming:
+        typer.echo(f"committing the earlier change to {_shown(plan, root)}")
+    else:
+        _refuse_open_subplans(plan, meta.prefix, "concluding")
+        text = plan.read_text(encoding="utf-8")
+        _, body = split_frontmatter(text)
+        meta.status = Status.done
+        meta.concluded = _work_authored(root, plan, text) or _authored(root) or _now()
+        meta.branch = meta.branch or None
+        meta.pr = None if no_pr else meta.pr or None
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"concluded {_shown(plan, root)} at {meta.concluded}")
+
+    if no_commit:
+        return
+    staged = [plan, _refresh_index(root, cols="curated")]
+    _commit(
+        root,
+        f"plan [close]: {meta.prefix} - {meta.slug}",
         [str(path.relative_to(root)) for path in staged],
     )
 
