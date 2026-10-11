@@ -39,12 +39,12 @@ previous one landed before it starts:
   stop and report rather than improvising. A plan still `active` means the
   implement stage did not finish: `{cli} implemented` refused (uncommitted or
   unpushed work, which it names) or was never run.
-- A pipeline run always opens a draft PR, so a request for a **no-PR close**
-  ("no PR, just merge into dev") meets `close`'s conflict rule at the gate: the
-  PR exists, and the request says there should be none. `close` asks which the
-  user wants rather than reinterpreting; that question joins the review-gate
-  pause rather than adding a second one. Say so up front when the request
-  names both a pipeline and no PR.
+- On GitHub, a pipeline run always opens a draft PR, so a request for a
+  **no-PR close** ("no PR, just merge into dev") meets `close`'s conflict rule
+  at the gate: the PR exists, and the request says there should be none.
+  `close` asks which the user wants rather than reinterpreting; that question
+  joins the review-gate pause rather than adding a second one. Say so up front
+  when the request names both a pipeline and no PR.
 - The exception is a remote that is not GitHub. When `{cli} remote` reports any
   other kind, implement opens no PR and close takes the no-PR path on its own,
   so a "no PR" request there raises no conflict. Say at the start which path
