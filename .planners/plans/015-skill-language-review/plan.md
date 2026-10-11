@@ -74,13 +74,19 @@ recording what the user said.
   - `review` turned "it needs migrating to `.planners/` first" into the
     instruction "migrate it to `.planners/` first", which reads as telling the
     session to migrate. Now "refuses ... until it is migrated".
+- **2026-10-10T19:27:54-07:00** — Settled open questions 2 to 5 as edits on this
+  branch, one commit each: `implement` names which `single-branch` push
+  publishes (step 3) or is rejected (step 4); `backfill` reads identity from the
+  directory name; `index` states every sort key after status as descending;
+  `pipeline` scopes "always opens a draft PR" to GitHub. `uv run pytest`: 576
+  passed after the edits.
 
 ## Handoff
 
 ### State
 
-Order steps 1 to 3 are committed. Step 4, settling the open questions below,
-waits on a decision for each.
+Order steps 1 to 3 are committed. In step 4, questions 2 to 5 are settled and
+committed; question 1 waits on the user's decision.
 
 ### Open questions
 
@@ -111,3 +117,8 @@ skill text on 2026-10-10; the finding is under each.
    contract line reads as absolute. Finding: the pipeline's own implement
    bullet already says "Off GitHub ... there is no PR", so "always" is the only
    word out of line.
+
+Questions 2 to 5 were settled on 2026-10-10: the user chose to edit each on this
+branch so the text matches the code, one commit per question. Question 1 has a
+recommendation (no paired test on the minimal path, since what the skim looks
+for mostly has no behavior to test) awaiting the user's answer.
