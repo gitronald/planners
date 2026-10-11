@@ -1,10 +1,10 @@
 ---
 id: 16
 slug: log-command
-status: implemented
+status: done
 branch: feature/log-command
 created: 2026-10-11T15:18:30-07:00
-concluded:
+concluded: 2026-10-11T15:39:01-07:00
 pr: https://github.com/gitronald/planners/pull/50
 ---
 
@@ -111,8 +111,8 @@ It is not required if decision 6 removes the reason to hand-write entries.
 
 ## Handoff
 
-State: every step in the Order is committed and pushed on `feature/log-command`
-(PR #50). The plan is marked `implemented`, awaiting review.
+State: every step in the Order, and the close review's fix (f18137d), is
+committed and pushed on `feature/log-command` (PR #50). The plan is closed.
 
 Questions:
 
@@ -121,13 +121,30 @@ Questions:
    which is too late for a `concluded` committed on the feature branch.
    **Answered 2026-10-11 (in implementation):** a new command, `planners
    conclude`, the `done` counterpart of `retire`. It commits `plan [close]`, so
-   the close skill's hand-written commit is gone too. Open for the reviewer to
-   overrule.
+   the close skill's hand-written commit is gone too. **Settled 2026-10-11 (at
+   close):** kept; the review did not overrule it.
 2. Is the pre-commit backstop wanted, or does the command alone suffice?
    **Answered 2026-10-11 (in implementation):** not built. Decision 6 removes
    the reason to hand-write a stamp, which the plan named as the condition for
-   leaving it out. Open for the reviewer to ask for it as a follow-up plan.
+   leaving it out. **Settled 2026-10-11 (at close):** not wanted now; a
+   follow-up plan can add it if hand-typed stamps turn up again.
 
-Not verified: the new close flow (`log` -> `conclude` -> push -> merge ->
-`finish`) has not been run end to end on a real plan. Closing this plan is its
-first run.
+Verified at close: `planners log`, run from this branch's code, wrote this
+plan's final Log entry (stdin, multi-line, `--summary`). `planners conclude`,
+from the same code, is the command that closes the plan; this text is written
+before it runs.
+
+Not verified here: `conclude` and the push -> merge -> `finish` legs run after
+this text is written, so their result is not recorded in the plan; the
+`plan [close]` commit, the PR thread, and the mainline's history carry it.
+
+Remaining, outside this plan: the global rule (`planners install --force`) is
+reinstalled after the next release ships these prompt edits; until then
+`install --check` reports it as drifted.
+
+## Retrospective
+
+- The spec held: both stamps (Log entries and `concluded`) moved into commands that read the clock or git, and the prompts stopped asking for typed timestamps. The one real design change was the `concluded` rule. HEAD would date the final `log` commit, so `conclude` dates the last commit that touches more than the plan's own files.
+- That rule is what the review caught. "Past the base" depends on which ref stands for the base, and a stale `origin/<base>` let base commits that came in through a merge count as the plan's work. Excluding both the remote and the local ref closes it. A rule that chooses one commit from a range is worth a test that merges the base in.
+- Making `conclude` the `done` counterpart of `retire` (the same refusals, the same resume after a failed commit, the same `null` fill) kept it small, and let the verifier reject three candidates as "matches the sibling command" instead of debating them.
+- Closing the plan that ships the close flow was a useful dogfood: the final Log entry came from `planners log` itself. The installed CLI lags the branch until release, so the close ran the branch's code through `uv run`, a detail the close skill does not mention.
