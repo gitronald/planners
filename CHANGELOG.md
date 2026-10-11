@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-10-11
+
 ### Added
 
 - `planners log <NNN> <note>` appends a Log entry stamped from the clock and
