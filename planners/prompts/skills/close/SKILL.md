@@ -88,9 +88,10 @@ to the PR is best-effort** — a blocked post never stalls the close.
    anything the checks cannot see: a leftover debug line, a path or name that
    is machine-specific, a plan file edit that was not meant to ship.
 
-Nothing is posted and no review skill runs. Fix what the skim finds the same
-way the full gate does, and say in the final log entry that the review was
-minimal, and at whose request. The user chooses the lighter gate; it is never
+Nothing is posted and no review skill runs. Fix what the skim finds at the
+source, or record an intentional skip as a conscious no-op, as the full gate
+does. Unlike the full gate, a fix here needs no paired regression test. Say in
+the final log entry that the review was minimal, and at whose request. The user chooses the lighter gate; it is never
 the default, and a session does not downgrade to it on its own.
 
 ```bash
