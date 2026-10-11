@@ -1,7 +1,7 @@
 ---
 id: 15
 slug: skill-language-review
-status: active
+status: implemented
 branch: update/skill-language-review
 created: 2026-10-10T18:29:26-07:00
 concluded:
@@ -84,6 +84,7 @@ recording what the user said.
   gate fixes at the source or records a conscious no-op, as the full gate does,
   and needs no paired regression test. This is the one deliberate meaning change
   in the plan; it resolves an ambiguity rather than rewording.
+- **2026-10-10T19:38:41-07:00** — Implemented: 13 commits ahead of `dev`.
 
 ## Handoff
 
