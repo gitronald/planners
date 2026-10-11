@@ -1,7 +1,7 @@
 ---
 id: 15
 slug: skill-language-review
-status: draft
+status: active
 branch: update/skill-language-review
 created: 2026-10-10T18:29:26-07:00
 concluded:
@@ -57,6 +57,14 @@ recording what the user said.
 - The always-on rule beyond the one principle above.
 - Resolving the ambiguities listed in Handoff within this pass; they change
   meaning, so each needs a decision.
+
+## Log
+
+- **2026-10-10T18:29:42-07:00** — Activated.
+  - Branch: `update/skill-language-review`
+  - Base: `dev` at `e69c4e2`
+  - Worktree: `.worktrees/skill-language-review`
+  - PR: pending
 
 ## Handoff
 
