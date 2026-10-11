@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners log <NNN> <note>` appends a Log entry stamped from the clock and
+  commits it. It takes a nested subplan (`005d`), reads a multi-line note from
+  stdin with `-` (later lines nest under the first), and has no option that
+  sets the time
+- `planners conclude <NNN>` closes a finished plan as `done`: `concluded` from
+  the authored date of the branch's last work commit (not the plan's own
+  paperwork after it), `null` for a `branch` or `pr` never filled (`--no-pr`
+  forces `pr: null` for a local merge), a refreshed index, and a
+  `plan [close]` commit
+
+### Changed
+
+- The `update`, `close`, `implement`, `add`, and `review` skills and the plans
+  rule write Log entries and `concluded` through `log` and `conclude` instead
+  of telling the agent to type a timestamp
+
 ## [0.13.2] - 2026-10-10
 
 ### Changed
