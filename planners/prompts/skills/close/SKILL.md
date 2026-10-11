@@ -91,8 +91,9 @@ to the PR is best-effort** — a blocked post never stalls the close.
 Nothing is posted and no review skill runs. Fix what the skim finds at the
 source, or record an intentional skip as a conscious no-op, as the full gate
 does. Unlike the full gate, a fix here needs no paired regression test. Say in
-the final log entry that the review was minimal, and at whose request. The user chooses the lighter gate; it is never
-the default, and a session does not downgrade to it on its own.
+the final log entry that the review was minimal, and at whose request. The user
+chooses the lighter gate; it is never the default, and a session does not
+downgrade to it on its own.
 
 ```bash
 gh pr list --head "$(git branch --show-current)" --state open --json number --jq '.[0].number'
