@@ -276,6 +276,9 @@ When a concrete identifier would only illustrate a point, generalize it (e.g. "t
 open issue's tracker row", "a mis-linked submission") rather than naming a specific
 person, email, or data row. Applies to the title, body, examples, and any sidecar files.
 
+Write what the user said as the decision, convention, or correction it set, with its
+reason, in the plan's own voice. Chat is candid and a plan is shared; translate between them.
+
 **Enforcement by repo visibility.** On a **public** repo this is a hard blocker —
 never write or commit a plan containing real names, personal emails, or local/absolute
 paths; fix it before proceeding. On a **private** repo, **warn and continue** — surface
