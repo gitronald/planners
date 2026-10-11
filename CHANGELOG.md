@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The `update`, `close`, `implement`, `add`, and `review` skills and the plans
   rule write Log entries and `concluded` through `log` and `conclude` instead
   of telling the agent to type a timestamp
+- Nested subplan letters start at `a` and follow creation order. `a` is no
+  longer held back for an investigation, so `add --parent <NNN> --nested`
+  gives the first subplan `a`, and an investigation takes the next free letter
+  like any other step
 
 ## [0.13.2] - 2026-10-10
 

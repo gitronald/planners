@@ -238,7 +238,7 @@ hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--
 - **The umbrella holds decisions, not findings.** It keeps the goal, the numbered decisions,
   the order, the risks, and what is out of scope, with a subplan table and the execution
   order as a one-line dependency chain, e.g. `a -> (b, c, d) -> e`. The inventory, the
-  research, and the measurements belong to the investigation subplan.
+  research, and the measurements belong to an investigation subplan.
 - **A subplan has its own `## Log`, and a minimal frontmatter** of `status` and `branch`, with
   `pr`, `needs` (the letters it depends on), and `moved_to` optional. It carries no `id` or
   `sub`, so it stays out of the index and out of `validate` (`validate --subplans` opts in).
@@ -250,8 +250,9 @@ hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--
 - **An empty `branch` means the umbrella's branch.** A value names a sub-branch that merges
   into the umbrella's branch, or the branch of a step that lands in another repo through that
   repo's own PR, with the URL in the subplan's `pr`.
-- **Letters are fixed once assigned**, as plan numbers are. `a` is reserved for the
-  investigation from the first split, whether or not one is written yet, so steps start at `b`.
+- **Letters are fixed once assigned**, as plan numbers are. They follow creation order from
+  `a`, and none is held back: an investigation takes the next letter like any other step, and
+  a step that depends on it names it in `needs`.
 - **A subplan is one node in the order.** An order that needs part of one subplan before
   another and the rest after it is a sign that it is two subplans. When splitting by
   workstream and splitting by order disagree, split by order.

@@ -166,9 +166,11 @@ def test_render_subplan_without_a_branch_or_umbrella_title() -> None:
     assert "Part of [the umbrella plan](../plan.md)." in text
 
 
-def test_next_letter_starts_at_b_and_never_gives_a() -> None:
-    assert next_letter([]) == "b"
+def test_next_letter_starts_at_a_and_follows_the_highest() -> None:
+    assert next_letter([]) == "a"
     assert next_letter(["a"]) == "b"
+    # A gap is not filled: letters follow creation order.
+    assert next_letter(["b", "c"]) == "d"
     assert next_letter(["a", "b", "d"]) == "e"
     # Malformed entries do not count toward the maximum.
     assert next_letter(["", "zz", "c"]) == "d"

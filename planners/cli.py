@@ -772,8 +772,8 @@ def add(
     letter: str | None = typer.Option(
         None,
         "--letter",
-        help="With --nested: the letter to take (default: the next free one from b; "
-        "a is the investigation).",
+        help="With --nested: the letter to take (default: the next free one, "
+        "starting at a).",
     ),
     defer: bool = typer.Option(
         False,

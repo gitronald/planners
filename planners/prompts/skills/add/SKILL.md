@@ -104,10 +104,12 @@ else, put the two marker comments there first, with nothing between them, and
 the command fills them in.
 
 - **Letters are fixed once assigned**, as plan numbers are. The command takes
-  the next free letter from `b`. `a` is reserved for the investigation from the
-  first split, whether or not one is written yet: `--letter a` makes it. Making
-  room for it later would shift every letter, rewrite every cross-link, and
-  leave earlier Log entries naming files by letters they no longer have.
+  the next free letter, starting at `a`, so letters follow the order the
+  subplans were written in. None is held back for an investigation: one written
+  after the steps takes the next letter, and the steps that depend on it name it
+  in `needs`. Renaming to put it first would shift every letter, rewrite every
+  cross-link, and leave earlier Log entries naming files by letters they no
+  longer have.
 - **The commit follows the umbrella.** Under an umbrella that is not yet
   `active` the commit belongs on the mainline, and the same guard as a plain
   `add` applies. Under an `active` one it lands on the current branch, where the
