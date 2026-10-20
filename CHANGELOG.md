@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-10-20
+
 ### Changed
 
 - Plan worktrees are named for the plan's directory, `.worktrees/<NNN>-<slug>`

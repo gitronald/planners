@@ -311,7 +311,7 @@ wheels = [
 
 [[package]]
 name = "planners"
-version = "0.13.4a0"
+version = "0.13.4"
 source = { editable = "." }
 dependencies = [
     { name = "pkgskills" },
