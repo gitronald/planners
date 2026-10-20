@@ -41,15 +41,17 @@ def test_activation_entry_unknown_base_and_main_checkout() -> None:
 
 
 @pytest.mark.parametrize(
-    ("branch", "expected"),
+    ("prefix", "slug", "expected"),
     [
-        ("feature/thing", ".worktrees/thing"),
-        ("thing", ".worktrees/thing"),
-        ("spike/deep/thing/", ".worktrees/thing"),
+        ("026", "dependency-apply", ".worktrees/026-dependency-apply"),
+        ("000", "thing", ".worktrees/000-thing"),
+        ("012b", "thing", ".worktrees/012b-thing"),
     ],
 )
-def test_default_worktree_is_the_branch_suffix(branch: str, expected: str) -> None:
-    assert entries.default_worktree(branch) == expected
+def test_default_worktree_is_the_plan_dirname(
+    prefix: str, slug: str, expected: str
+) -> None:
+    assert entries.default_worktree(prefix, slug) == expected
 
 
 @pytest.mark.parametrize(

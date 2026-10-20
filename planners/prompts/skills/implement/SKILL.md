@@ -119,7 +119,7 @@ One command does all of the following. It sets `status: active`. It fills
 base and commit, worktree, PR). It refreshes the index, and commits as
 `plan [activate]: {NNN} - <slug>`.
 
-The entry records the worktree step 4 creates, `.worktrees/<branch-suffix>`; pass
+The entry records the worktree step 4 creates, `.worktrees/<NNN>-<slug>`; pass
 `--worktree <path>` (repo-relative) or `--no-worktree` when the work will be
 somewhere else. The command carries the same mainline guard as `{cli} add` and
 refuses here if you are already on a feature branch. That is the check step 2
@@ -148,8 +148,8 @@ activation commit — and set upstream:
 
 ```bash
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-git worktree add "$root/.worktrees/<branch-suffix>" -b <branch> <base>
-cd "$root/.worktrees/<branch-suffix>"
+git worktree add "$root/.worktrees/<NNN>-<slug>" -b <branch> <base>
+cd "$root/.worktrees/<NNN>-<slug>"
 git push -u origin <branch>
 ```
 
@@ -157,8 +157,8 @@ On a `single-branch` remote, skip the `git push -u`: the remote rejects any
 branch but its own, and the work is merged locally at close. On `other-forge`
 and `bare` remotes the push is a backup and is fine.
 
-`<branch-suffix>` is the branch's final path component (e.g. `<slug>` for
-`feature/<slug>`); `<base>` is the branch chosen in step 2. `$root` is the
+`<NNN>-<slug>` is the plan's directory name (e.g. `026-dependency-apply`),
+whatever the branch is called; `<base>` is the branch chosen in step 2. `$root` is the
 **main repo root**, so `.worktrees/` lands there and not under the current
 directory, which is a worktree itself when the base lives in one. **Run the
 remaining steps from inside the worktree.** To work in the main checkout
@@ -262,7 +262,7 @@ feature branch, which logs `Reactivated`; mark it implemented again when the
 follow-up is pushed.
 
 When the plan is closed (`/planners close`) and its branch is merged, remove the
-worktree: `git worktree remove .worktrees/<branch-suffix>`. Worktrees share the
+worktree: `git worktree remove .worktrees/<NNN>-<slug>`. Worktrees share the
 main repo's `.git/hooks/` — a pre-commit hook installed from inside the worktree
 (`uv run pre-commit install`) embeds the worktree's `.venv` python as its
 `INSTALL_PYTHON`, so once the worktree is removed the hook fails on every later

@@ -1085,7 +1085,7 @@ def activate(
         None,
         "--worktree",
         help="Repo-relative worktree path to record in the Log entry; defaults to "
-        ".worktrees/<branch-suffix>.",
+        ".worktrees/<NNN>-<slug>.",
     ),
     no_worktree: bool = typer.Option(
         False,
@@ -1262,7 +1262,7 @@ def _activation_entry(
     if no_worktree:
         recorded = entries.NO_WORKTREE
     else:
-        recorded = worktree or entries.default_worktree(branch)
+        recorded = worktree or entries.default_worktree(meta.prefix, meta.slug)
     return entries.activation_entry(
         _now(),
         branch=branch,
