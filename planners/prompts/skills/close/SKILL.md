@@ -138,7 +138,7 @@ what was actioned (with tests), what was a conscious no-op. A note of more than
 one line goes on stdin, and each line after the first nests under it:
 
 ```bash
-(cd .worktrees/<branch-suffix> && {cli} log {NNN} - --summary "final log" <<'EOF'
+(cd .worktrees/<NNN>-<slug> && {cli} log {NNN} - --summary "final log" <<'EOF'
 <what the commits did>
 - Review follow-up: <raised>, <actioned, with tests>, <conscious no-ops>.
 EOF
@@ -166,7 +166,7 @@ opens, so it is usually filled already; when it is not, run `{cli} set-pr {NNN}
 --state all --json url --jq '.[0].url'`. Then, on the feature branch:
 
 ```bash
-(cd .worktrees/<branch-suffix> && {cli} conclude {NNN})
+(cd .worktrees/<NNN>-<slug> && {cli} conclude {NNN})
 ```
 
 It sets `status: done` and fills `concluded` from git: the authored date of the
@@ -193,7 +193,7 @@ First push the closing commit `conclude` made on the feature branch. Reach the
 worktree with a subshell, so the session's shell stays on the main checkout:
 
 ```bash
-(cd .worktrees/<branch-suffix> && git status --short && git push)
+(cd .worktrees/<NNN>-<slug> && git status --short && git push)
 ```
 
 Then, from the **main checkout**, merge the PR and finish:

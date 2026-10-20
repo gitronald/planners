@@ -133,11 +133,11 @@ records where its work lives:
     - **2026-01-01T12:00:00-08:00** — Activated.
       - Branch: `feature/<slug>`
       - Base: `dev` at `abc1234`
-      - Worktree: `.worktrees/<slug>`
+      - Worktree: `.worktrees/<NNN>-<slug>`
       - PR: pending
 
 `Base` is the branch and commit the activation sits on. `Worktree` defaults to
-`.worktrees/<branch-suffix>`; `--worktree <path>` records another repo-relative path, and
+`.worktrees/<NNN>-<slug>`, the plan's directory name; `--worktree <path>` records another repo-relative path, and
 `--no-worktree` records the main checkout. An absolute path is refused. `set-pr` adds `PR opened:
 <url>` and `implemented` adds `Implemented: <n> commits ahead of <base>`, each a one-line entry,
 so the Log reads as a timeline: activated, PR opened, implemented. A re-run of `activate` on an

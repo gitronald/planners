@@ -40,13 +40,14 @@ def _stamp(when: str, sentence: str) -> str:
     return f"- **{when}** — {sentence}"
 
 
-def default_worktree(branch: str) -> str:
-    """The worktree the implement skill creates for ``branch``.
+def default_worktree(prefix: str, slug: str) -> str:
+    """The worktree the implement skill creates for a plan.
 
-    ``.worktrees/<branch-suffix>``, where the suffix is the branch's final path
-    component, so ``feature/<slug>`` works in ``.worktrees/<slug>``.
+    ``.worktrees/<NNN>-<slug>``, the plan's directory name, so plan 026's
+    ``dependency-apply`` works in ``.worktrees/026-dependency-apply`` whatever
+    its branch is called, and the worktree names the plan it belongs to.
     """
-    return f".worktrees/{branch.rstrip('/').rsplit('/', 1)[-1]}"
+    return f".worktrees/{prefix}-{slug}"
 
 
 def worktree_error(path: str) -> str | None:

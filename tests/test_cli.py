@@ -1024,7 +1024,7 @@ def test_activate_appends_the_activation_entry(
     assert "  - Branch: `feature/my-thing`\n" in text
     # The base is the commit the activation sits on: HEAD before it was made.
     assert f"  - Base: `{branch}` at `{before}`\n" in text
-    assert "  - Worktree: `.worktrees/my-thing`\n" in text
+    assert "  - Worktree: `.worktrees/005-my-thing`\n" in text
     assert "  - PR: pending\n" in text
     assert "Body text that must survive verbatim." in text
 

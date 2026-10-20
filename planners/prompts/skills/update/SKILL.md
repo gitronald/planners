@@ -52,7 +52,7 @@ rather than given one. The subplan's log entries go in its own `## Log`.
 derived `feature/<slug>`). It sets `status: active`, fills `branch` if empty,
 appends the activation entry to the Log (branch, base and commit, worktree, PR;
 `--worktree <path>` or `--no-worktree` when the work is not in
-`.worktrees/<branch-suffix>`), refreshes the index, and commits
+`.worktrees/<NNN>-<slug>`), refreshes the index, and commits
 `plan [activate]: {NNN} - <slug>`. **It commits on the mainline**, before the
 branch or worktree exists, and refuses if HEAD is elsewhere. `{cli} base --all`
 prints the branches that qualify, so switch to one first rather than reaching
