@@ -25,7 +25,8 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 `{cli} validate` fails when the tracked index disagrees with the plan frontmatter, so an
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
 with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
-`implemented`, `conclude`, `retire`) already do that; a hand edit to the frontmatter is the case to remember — run
+`implemented`, `conclude`, `retire`) already do that, and `log` refreshes a tracked index
+it finds stale and commits it with the entry; a hand edit to the frontmatter is the case to remember — run
 `{cli} index .` before committing. (`validate --no-index` skips the index comparison, for a
 caller checking plans in a repo whose index it cannot regenerate.) The same check catches a
 merge: `install` marks the index `merge=union` in `.gitattributes`, so a **local** merge
@@ -287,6 +288,13 @@ reason, in the plan's own voice. Chat is candid and a plan is shared; translate 
 never write or commit a plan containing real names, personal emails, or local/absolute
 paths; fix it before proceeding. On a **private** repo, **warn and continue** — surface
 the specifics and offer to generalize, but don't block the work.
+
+`{cli} log` checks paths for you: it refuses a note that names an absolute or
+home-directory path (`/tmp/probe.py`, `~/scratch`, `C:\...`), before anything is
+written, so the append-only Log never needs a rewrite to remove one. Describe the file
+instead, or copy one worth keeping into the plan's directory as a sidecar.
+`--allow-local-paths` writes the note anyway, for a private repo where the path has to
+stay or a match that is not a local path (a URL route such as `/api/v1`).
 
 ## Updating Plans
 

@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from planners import cli as cli_mod
 from planners.cli import app
-from tests.helpers import commit_all, git_out, init_git
+from tests.helpers import commit_all, git_out, init_git, write_script
 
 runner = CliRunner()
 
@@ -129,3 +129,91 @@ def test_log_has_no_option_that_sets_the_time() -> None:
     assert result.exit_code == 0
     for flag in ("--when", "--date", "--time", "--at"):
         assert flag not in result.output
+
+
+def _duplicate_rows_hook(root: Path) -> None:
+    """A pre-commit hook that fails on a committed index with a duplicated row.
+
+    What the validate hook caught in the field: a local merge resolved the index
+    with ``merge=union`` and committed a duplicate, and a commit of the plan alone
+    carried that index forward.
+    """
+    write_script(
+        root / ".git" / "hooks" / "pre-commit",
+        "git show :.planners/README.md | grep '^| ' | sort | uniq -d | grep -q . "
+        "&& exit 1\nexit 0\n",
+    )
+
+
+def test_log_refreshes_and_commits_a_stale_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path, git=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    row = next(line for line in index.read_text().splitlines() if "| 005 |" in line)
+    index.write_text(index.read_text() + row + "\n", encoding="utf-8")
+    commit_all(tmp_path, "merge with a union-duplicated row")
+    _duplicate_rows_hook(tmp_path)
+
+    result = runner.invoke(app, ["log", "005", "Merged the base."])
+    assert result.exit_code == 0, result.output
+    assert "refreshed the stale index" in result.output
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(changed) == [
+        ".planners/README.md",
+        ".planners/plans/005-parser/plan.md",
+    ]
+    assert index.read_text().count("| 005 |") == 1
+    assert git_out(tmp_path, "status", "--porcelain") == ""
+
+
+def test_log_leaves_a_fresh_index_out_of_the_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path, git=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    commit_all(tmp_path, "index")
+
+    result = runner.invoke(app, ["log", "005", "Wrote the lexer."])
+    assert result.exit_code == 0, result.output
+    assert "refreshed" not in result.output
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert changed == [".planners/plans/005-parser/plan.md"]
+
+
+@pytest.mark.parametrize(
+    ("note", "named"),
+    [
+        ("Probe passed: `uv run pyrefly check /tmp/probe.py`.", "/tmp/probe.py"),
+        ("Edited ~/.claude/rules/git.md.", "~/.claude/rules/git.md."),
+        ("Copied to C:\\Users\\me\\out.csv", "C:\\Users\\me\\out.csv"),
+    ],
+)
+def test_log_refuses_a_local_path(
+    note: str, named: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["log", "5", note, "--no-commit"])
+    assert result.exit_code == 1
+    assert "names a local path" in result.output
+    assert named in result.output
+    assert (plan_dir / "plan.md").read_text() == _PLAN
+
+    allowed = ["log", "5", note, "--no-commit", "--allow-local-paths"]
+    assert runner.invoke(app, allowed).exit_code == 0
+    assert note in (plan_dir / "plan.md").read_text()
+
+
+def test_log_keeps_repo_paths_urls_and_branch_names() -> None:
+    from planners.entries import local_paths
+
+    note = (
+        "Wrote `.planners/plans/005-parser/probe.py` and docs/a/b.md on "
+        "feature/005-parser; see https://github.com/owner/repo/pull/1 and/or "
+        "run /planners log."
+    )
+    assert local_paths(note) == []

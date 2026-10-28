@@ -22,6 +22,7 @@ __all__ = [
     "activation_entry",
     "default_worktree",
     "implemented_entry",
+    "local_paths",
     "log_entry",
     "pr_entry",
     "reactivation_entry",
@@ -34,6 +35,16 @@ NO_WORKTREE = "none (main checkout)"
 
 # The base branch as the activation entry records it: "- Base: `dev` at `abc1234`".
 _BASE_RE = re.compile(r"^\s*-\s+Base:\s+`([^`]+)`")
+
+# A path that names one machine: absolute POSIX with at least two segments
+# (`/tmp/x`, not a bare `/planners`), home-relative (`~/x`), or a Windows drive
+# (`C:\x`). The lookbehinds keep a URL's path (`host/a/b`, `https://`) and a
+# word with a slash (`and/or`, `feature/x`) out.
+_LOCAL_PATH_RE = re.compile(
+    r"(?<![\w.~:/\\-])/[\w.@+-]+/[^\s`'\"()<>\[\]]*"
+    r"|(?<![\w/])~/[^\s`'\"()<>\[\]]+"
+    r"|(?<![\w])[A-Za-z]:[\\/][^\s`'\"()<>\[\]]*"
+)
 
 
 def _stamp(when: str, sentence: str) -> str:
@@ -145,6 +156,16 @@ def log_entry(when: str, note: str) -> str:
     return "\n".join(
         [_stamp(when, first.strip()), *(f"  {line}" if line else "" for line in rest)]
     )
+
+
+def local_paths(note: str) -> list[str]:
+    """The machine-specific paths ``note`` names, in order, each once.
+
+    The same rule :func:`worktree_error` applies to one path, run over free text:
+    a plan is a shared record, so an absolute or home-directory path in it names
+    a single machine.
+    """
+    return list(dict.fromkeys(_LOCAL_PATH_RE.findall(note)))
 
 
 def recorded_base(text: str) -> str | None:

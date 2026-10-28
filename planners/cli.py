@@ -2049,8 +2049,14 @@ def log_(
     summary: str | None = typer.Option(
         None, "--summary", help="The commit subject's summary; the slug if omitted."
     ),
+    allow_local_paths: bool = typer.Option(
+        False,
+        "--allow-local-paths",
+        help="Write the entry even though it names an absolute or home-directory "
+        "path, which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
-        False, "--no-commit", help="Write only — no commit."
+        False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
     """Append a dated entry to a plan's Log, and commit it.
@@ -2061,8 +2067,20 @@ def log_(
     ``## Retrospective`` when the plan has none.
 
     A nested subplan's entry goes in the subplan's own Log. There is no mainline
-    guard, since a Log entry belongs with the work, on the feature branch, and the
-    index is left alone, since it shows nothing a Log entry changes.
+    guard, since a Log entry belongs with the work, on the feature branch.
+
+    A note naming a local path (``/tmp/probe.py``, ``~/notes``, ``C:\\x``) is
+    refused before anything is written. A plan is a shared record, and the Log is
+    append-only, so the path would otherwise stay in it or be rewritten later,
+    which is the edit the Log forbids.
+
+    The entry itself changes nothing the index shows, but the working tree around
+    it can: a local merge resolves the index with ``merge=union`` and can leave a
+    row duplicated, and the ``post-merge`` hook's repair lands uncommitted. A
+    commit of the plan alone then trips the validate hook, since pre-commit
+    stashes the unstaged repair and checks the stale index. So a tracked index
+    that has gone stale is refreshed and committed with the entry, as every other
+    lifecycle command does. A repo with no index is left without one.
     """
     root = Path.cwd()
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
@@ -2078,6 +2096,15 @@ def log_(
     except ValueError:
         _err("the note is empty; nothing to log.")
         raise typer.Exit(1) from None
+    local = entries.local_paths(note)
+    if local and not allow_local_paths:
+        named = ", ".join(local)
+        _err(
+            f"error: the note names a local path ({named}). A plan is a shared "
+            "record: describe it repo-relatively, or copy a file worth keeping into "
+            "the plan's directory as a sidecar. --allow-local-paths writes it anyway."
+        )
+        raise typer.Exit(1)
 
     slug = nested.stem[2:] if nested is not None else _read_plan(root, plan).slug
     try:
@@ -2093,10 +2120,15 @@ def log_(
 
     if no_commit:
         return
+    paths = [str(target.relative_to(root))]
+    if (root / INDEX_PATH).is_file() and _index_is_stale(root):
+        readme = _refresh_index(root, cols="curated")
+        paths.append(str(readme.relative_to(root)))
+        typer.echo(f"refreshed the stale index {_shown(readme, root)}")
     _commit(
         root,
         f"plan [log]: {label} - {summary.strip() if summary else slug}",
-        [str(target.relative_to(root))],
+        paths,
     )
 
 
