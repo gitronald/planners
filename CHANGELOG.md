@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `planners activate` defaults the branch to `feature/<NNN>-<slug>`, so its
+  suffix matches the plan's worktree, `.worktrees/<NNN>-<slug>`. It warns when
+  `--branch` is ignored because the plan already records a branch
+- `planners log` refuses a note that names an absolute or home-directory path
+  (`/tmp/probe.py`, `~/scratch`, `C:\...`), so the append-only Log never needs a
+  rewrite to remove one; `--allow-local-paths` overrides
+- The implement skill says when to merge the base: once, before the final
+  checks, with the commit they ran at named in the Log
+
+### Fixed
+
+- `planners log` refreshes a stale tracked index and commits it with the entry.
+  A local merge's union-duplicated row, or an uncommitted `post-merge` repair,
+  previously made the validate hook reject the Log commit
+
 ## [0.13.4] - 2026-10-20
 
 ### Changed

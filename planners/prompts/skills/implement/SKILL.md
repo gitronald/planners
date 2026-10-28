@@ -197,6 +197,20 @@ subplans in that order, each as *Implementing one nested subplan* describes.
 Fan them out to subagents only when the user asks for subagents or a workflow;
 *An orchestrated run* is the guidance for that.
 
+**Merge the base once, before the final checks**, not each time it moves. The
+activation entry records the commit the work started from, and a branch that is
+behind it is fine while the work is under way. Merge the base when the work is
+done (or when a conflict or a change the work needs makes it necessary), then
+run the full checks once on the result, and name the commit they ran at in the
+Log entry that reports them. Each extra merge is another full run of the suite.
+
+**A probe or scratch script stays out of the Log by path.** A plan is shared, so
+`{cli} log` refuses a note naming an absolute or home-directory path
+(`/tmp/probe.py`, `~/scratch`). Describe what the probe checked; when it is
+worth keeping, copy it into the plan's directory as a sidecar and name that
+repo-relative path. Write the entry right the first time: the Log is
+append-only, and a later rewrite to remove a path is the edit it forbids.
+
 ### 6. Open a draft PR
 
 Only on a `github` remote (step 2). For any other kind, skip this step: there is
