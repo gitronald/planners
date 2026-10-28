@@ -22,6 +22,10 @@ planners = "planners.cli:app"
 [project.entry-points."pkgskills.hosts"]
 planners = "planners.host:HOST"
 
+# proj-template release stamp, set by proj-init.sh and install-template; inert to consumers.
+[tool.proj-template]
+version = "0.11.7"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
