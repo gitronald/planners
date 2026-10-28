@@ -131,7 +131,7 @@ number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 records where its work lives:
 
     - **2026-01-01T12:00:00-08:00** — Activated.
-      - Branch: `feature/<slug>`
+      - Branch: `feature/<NNN>-<slug>`
       - Base: `dev` at `abc1234`
       - Worktree: `.worktrees/<NNN>-<slug>`
       - PR: pending

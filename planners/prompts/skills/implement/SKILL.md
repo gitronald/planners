@@ -114,8 +114,9 @@ branches: the branch it **recorded** in the frontmatter, where the work will
 go, and the branch it **committed on**, which is the base.
 
 One command does all of the following. It sets `status: active`. It fills
-`branch:` (the plan's own field if set, otherwise `feature/<slug>`; `--branch
-<name>` to choose). It appends the activation entry to the plan's Log (branch,
+`branch:` (the plan's own field if set, otherwise `feature/<NNN>-<slug>`, whose
+suffix is the worktree's name; `--branch <name>` to choose). A plan that already
+records a branch keeps it, and `--branch` then only warns. It appends the activation entry to the plan's Log (branch,
 base and commit, worktree, PR). It refreshes the index, and commits as
 `plan [activate]: {NNN} - <slug>`.
 

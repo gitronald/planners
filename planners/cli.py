@@ -1078,8 +1078,8 @@ def activate(
     branch: str | None = typer.Option(
         None,
         "--branch",
-        help="Branch name to record; defaults to feature/<slug>. An already-filled "
-        "branch: field is left alone.",
+        help="Branch name to record; defaults to feature/<NNN>-<slug>. An "
+        "already-filled branch: field is left alone, with a warning.",
     ),
     worktree: str | None = typer.Option(
         None,
@@ -1143,8 +1143,16 @@ def activate(
         raise typer.Exit(1)
 
     # An empty branch: is pending, so fill it; a populated one is the user's answer
-    # and is never overwritten (--branch on an already-filled plan is a no-op).
-    new_branch = meta.branch or branch or f"feature/{meta.slug}"
+    # and is never overwritten (--branch on an already-filled plan is a no-op, said
+    # aloud so it is not taken for a change). The default carries the plan number,
+    # so the branch's suffix is the worktree's name, .worktrees/<NNN>-<slug>.
+    if branch is not None and meta.branch and branch != meta.branch:
+        _warn(
+            f"warning: plan {meta.prefix} already records branch {meta.branch}; "
+            f"--branch {branch} is ignored. To change it, edit the branch: field and "
+            "run the index before committing."
+        )
+    new_branch = meta.branch or branch or f"feature/{meta.prefix}-{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
 
     # The worktree is recorded only in the first activation's entry, so the flags

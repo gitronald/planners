@@ -49,7 +49,8 @@ rather than given one. The subplan's log entries go in its own `## Log`.
 ### 2. Apply the action
 
 **Activate** — run `{cli} activate {NNN}` (`--branch <name>` to override the
-derived `feature/<slug>`). It sets `status: active`, fills `branch` if empty,
+derived `feature/<NNN>-<slug>`; a branch the plan already records is kept, and
+`--branch` then only warns). It sets `status: active`, fills `branch` if empty,
 appends the activation entry to the Log (branch, base and commit, worktree, PR;
 `--worktree <path>` or `--no-worktree` when the work is not in
 `.worktrees/<NNN>-<slug>`), refreshes the index, and commits
