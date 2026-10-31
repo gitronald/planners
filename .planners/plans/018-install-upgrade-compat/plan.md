@@ -5,7 +5,7 @@ status: active
 branch: feature/install-upgrade-compat
 created: 2026-10-27T14:55:54-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/62
 ---
 
 # Keep install working across planners upgrades
@@ -75,3 +75,4 @@ host moves from an older release to the current one.
   - Base: `dev` at `7bc9ee5`
   - Worktree: `.worktrees/018-install-upgrade-compat`
   - PR: pending
+- **2026-10-31T15:49:06-07:00** — PR opened: https://github.com/gitronald/planners/pull/62
