@@ -5,7 +5,7 @@ status: active
 branch: feature/validate-timestamp-ordering
 created: 2026-08-20T10:56:15-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/59
 ---
 
 # Validate concluded is not before created
@@ -52,3 +52,4 @@ exists, so ordering is a schema-level invariant validate should enforce.
   - Base: `dev` at `af6e12d`
   - Worktree: `.worktrees/017-validate-timestamp-ordering`
   - PR: pending
+- **2026-10-31T14:53:54-07:00** — PR opened: https://github.com/gitronald/planners/pull/59
