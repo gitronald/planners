@@ -394,11 +394,14 @@ def test_index_ignores_stray_content(
     assert "[# Notes]" not in readme
 
 
-def test_add_commit_failure_outside_git_exits_cleanly(
+def test_add_commit_failure_exits_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No git repo here: the commit-by-default path must surface a clean Exit,
-    # not a raw CalledProcessError traceback.
+    # No commit identity here, and git may not invent one: the commit-by-default
+    # path must surface a clean Exit, not a raw CalledProcessError traceback.
+    subprocess.run(
+        ["git", "config", "user.useConfigOnly", "true"], cwd=tmp_path, check=True
+    )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
     assert result.exit_code == 1
@@ -1086,8 +1089,8 @@ def test_activate_records_a_chosen_worktree_or_the_main_checkout(
     assert result.exit_code == 0, result.output
     text = _plan_text(tmp_path)
     assert "  - Worktree: none (main checkout)\n" in text
-    # Outside a repo there is no base to name, and the entry says so.
-    assert "  - Base: a detached HEAD (no commits yet)\n" in text
+    # A repository with no commits has a branch but no commit to name.
+    assert "  - Base: `main` (no commits yet)\n" in text
 
 
 @pytest.mark.parametrize(

@@ -20,10 +20,11 @@ import sys
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import typer
 from pkgskills import register
+from typer.core import TyperGroup
 
 from planners import ahead as ahead_mod
 from planners import base as base_mod
@@ -54,7 +55,52 @@ from planners.utils import (
     split_frontmatter,
 )
 
+# Commands that run anywhere: these only print, or read the paths they are given,
+# and `permissions` manages Claude Code settings rather than a repository.
+_RUN_ANYWHERE = frozenset({"skill", "rule", "schema", "validate", "permissions"})
+# Commands that name their repository with an argument, and check that path.
+_CHECK_THEIR_PATH = frozenset({"index", "base", "remote"})
+
+
+def _require_repository(path: Path) -> None:
+    """Exit 1 unless git counts ``path`` as inside a repository's working tree.
+
+    Asks git rather than looking for ``.git``: a stray empty ``.git`` directory
+    passes a look at the filesystem, and every commit a command goes on to make
+    then fails. Through :mod:`planners.proc`, so an ambient ``GIT_DIR`` cannot
+    answer for a repository the user is not in.
+    """
+    if proc.git_out(path, ["rev-parse", "--show-toplevel"]) is None:
+        _err(
+            f"{path.resolve()} is not inside a git repository, so planners changed "
+            "nothing. There is nothing to repair here: run this from a repository, "
+            "or run `git init` first."
+        )
+        raise typer.Exit(1)
+
+
+class _RepositoryGroup(TyperGroup):
+    """Refuses a command outside a git repository before the command runs.
+
+    The check sits here rather than in the app callback because the callback runs
+    before the subcommand's arguments are read, and ``add --help`` has to work
+    anywhere. Rather than in each command because ``install`` is mounted by
+    :func:`pkgskills.register`, and so that a new command is covered by default.
+    """
+
+    # `typing.override` needs Python 3.12, and this package supports 3.11.
+    def resolve_command(  # pyrefly: ignore[missing-override-decorator]
+        self, ctx: Any, args: list[str]
+    ) -> tuple[str | None, Any, list[str]]:
+        name, command, rest = super().resolve_command(ctx, args)
+        exempt = name in _RUN_ANYWHERE or name in _CHECK_THEIR_PATH
+        if not (exempt or ctx.resilient_parsing or "--help" in rest):
+            _require_repository(Path.cwd())
+        return name, command, rest
+
+
 app = typer.Typer(
+    cls=_RepositoryGroup,
     help="Own a repo's plan-file lifecycle: schema, CLI, and skillstub.",
     no_args_is_help=True,
 )
@@ -2580,6 +2626,7 @@ def base(
     This reports what git's refs say *now*; it is not a record of where a repo's
     existing plans were actually committed. See :func:`planners.base.detect`.
     """
+    _require_repository(repo_path)
     mainline = base_mod.detect(repo_path)
 
     if mainline.unborn:
@@ -2621,6 +2668,7 @@ def remote(
     The lifecycle skills branch on this: a non-github kind skips the draft PR and
     closes through the no-PR path.
     """
+    _require_repository(repo_path)
     origin = remote_mod.classify(repo_path)
     if origin.note:
         _warn(f"warning: {origin.note}")
@@ -2655,6 +2703,7 @@ def index(
     if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
+    _require_repository(repo_path)
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
 

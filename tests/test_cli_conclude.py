@@ -67,7 +67,7 @@ def test_conclude_no_commit_closes_the_plan(
 
     meta = PlanMetadata.from_file(plan)
     assert meta.status == Status.done
-    # No repo here, so there is no commit to date it by.
+    # No commits here, so there is none to date it by.
     assert meta.concluded == _NOW
     assert meta.branch == "feature/parser"
     assert meta.pr is None

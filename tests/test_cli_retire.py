@@ -63,7 +63,7 @@ def test_retire_no_commit_closes_the_plan_and_logs_it(
     text = path.read_text(encoding="utf-8")
     meta = PlanMetadata.from_file(path)
     assert meta.status == Status.retired
-    # No repo here, so there is no HEAD to date the decision by.
+    # No commits here, so there is no HEAD to date the decision by.
     assert meta.concluded == _NOW
     assert meta.branch is None and meta.pr is None
     assert "branch: null\n" in text and "pr: null\n" in text

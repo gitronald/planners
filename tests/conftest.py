@@ -18,6 +18,7 @@ environment on two axes:
   the repo it actually created.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -46,3 +47,16 @@ def _isolate_git_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     gh_config.mkdir()
     monkeypatch.setenv("GH_CONFIG_DIR", str(gh_config))
     monkeypatch.delenv("GH_HOST", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _in_a_repository(
+    request: pytest.FixtureRequest, _isolate_git_env: None, tmp_path: Path
+) -> None:
+    """Make each test's temp dir a repository, since the CLI refuses to run outside one.
+
+    A test about that refusal, or about a directory git does not count, opts out
+    with ``@pytest.mark.no_repo``.
+    """
+    if request.node.get_closest_marker("no_repo") is None:
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
