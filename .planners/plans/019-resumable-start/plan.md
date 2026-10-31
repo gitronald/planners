@@ -70,3 +70,9 @@ in that direction.
   - Checks at c9e9ed3: 663 tests pass with coverage 94.83%, ruff and pyrefly clean, and the start and entry tests pass on Python 3.11. Run on this plan from its worktree, `start` opened this PR through real `gh`. The other paths ran against a bare local remote and a fake `gh`, so the base-push and branch-push stops have not run against GitHub.
   - This plan's branch is `feature/resumable-start` because it was activated with the installed 0.13.4, which predates the `feature/<NNN>-<slug>` default.
 - **2026-10-31T15:33:19-07:00** — Implemented: 9 commits ahead of `dev`.
+- **2026-10-31T15:41:56-07:00** — Review gate on PR 61 at medium level, posted to the PR. Fixed in 88cf802; checks after it: 666 tests pass with coverage 94.87%, ruff and pyrefly clean.
+  - Review follow-up, actioned with tests: a `.gitignore` commit that failed no longer blocks the re-run (a file differing from HEAD by the rule alone is pending, any other edit is still a dirty tree); a `.claude/` copy that stopped partway no longer reads as finished setup (built beside the marker and renamed in); the PR body link uses the URL `gh` reports, for an enterprise host.
+  - Review follow-up, actioned under existing tests: the upstream lookup moved to `proc.upstream` for all three callers, and the worktrees directory name to `entries.WORKTREES_DIR`.
+  - Review follow-up, conscious no-ops: run from a linked worktree holding the base, the ignore rule lands on the base while the new worktree sits under the main checkout, which is cosmetic and ends when the base merges; `start._shown` and `cli._shown` have different contracts.
+  - Rejected in verification: `_uncommitted`'s slicing of porcelain output, since `must` does not strip it; the second `git worktree list`; the repeated detection in `_start_pr`.
+  - Not verified: the base-push and branch-push stops against GitHub, as noted above, and the enterprise link against a real enterprise host.
