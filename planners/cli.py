@@ -1,7 +1,7 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``implemented``,
-``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
+Commands: ``add``, ``finalize``, ``start``, ``activate``, ``set-pr``,
+``implemented``, ``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
 ``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
@@ -31,6 +31,7 @@ from planners import entries, proc
 from planners import finish as finish_mod
 from planners import remote as remote_mod
 from planners import review as review_mod
+from planners import start as start_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
 from planners.host import HOST
@@ -1119,7 +1120,28 @@ def activate(
     on its feature branch: that return is not guarded, and it logs a short
     ``Reactivated`` entry instead.
     """
-    root = Path.cwd()
+    _activate(
+        Path.cwd(),
+        ref,
+        branch=branch,
+        worktree=worktree,
+        no_worktree=no_worktree,
+        allow_branch=allow_branch,
+        no_commit=no_commit,
+    )
+
+
+def _activate(
+    root: Path,
+    ref: str,
+    *,
+    branch: str | None = None,
+    worktree: str | None = None,
+    no_worktree: bool = False,
+    allow_branch: bool = False,
+    no_commit: bool = False,
+) -> None:
+    """The work of ``activate``, on the plan under ``root``; ``start`` calls it too."""
     if worktree is not None and no_worktree:
         _err("--worktree and --no-worktree cannot be combined.")
         raise typer.Exit(1)
@@ -1321,7 +1343,11 @@ def set_pr(
     For a nested subplan the URL goes in the subplan's own ``pr:``, which is how a
     step that lands through another repo's PR is recorded.
     """
-    root = Path.cwd()
+    _set_pr(Path.cwd(), ref, url, no_commit=no_commit)
+
+
+def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
+    """The work of ``set-pr``, on the plan under ``root``; ``start`` calls it too."""
     if not re.fullmatch(r"https?://\S+", url):
         _err(f"not a PR URL: {url!r}; pass the full URL, not the number.")
         raise typer.Exit(1)
@@ -1912,6 +1938,208 @@ def finish(
     root = Path(toplevel.strip()) if toplevel else Path.cwd()
     try:
         _finish(root, ref, no_pr=no_pr, say=typer.echo)
+    except finish_mod.Stop as exc:
+        _err(f"stopped: {exc}")
+        raise typer.Exit(1) from None
+
+
+def _start_pr(
+    work_dir: Path,
+    ref: str,
+    plan_rel: Path,
+    branch: str,
+    origin: remote_mod.RemoteKind,
+) -> start_mod.Step:
+    """The draft PR for ``branch``: found, opened, or not yet possible.
+
+    The plan is read from ``work_dir``, since ``set-pr`` commits on the branch and
+    the base's copy never records the URL. An open PR the plan does not record is
+    a run that stopped between the two, so it is adopted rather than opened twice.
+    """
+    if origin is not remote_mod.RemoteKind.github:
+        return start_mod.Step(
+            start_mod.SKIPPED,
+            f"origin is {origin.value}: no PR, and close takes the no-PR path",
+        )
+    path = work_dir / plan_rel
+    try:
+        text = path.read_text(encoding="utf-8")
+        meta = PlanMetadata.from_text(text, path.parent.name)
+    except (PlanError, OSError, UnicodeDecodeError) as exc:
+        raise finish_mod.Stop(f"cannot read {plan_rel} on {branch}: {exc}") from None
+    if meta.pr:
+        return start_mod.Step(start_mod.DONE, f"the plan records {meta.pr}")
+    url = start_mod.open_pr(work_dir, branch)
+    if url is None:
+        base = _plan_base(text, base_mod.detect(work_dir))
+        if base is None:
+            raise finish_mod.Stop("cannot tell which branch the PR should target")
+        if _ahead_of(work_dir, base) == 0:
+            return start_mod.Step(
+                start_mod.SKIPPED,
+                f"{branch} is level with {base}, and GitHub opens no PR without a "
+                "commit; commit and push the first work, then run start again",
+            )
+        url = start_mod.create_draft_pr(
+            work_dir,
+            base=base,
+            branch=branch,
+            title=meta.title,
+            plan_path=plan_rel.as_posix(),
+        )
+    _set_pr(work_dir, ref, url)
+    return start_mod.Step(
+        start_mod.RAN,
+        f"recorded {url}; publish the record with `{start_mod.push_command(branch)}`",
+    )
+
+
+def _start(
+    root: Path,
+    ref: str,
+    *,
+    branch: str | None,
+    worktree: str | None,
+    no_worktree: bool,
+    say: finish_mod.Say,
+) -> None:
+    """The steps of ``start``, each raising :class:`finish.Stop` on a real issue."""
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    try:
+        meta = PlanMetadata.from_file(plan)
+    except PlanError as exc:
+        raise finish_mod.Stop(f"cannot read {_shown(plan, root)}: {exc}") from None
+    if meta.status in CLOSED_STATUSES or meta.status == Status.implemented:
+        raise finish_mod.Stop(
+            f"plan {meta.prefix} is {meta.status.value}; there is nothing to start"
+        )
+    mainline = base_mod.detect(root)
+    if meta.branch and meta.branch in mainline.branches:
+        raise finish_mod.Stop(
+            f"plan {meta.prefix} records the mainline branch {meta.branch}; start "
+            "needs a feature branch"
+        )
+    trees = proc.worktrees(root)
+    if not trees:
+        raise finish_mod.Stop(f"cannot list the worktrees of {root}")
+    main = trees[0][0]
+    origin = remote_mod.classify(root).kind
+
+    def show(name: str, step: start_mod.Step) -> None:
+        say(f"{step.outcome} {name}: {step.detail}")
+        for note in step.notes:
+            say(f"  note: {note}")
+
+    # A re-run from the plan's own branch, once there is work on it. The steps
+    # that belong on the mainline ran before that branch could exist.
+    on_branch = (
+        meta.status == Status.active
+        and bool(meta.branch)
+        and mainline.current == meta.branch
+    )
+    plan_rel = plan.relative_to(root)
+    if on_branch:
+        show("base", start_mod.Step(start_mod.SKIPPED, f"on {meta.branch}"))
+        show(
+            "activate",
+            start_mod.Step(start_mod.DONE, f"plan {meta.prefix} is active"),
+        )
+    else:
+        pending = (plan, root / INDEX_PATH) if meta.status == Status.active else ()
+        show("base", start_mod.check_base(root, mainline, ignore=pending))
+        active = (
+            meta.status == Status.active
+            and bool(meta.branch)
+            and _is_unmodified(root, plan)
+        )
+        _activate(root, ref, branch=branch, worktree=worktree, no_worktree=no_worktree)
+        show(
+            "activate",
+            start_mod.Step(
+                start_mod.DONE if active else start_mod.RAN,
+                f"plan {meta.prefix} is active",
+            ),
+        )
+        meta = PlanMetadata.from_file(plan)
+
+    target = meta.branch
+    if not target:
+        raise finish_mod.Stop(f"plan {meta.prefix} records no branch")
+    text = plan.read_text(encoding="utf-8")
+    recorded = entries.recorded_worktree(text) or entries.default_worktree(
+        meta.prefix, meta.slug
+    )
+    base = mainline.current or ""
+    if not on_branch:
+        show("ignore", start_mod.ensure_ignored(root, recorded))
+        show(
+            "push-base",
+            start_mod.check_base_pushed(
+                root,
+                base,
+                plan.parent.relative_to(root).as_posix(),
+                meta.prefix,
+                origin,
+            ),
+        )
+    show("branch", start_mod.ensure_branch(root, target, base))
+    step, work_dir = start_mod.ensure_worktree(root, main, target, recorded)
+    show("worktree", step)
+    show("setup", start_mod.set_up_worktree(work_dir, main))
+    show("push", start_mod.check_branch_pushed(work_dir, target, origin))
+    show("pr", _start_pr(work_dir, ref, plan_rel, target, origin))
+    say(f"plan {meta.prefix} is started; work in {_shown(work_dir, main)}")
+
+
+@app.command()
+def start(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        help="Branch name to record at activation; defaults to feature/<NNN>-<slug>.",
+    ),
+    worktree: str | None = typer.Option(
+        None,
+        "--worktree",
+        help="Repo-relative worktree path to record at activation; defaults to "
+        ".worktrees/<NNN>-<slug>.",
+    ),
+    no_worktree: bool = typer.Option(
+        False,
+        "--no-worktree",
+        help="Record that the work happens in the main checkout, not a worktree.",
+    ),
+) -> None:
+    """Run a plan's mechanical start-up steps, resuming where the last run stopped.
+
+    Run from the mainline. In order: check the base (on the mainline, clean, not
+    behind), activate, ignore the worktree directory, check the base is pushed,
+    create the branch, create the worktree, set it up, check the branch is pushed,
+    and open the draft PR. Each step reads its result first and prints `done`,
+    `ran`, or `skipped` with the reason, so a re-run picks up where the last one
+    ended and the output is the resume record.
+
+    `start` publishes no code. A push stays the session's own command, so the
+    permission profile still governs it: at each one `start` stops with exit 1 and
+    prints the command to run before the re-run. The draft PR waits for a commit
+    on the branch, since GitHub opens none without one. Run `start` again from the
+    worktree once that commit is pushed.
+
+    Also stops with exit 1 on a dirty tree, a base behind its upstream, a worktree
+    path held by something else, a failing setup, or a refused git or gh call.
+    """
+    toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
+    root = Path(toplevel.strip()) if toplevel else Path.cwd()
+    try:
+        _start(
+            root,
+            ref,
+            branch=branch,
+            worktree=worktree,
+            no_worktree=no_worktree,
+            say=typer.echo,
+        )
     except finish_mod.Stop as exc:
         _err(f"stopped: {exc}")
         raise typer.Exit(1) from None
