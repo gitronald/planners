@@ -1,10 +1,10 @@
 ---
 id: 20
 slug: refuse-outside-a-repository
-status: implemented
+status: done
 branch: feature/refuse-outside-a-repository
 created: 2026-10-31T15:20:15-07:00
-concluded:
+concluded: 2026-10-31T15:35:12-07:00
 pr: https://github.com/gitronald/planners/pull/60
 ---
 
@@ -106,3 +106,22 @@ and a library change would not reach `add` or `index`. So the fix goes here.
     - Conscious no-ops: a deleted working directory's traceback and `add` from a subdirectory writing under it, both unchanged from the base branch. The `finish` fallback to the current directory stays, as a guard against git failing between the two calls. The per-test `git init` costs about 2 seconds at most across the suite and cannot reuse `init_git`, whose identity would break the missing-identity test.
   - Decided at the review gate: `index` keeps the requirement. It used to run with no git on PATH and in a repository git refuses, and it now exits 1 and says why, since it regenerates a tracked file.
   - Not verified: the ownership case with a real second user. Not changed: `pkgskills check`, which skips this guard and can still report the line as `missing` outside a repository, without writing anything. No release is cut here, so installed copies do not have the guard yet.
+
+## Retrospective
+
+- The question started as how a library should treat lines outside a repository, and the
+  fix moved here once a survey found this package was the only host affected. Running its
+  own commands outside a repository then showed `add` and `index` misbehaving too, which no
+  library change would have reached. Check who is affected before designing for hosts in
+  general.
+- Asking git rather than looking for `.git` was the decision that mattered most. It refuses
+  the stray empty `.git` that a filesystem walk accepts, the likely route to the stray files
+  this plan started from, though what created them was never established.
+- Deciding help from the raw arguments was a shortcut that left a real bypass, and the first
+  design missed it because `add --help` passed. Doing the check after parsing removed the
+  token test and the shell-completion case together.
+- Making every test's temp directory a repository kept 121 tests running against the real
+  guard, but some kept passing for new reasons. One failure test passed only because git had
+  no identity, and the install tests passed through their parent directory. When a fixture
+  changes what a whole suite stands on, passing does not show that each test still means
+  what it says.
