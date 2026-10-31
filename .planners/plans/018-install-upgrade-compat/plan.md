@@ -76,3 +76,8 @@ host moves from an older release to the current one.
   - Worktree: `.worktrees/018-install-upgrade-compat`
   - PR: pending
 - **2026-10-31T15:49:06-07:00** — PR opened: https://github.com/gitronald/planners/pull/62
+- **2026-10-31T15:49:07-07:00** — Step 1 done: tests pin `install --global`, `--local`, and no flag (global), with a write and with `--check`.
+  - Mechanism: the planners-side pre-pass is ruled out. pkgskills 0.5.1 has no hook ahead of `guard`, and `--check` prints `classify`'s verdict, so a pre-pass cannot make `--check` report anything but `foreign`.
+  - The pkgskills hook already has a design there: its plan 012 (`Host.legacy_stamps`), still a draft and unbuilt. It needs a stable pkgskills release, because a git-URL dependency cannot go on PyPI.
+  - Status: use `drifted` as pkgskills 012 specifies, not the `stale` this plan names. In pkgskills `stale` means a superseded copy, and its remedy is `remove:`, not a reinstall. `--check` prints `repair: planners install --force` for `drifted`, though a plain install also fixes it.
+  - Measured at pkgskills dev 307c350 (68 commits past v0.5.1): the full planners suite passes (717). That dev adds the Codex harness, so a global install also writes `~/.agents/skills/planners/SKILL.md`.
