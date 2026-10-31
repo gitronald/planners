@@ -1,7 +1,7 @@
 ---
 id: 17
 slug: validate-timestamp-ordering
-status: active
+status: implemented
 branch: feature/validate-timestamp-ordering
 created: 2026-08-20T10:56:15-07:00
 concluded:
@@ -59,6 +59,7 @@ exists, so ordering is a schema-level invariant validate should enforce.
   - Survey, read-only: the new `validate --no-index` over the 50 local repos with a `.planners/` tree flags 60 plans in 16 repos. To repeat it, run that command in each repo and count `is before created`.
   - The survey contradicts the Background's reading of these values as paste errors. Most are migration batches that stamped one `created` on many plans, and retroactive plans written after their work, so `concluded` is true and `created` is what is off. See the Handoff.
   - Timestamps with no offset read as UTC, per `parse_instant`. A naive or date-only value on the same day as an offset value could be flagged falsely. Conscious no-op: the survey's 1149 closed plans hold no naive value and 3 date-only `created` values, and of those 3 the one flagged is days apart.
+- **2026-10-31T14:54:05-07:00** — Implemented: 5 commits ahead of `dev`.
 
 ## Handoff
 
