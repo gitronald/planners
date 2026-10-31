@@ -99,10 +99,68 @@ def test_refuses_and_writes_nothing(
     result = runner.invoke(app, args)
 
     assert result.exit_code == 1, result.output
-    assert "not inside a git repository" in result.stderr
+    assert "needs a git repository" in result.stderr
     assert "nothing to repair" in result.stderr
     assert str(bare) in result.stderr
     assert _tree(tmp_path) == before
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["add", "probe", "--title", "--help", "--no-commit"],
+        ["log", "001", "--", "--help"],
+    ],
+    ids=" ".join,
+)
+def test_the_word_help_as_a_value_is_not_a_request_for_help(
+    args: list[str], bare: Path, tmp_path: Path
+) -> None:
+    before = _tree(tmp_path)
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 1, result.output
+    assert "needs a git repository" in result.stderr
+    assert _tree(tmp_path) == before
+
+
+def test_a_missing_git_is_not_reported_as_a_missing_repository(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", "")
+
+    result = runner.invoke(app, ["add", "probe", "--no-commit"])
+
+    assert result.exit_code == 1, result.output
+    assert "needs git" in result.stderr
+    assert "git init" not in result.stderr
+    assert not (repo / ".planners").exists()
+
+
+def test_a_repository_git_refuses_is_refused_with_git_s_reason(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(repo)
+    # Git's own test switch for a repository owned by someone else.
+    monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+
+    result = runner.invoke(app, ["add", "probe", "--no-commit"])
+
+    assert result.exit_code == 1, result.output
+    assert "safe.directory" in result.stderr
+    assert not (repo / ".planners").exists()
+
+
+def test_a_file_named_as_the_repository_is_refused(bare: Path) -> None:
+    named = bare / "not-a-directory"
+    named.write_text("", encoding="utf-8")
+
+    result = runner.invoke(app, ["index", str(named)])
+
+    assert result.exit_code == 1, result.output
+    assert "not a directory" in result.stderr
 
 
 def test_a_stray_empty_git_directory_is_not_a_repository(bare: Path) -> None:
@@ -198,14 +256,14 @@ def test_a_named_path_is_what_gets_checked(
     command: str, bare: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     result = runner.invoke(app, [command, str(repo)])
-    assert "not inside a git repository" not in result.stderr
+    assert "needs a git repository" not in result.stderr
     assert result.exit_code == 0, result.output
 
     # And the other way round: from a repository, naming a directory outside one.
     monkeypatch.chdir(repo)
     result = runner.invoke(app, [command, str(bare)])
     assert result.exit_code == 1, result.output
-    assert "not inside a git repository" in result.stderr
+    assert "needs a git repository" in result.stderr
     assert not (bare / ".planners").exists()
 
 
