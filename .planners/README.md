@@ -2,9 +2,9 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 017 | [Validate concluded is not before created](plans/017-validate-timestamp-ordering/plan.md) | implemented | — | [#59](https://github.com/gitronald/planners/pull/59) |
 | 019 | [Add a resumable planners start command](plans/019-resumable-start/plan.md) | draft | — | — |
 | 018 | [Keep install working across planners upgrades](plans/018-install-upgrade-compat/plan.md) | draft | — | — |
+| 017 | [Validate concluded is not before created](plans/017-validate-timestamp-ordering/plan.md) | done | 2026-10-31 14:55 PT | [#59](https://github.com/gitronald/planners/pull/59) |
 | 016 | [Stamp Log entries and concluded from the CLI, not by hand](plans/016-log-command/plan.md) | done | 2026-10-11 15:39 PT | [#50](https://github.com/gitronald/planners/pull/50) |
 | 015 | [Clarify skill prompt language without changing meaning](plans/015-skill-language-review/plan.md) | done | 2026-10-10 19:50 PT | [#47](https://github.com/gitronald/planners/pull/47) |
 | 014 | [Detect remotes that cannot host a PR](plans/014-non-github-remotes/plan.md) | done | 2026-10-09 20:22 PT | [#44](https://github.com/gitronald/planners/pull/44) |

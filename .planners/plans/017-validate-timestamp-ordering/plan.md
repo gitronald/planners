@@ -1,10 +1,10 @@
 ---
 id: 17
 slug: validate-timestamp-ordering
-status: implemented
+status: done
 branch: feature/validate-timestamp-ordering
 created: 2026-08-20T10:56:15-07:00
-concluded:
+concluded: 2026-10-31T14:55:54-07:00
 pr: https://github.com/gitronald/planners/pull/59
 ---
 
@@ -67,8 +67,15 @@ exists, so ordering is a schema-level invariant validate should enforce.
 
 ## Handoff
 
-- State: the check, the lifecycle fix, the docs, and the tests are committed and pushed on the plan's branch, with the PR open.
-- Open questions:
-  1. The check flags 60 existing plans in 16 local repos, 15 of which have the validate hook. Merge it as a hard error, as the plan specifies, and repair those plans in a follow-up before the next stable release? The hook passes only staged plan files, so a flagged plan fails when it is next edited or on a whole-repo `planners validate`, not on every commit. None of the 16 runs `planners validate` in CI.
-- Not verified: the hook's behavior after a release in a downstream repo. The survey ran this branch's CLI read-only and changed nothing in those repos.
-- Remaining: the review gate, then close. Waits on the owner's answer to question 1.
+- State: the check, the lifecycle fix, the docs, and the tests are finished, reviewed, and on the plan's branch.
+- Questions:
+  1. Merge as a hard error even though it flags 60 existing plans in 16 local repos? Answered 2026-10-31: yes, merge. The repair of those plans is handed to a plan in the owner's private workspace, outside this repo.
+- Not verified: the hook's behavior after a release in a downstream repo. That `created` rather than `concluded` is the wrong value in each flagged plan is inferred from shared `created` values and plan slugs, not checked plan by plan.
+- Remaining: nothing in this repo. Downstream repos see the check once a release carries it.
+
+## Retrospective
+
+- The check itself was the small part and went as planned. The real work was what enforcing it exposed, which the plan had not looked for.
+- The plan's premise was only partly right. "A plan cannot conclude before it exists" holds for a value pasted by mistake, but `conclude` deliberately dates the last work commit, and work can come before the plan. A new invariant needs a check of who writes the value as well as who reads it.
+- Writing `created` in `conclude` and `retire` loses the true work date for a retroactive plan. The alternative was a close the hook rejects with no sanctioned fix, and git still holds the date.
+- Running a new rule over real plans before merging turned a surprise on some later commit into a decision made at the gate. Do this for any new `validate` rule.
