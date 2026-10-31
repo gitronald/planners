@@ -3,8 +3,8 @@
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
 | 020 | [Refuse to run outside a git repository](plans/020-refuse-outside-a-repository/plan.md) | active | — | — |
-| 019 | [Add a resumable planners start command](plans/019-resumable-start/plan.md) | implemented | — | [#61](https://github.com/gitronald/planners/pull/61) |
 | 018 | [Keep install working across planners upgrades](plans/018-install-upgrade-compat/plan.md) | draft | — | — |
+| 019 | [Add a resumable planners start command](plans/019-resumable-start/plan.md) | done | 2026-10-31 15:41 PT | [#61](https://github.com/gitronald/planners/pull/61) |
 | 017 | [Validate concluded is not before created](plans/017-validate-timestamp-ordering/plan.md) | done | 2026-10-31 14:55 PT | [#59](https://github.com/gitronald/planners/pull/59) |
 | 016 | [Stamp Log entries and concluded from the CLI, not by hand](plans/016-log-command/plan.md) | done | 2026-10-11 15:39 PT | [#50](https://github.com/gitronald/planners/pull/50) |
 | 015 | [Clarify skill prompt language without changing meaning](plans/015-skill-language-review/plan.md) | done | 2026-10-10 19:50 PT | [#47](https://github.com/gitronald/planners/pull/47) |

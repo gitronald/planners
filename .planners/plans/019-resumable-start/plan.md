@@ -1,10 +1,10 @@
 ---
 id: 19
 slug: resumable-start
-status: implemented
+status: done
 branch: feature/resumable-start
 created: 2026-10-28T10:18:56-07:00
-concluded:
+concluded: 2026-10-31T15:41:45-07:00
 pr: https://github.com/gitronald/planners/pull/61
 ---
 
@@ -76,3 +76,10 @@ in that direction.
   - Review follow-up, conscious no-ops: run from a linked worktree holding the base, the ignore rule lands on the base while the new worktree sits under the main checkout, which is cosmetic and ends when the base merges; `start._shown` and `cli._shown` have different contracts.
   - Rejected in verification: `_uncommitted`'s slicing of porcelain output, since `must` does not strip it; the second `git worktree list`; the repeated detection in `_start_pr`.
   - Not verified: the base-push and branch-push stops against GitHub, as noted above, and the enterprise link against a real enterprise host.
+
+## Retrospective
+
+- The plan's step 6 had `start` push, and that was the one part that did not survive: a permission rule sees only the outer command, so a push from inside `start` would skip the gate `confirm` exists to open. Stopping with the command to run costs a first run two stops, and it keeps the same reasoning `finish` already follows.
+- The skill shrank less than hoped, from 445 lines to about 365. Most of what remains is judgment, so the gain is resumability and not length.
+- Both defects the review confirmed were in the plan's own promise, resuming: a step's partial write looked like either a dirty tree or a finished step. When adding a resumable step, test a stop between its write and its commit, or partway through a copy, and not only a stop at the step's boundary.
+- A marker for "setup finished" only helps if everything before it is whole. Build a copy aside and rename it in, so the marker never records a partial result.
