@@ -27,6 +27,7 @@ __all__ = [
     "pr_entry",
     "reactivation_entry",
     "recorded_base",
+    "recorded_worktree",
     "worktree_error",
 ]
 
@@ -35,6 +36,9 @@ NO_WORKTREE = "none (main checkout)"
 
 # The base branch as the activation entry records it: "- Base: `dev` at `abc1234`".
 _BASE_RE = re.compile(r"^\s*-\s+Base:\s+`([^`]+)`")
+
+# The worktree as the same entry records it: a path in backticks, or NO_WORKTREE.
+_WORKTREE_RE = re.compile(r"^\s*-\s+Worktree:\s+(.+?)\s*$")
 
 # A path that names one machine: absolute POSIX with at least two segments
 # (`/tmp/x`, not a bare `/planners`), home-relative (`~/x`), or a Windows drive
@@ -168,13 +172,13 @@ def local_paths(note: str) -> list[str]:
     return list(dict.fromkeys(_LOCAL_PATH_RE.findall(note)))
 
 
-def recorded_base(text: str) -> str | None:
-    """The base branch the last activation entry in ``text``'s Log recorded.
+def _recorded(text: str, pattern: re.Pattern[str]) -> str | None:
+    """The first group of ``pattern``'s last match in ``text``'s Log.
 
     Only the ``## Log`` section is read, and nothing inside a code fence, so a
     spec that shows an example entry is not taken for the record. The last entry
     wins, so a plan activated twice (a draft reopened after it was set aside)
-    reports the base its current work came from. ``None`` when there is no entry.
+    reports what its current work came from. ``None`` when there is no entry.
     """
     span = section_span(text, "Log")
     if span is None:
@@ -182,7 +186,21 @@ def recorded_base(text: str) -> str | None:
     lines = text.splitlines()[span[0] : span[1]]
     found: str | None = None
     for line, fenced in zip(lines, fenced_lines(lines), strict=True):
-        match = None if fenced else _BASE_RE.match(line)
+        match = None if fenced else pattern.match(line)
         if match:
             found = match.group(1)
     return found
+
+
+def recorded_base(text: str) -> str | None:
+    """The base branch the last activation entry in ``text``'s Log recorded."""
+    return _recorded(text, _BASE_RE)
+
+
+def recorded_worktree(text: str) -> str | None:
+    """The worktree the last activation entry in ``text``'s Log recorded.
+
+    A repo-relative path, or :data:`NO_WORKTREE` for the main checkout.
+    """
+    value = _recorded(text, _WORKTREE_RE)
+    return None if value is None else value.strip("`")

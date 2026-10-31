@@ -131,3 +131,29 @@ def test_recorded_base_skips_a_fenced_example_inside_the_log() -> None:
 
 def test_recorded_base_without_a_log() -> None:
     assert entries.recorded_base("# Thing\n\n## Plan\n") is None
+
+
+def test_recorded_worktree_reads_the_last_activation_entry() -> None:
+    text = (
+        "# T\n\n## Plan\n\n- Worktree: `.worktrees/spec`\n\n## Log\n\n"
+        + entries.activation_entry(
+            "t1", branch="b", base="dev", sha="a", worktree=".worktrees/old", pr=None
+        )
+        + "\n"
+        + entries.activation_entry(
+            "t2", branch="b", base="dev", sha="b", worktree=".worktrees/new", pr=None
+        )
+        + "\n"
+    )
+    assert entries.recorded_worktree(text) == ".worktrees/new"
+
+
+def test_recorded_worktree_reads_the_main_checkout() -> None:
+    text = "## Log\n\n" + entries.activation_entry(
+        "t", branch="b", base="dev", sha="a", worktree=entries.NO_WORKTREE, pr=None
+    )
+    assert entries.recorded_worktree(text) == entries.NO_WORKTREE
+
+
+def test_recorded_worktree_is_none_without_an_entry() -> None:
+    assert entries.recorded_worktree("# T\n\n## Plan\n\nBody.\n") is None
