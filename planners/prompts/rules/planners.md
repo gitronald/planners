@@ -121,6 +121,9 @@ Never type a timestamp. The CLI writes them: `{cli} log` stamps a Log entry from
 clock as it writes it, and `{cli} conclude` (for `done`) and `{cli} retire` (for `retired`)
 fill `concluded` from git — `conclude` from the authored date of the branch's last work
 commit, not the plan's own paperwork after it. None takes an option that sets the time.
+`validate` fails a `concluded` earlier than `created`, so both commands write `created`
+instead when the date from git is older than the plan (work committed before the plan was
+written).
 Leave `concluded` empty for `inactive` plans (they were parked, not concluded). Where no
 command covers a stamp, read it from the clock (`date -Iseconds`) or from git
 (`git log --format="%aI"`), never from memory.

@@ -58,7 +58,9 @@ Do the matching yourself — do not delegate it. Match by function/module names
 and action verbs in commit messages vs. plan descriptions. Use
 `git merge-base --is-ancestor <commit> <merge>` to confirm ancestry when unsure.
 For `concluded`, prefer the last implementation commit over version-bump or
-merge commits. Build a full assignment table before editing.
+merge commits. `validate` fails a `concluded` earlier than `created`, so when that
+commit is older than the plan, use `created` instead. Build a full assignment table
+before editing.
 
 ### 4. Apply edits
 
