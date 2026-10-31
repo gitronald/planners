@@ -76,6 +76,8 @@ in that direction.
   - Review follow-up, conscious no-ops: run from a linked worktree holding the base, the ignore rule lands on the base while the new worktree sits under the main checkout, which is cosmetic and ends when the base merges; `start._shown` and `cli._shown` have different contracts.
   - Rejected in verification: `_uncommitted`'s slicing of porcelain output, since `must` does not strip it; the second `git worktree list`; the repeated detection in `_start_pr`.
   - Not verified: the base-push and branch-push stops against GitHub, as noted above, and the enterprise link against a real enterprise host.
+- **2026-10-31T15:43:46-07:00** — Merged `dev` after the close commit, since plan 020 landed there and GitHub reported the PR as conflicting. `CHANGELOG.md` was the only conflict, resolved by keeping both entries. Plan 020's check that every command is accounted for failed on `start`, so `start` is now listed among the guarded commands. Checks on the merged tree: 711 tests pass with coverage 94.84%, ruff and pyrefly clean.
+  - `concluded` stays at the commit `conclude` read, which predates this merge and the one-line test change.
 
 ## Retrospective
 
