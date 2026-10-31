@@ -60,6 +60,10 @@ exists, so ordering is a schema-level invariant validate should enforce.
   - The survey contradicts the Background's reading of these values as paste errors. Most are migration batches that stamped one `created` on many plans, and retroactive plans written after their work, so `concluded` is true and `created` is what is off. See the Handoff.
   - Timestamps with no offset read as UTC, per `parse_instant`. A naive or date-only value on the same day as an offset value could be flagged falsely. Conscious no-op: the survey's 1149 closed plans hold no naive value and 3 date-only `created` values, and of those 3 the one flagged is days apart.
 - **2026-10-31T14:54:05-07:00** — Implemented: 5 commits ahead of `dev`.
+- **2026-10-31T14:59:12-07:00** — Review gate passed at medium level, and the owner approved the merge as a hard error. Final checks at the commit that fixed the skills: ruff, pyrefly, and 622 tests passed, run by this session. CI passed on 3.11 to 3.14 at the commit before it, and that fix touches only skill text.
+  - Review follow-up: the correctness and reuse finders returned nothing. A further pass found the close and update skills still saying `concluded` is always the git date; fixed in the skills, with no paired test because it is prose only. The review is posted on the PR.
+  - Conscious no-ops: same-day naive or date-only values against offset values, as logged above.
+  - Re-ran the scratch repo repro on this branch: a plan written after its work closed with `concluded` equal to `created`, and `validate` passed.
 
 ## Handoff
 
