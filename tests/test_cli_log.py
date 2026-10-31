@@ -25,15 +25,15 @@ _SUBPLAN = (
 )
 
 
-def _repo(root: Path, *, git: bool = False) -> Path:
-    if git:
+def _repo(root: Path, *, committed: bool = False) -> Path:
+    if committed:
         init_git(root)
     plan_dir = root / ".planners" / "plans" / "005-parser"
     (plan_dir / "subplans").mkdir(parents=True)
     (plan_dir / "plan.md").write_text(_PLAN, encoding="utf-8")
     (plan_dir / "subplans" / "b-lexer.md").write_text(_SUBPLAN, encoding="utf-8")
     (root / "staged.txt").write_text("unrelated\n", encoding="utf-8")
-    if git:
+    if committed:
         commit_all(root, "initial commit")
     return plan_dir
 
@@ -59,7 +59,7 @@ def test_log_creates_the_section_ahead_of_handoff(
 def test_log_appends_to_an_existing_log_and_commits_only_the_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan_dir = _repo(tmp_path, git=True)
+    plan_dir = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "staged.txt").write_text("changed\n", encoding="utf-8")
     assert runner.invoke(app, ["log", "005", "First."]).exit_code == 0
@@ -80,7 +80,7 @@ def test_log_appends_to_an_existing_log_and_commits_only_the_plan(
 def test_log_to_a_nested_subplan_reads_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan_dir = _repo(tmp_path, git=True)
+    plan_dir = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     note = "Done.\n- What changed: the lexer.\n- Not verified: Windows paths.\n"
     result = runner.invoke(app, ["log", "5b", "-"], input=note)
@@ -148,7 +148,7 @@ def _duplicate_rows_hook(root: Path) -> None:
 def test_log_refreshes_and_commits_a_stale_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _repo(tmp_path, git=True)
+    _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["index", "."]).exit_code == 0
     index = tmp_path / ".planners" / "README.md"
@@ -172,7 +172,7 @@ def test_log_refreshes_and_commits_a_stale_index(
 def test_log_leaves_a_fresh_index_out_of_the_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _repo(tmp_path, git=True)
+    _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["index", "."]).exit_code == 0
     commit_all(tmp_path, "index")

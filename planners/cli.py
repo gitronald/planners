@@ -20,10 +20,11 @@ import sys
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import typer
 from pkgskills import register
+from typer.core import TyperGroup
 
 from planners import ahead as ahead_mod
 from planners import base as base_mod
@@ -54,7 +55,78 @@ from planners.utils import (
     split_frontmatter,
 )
 
+# Commands the group lets through. `skill`, `rule`, and `schema` only print, `validate`
+# only reads the paths it is given, and `permissions` manages Claude Code settings
+# rather than a repository. `index`, `base`, and `remote` name their repository with an
+# argument, and check that path themselves.
+_NOT_GUARDED = frozenset(
+    {"skill", "rule", "schema", "validate", "permissions", "index", "base", "remote"}
+)
+
+
+def _require_repository(path: Path) -> None:
+    """Exit 1 unless git counts ``path`` as inside a repository's working tree.
+
+    Asks git rather than looking for ``.git``: a stray empty ``.git`` directory
+    passes a look at the filesystem, and every commit a command goes on to make
+    then fails. Through :mod:`planners.proc`, so an ambient ``GIT_DIR`` cannot
+    answer for a repository the user is not in. Git's own words go in the message,
+    because it refuses a real repository too, for one it does not trust.
+    """
+    if not path.is_dir():
+        reason = "it is not a directory"
+    else:
+        try:
+            done = proc.run(
+                path, ["git", "rev-parse", "--show-toplevel"], capture_output=True
+            )
+        except OSError:
+            _err("planners needs git, which could not be run, so it changed nothing.")
+            raise typer.Exit(1) from None
+        if done.returncode == 0:
+            return
+        reason = f"git says: {done.stderr.strip()}"
+    _err(
+        f"planners needs a git repository and cannot use {path.resolve()}, so it "
+        f"changed nothing ({reason}). There is nothing to repair here: run this from "
+        "a repository, or run `git init` first."
+    )
+    raise typer.Exit(1)
+
+
+class _RepositoryGroup(TyperGroup):
+    """Refuses a command outside a git repository, once its arguments are parsed.
+
+    By then a request for help has exited, so ``add --help`` works anywhere and a
+    title that happens to read ``--help`` does not count as one. The app callback
+    runs too early for that, before the subcommand's arguments are read. It is not
+    in each command because ``install`` is mounted by :func:`pkgskills.register`, and
+    so that a new command is covered by default.
+    """
+
+    # `typing.override` needs Python 3.12, and this package supports 3.11.
+    def resolve_command(  # pyrefly: ignore[missing-override-decorator]
+        self, ctx: Any, args: list[str]
+    ) -> tuple[str | None, Any, list[str]]:
+        name, command, rest = super().resolve_command(ctx, args)
+        if command is not None and name not in _NOT_GUARDED:
+            _guard(command)
+        return name, command, rest
+
+
+def _guard(command: Any) -> None:
+    """Make ``command`` check for a repository just before it runs."""
+    run = command.invoke
+
+    def invoke(ctx: Any) -> Any:
+        _require_repository(Path.cwd())
+        return run(ctx)
+
+    command.invoke = invoke
+
+
 app = typer.Typer(
+    cls=_RepositoryGroup,
     help="Own a repo's plan-file lifecycle: schema, CLI, and skillstub.",
     no_args_is_help=True,
 )
@@ -2580,6 +2652,7 @@ def base(
     This reports what git's refs say *now*; it is not a record of where a repo's
     existing plans were actually committed. See :func:`planners.base.detect`.
     """
+    _require_repository(repo_path)
     mainline = base_mod.detect(repo_path)
 
     if mainline.unborn:
@@ -2621,6 +2694,7 @@ def remote(
     The lifecycle skills branch on this: a non-github kind skips the draft PR and
     closes through the no-PR path.
     """
+    _require_repository(repo_path)
     origin = remote_mod.classify(repo_path)
     if origin.note:
         _warn(f"warning: {origin.note}")
@@ -2655,6 +2729,7 @@ def index(
     if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
+    _require_repository(repo_path)
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
 

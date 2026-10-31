@@ -16,6 +16,8 @@ from typer.testing import CliRunner
 from planners import base as base_mod
 from planners.cli import app
 
+pytestmark = pytest.mark.no_repo
+
 runner = CliRunner()
 
 
