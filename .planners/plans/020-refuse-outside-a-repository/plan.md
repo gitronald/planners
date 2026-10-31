@@ -88,3 +88,11 @@ and a library change would not reach `add` or `index`. So the fix goes here.
   - Worktree: `.worktrees/020-refuse-outside-a-repository`
   - PR: pending
 - **2026-10-31T15:24:37-07:00** — PR opened: https://github.com/gitronald/planners/pull/60
+- **2026-10-31T15:24:53-07:00** — Implemented decisions 1 to 7. All 661 tests pass at 94% coverage, with ruff and pyrefly clean.
+  - Departures from the spec: step 2 did not touch tests one by one. An autouse fixture in `tests/conftest.py` makes each test's temp directory a real repository, so the real guard runs in all of them. `@pytest.mark.no_repo` opts out, and `tests/test_base.py` and `tests/test_proc.py` use it at module level because they build their own repositories.
+  - A test that kept passing for the wrong reason: the add-commit-failure test described a directory with no repository, then passed with the fixture because git had no identity. It now sets `user.useConfigOnly` and says that is what fails, so it no longer depends on git inventing an identity.
+  - `resolve_command` carries an inline pyrefly ignore, because `typing.override` needs Python 3.12 and the package supports 3.11.
+  - A test lists every command as guarded, path-checked, or exempt. A new command is guarded by default, and this test makes its author say which it is.
+  - Verified as real processes beyond the test runner: from a bare directory under a temporary directory whose parent holds a stray empty `.git`, each of `install --global`, `--check`, `--force`, `add`, and `index .` exits 1 and leaves the directory empty, and `skill` and `add --help` exit 0.
+  - Checked the one other caller found that shells out to `planners`: it runs with its working directory set to a repository clone, so the guard does not affect it. That is from reading its code, not from running it.
+  - Not verified: the guard against released `pkgskills` other than the version this repository locks.
