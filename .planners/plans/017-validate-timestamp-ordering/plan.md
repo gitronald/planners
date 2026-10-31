@@ -1,8 +1,8 @@
 ---
 id: 17
 slug: validate-timestamp-ordering
-status: draft
-branch:
+status: active
+branch: feature/validate-timestamp-ordering
 created: 2026-08-20T10:56:15-07:00
 concluded:
 pr:
@@ -47,3 +47,8 @@ exists, so ordering is a schema-level invariant validate should enforce.
   upstream has since used 004 for another plan. Re-added unchanged under a
   new number. The check can reuse `planners.utils.parse_instant`, which now
   compares timestamps across UTC offsets.
+- **2026-10-31T14:33:30-07:00** — Activated.
+  - Branch: `feature/validate-timestamp-ordering`
+  - Base: `dev` at `af6e12d`
+  - Worktree: `.worktrees/017-validate-timestamp-ordering`
+  - PR: pending
