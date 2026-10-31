@@ -80,6 +80,50 @@ def test_install_local_writes_stub_rule_hooks_and_merge_attribute(
     assert "post-merge hook: unavailable" in result.output
 
 
+@pytest.mark.parametrize(
+    ("flags", "mode"),
+    [(["--global"], "global"), (["--local"], "local"), ([], "global")],
+    ids=["global", "local", "no-flag"],
+)
+def test_install_scope_flags_write_to_their_scope(
+    box: Sandbox, flags: list[str], mode: str
+) -> None:
+    """A provisioning script passes these, and 0.6.x once dropped `--global`."""
+    result = runner.invoke(app, ["install", *flags])
+    assert result.exit_code == 0, result.output
+
+    written, untouched = (
+        (box.home, box.repo) if mode == "global" else (box.repo, box.home)
+    )
+    rule = (written / ".claude/rules/planners.md").read_text(encoding="utf-8")
+    assert f"(mode={mode})" in rule
+    assert (written / ".claude/skills/planners/SKILL.md").is_file()
+    assert not (untouched / ".claude/rules/planners.md").exists()
+    assert not (untouched / ".claude/skills/planners/SKILL.md").exists()
+
+
+@pytest.mark.parametrize(
+    ("flags", "mode"),
+    [(["--global"], "global"), (["--local"], "local")],
+    ids=["global", "local"],
+)
+def test_install_scope_flags_are_accepted_with_check(
+    box: Sandbox, flags: list[str], mode: str
+) -> None:
+    assert runner.invoke(app, ["install", *flags]).exit_code == 0
+    checked = runner.invoke(app, ["install", *flags, "--check"])
+    assert checked.exit_code == 0, checked.output
+    assert f"ok      {mode}" in checked.output
+
+
+def test_flagless_check_finds_a_flagless_install(box: Sandbox) -> None:
+    assert runner.invoke(app, ["install"]).exit_code == 0
+    checked = runner.invoke(app, ["install", "--check"])
+    assert checked.exit_code == 0, checked.output
+    assert "ok      global" in checked.output
+    assert "ok      local" not in checked.output
+
+
 def test_printed_bodies_render_the_installed_mode(box: Sandbox) -> None:
     assert runner.invoke(app, ["install", "--local"]).exit_code == 0
     skill = runner.invoke(app, ["skill", "add"])
