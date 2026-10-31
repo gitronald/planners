@@ -111,6 +111,24 @@ def test_retire_commits_with_the_date_of_head_and_a_fresh_index(
     assert runner.invoke(app, ["validate"]).exit_code == 0
 
 
+def test_retire_dates_a_plan_newer_than_head_at_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A plan written with `add --no-commit` is newer than the HEAD it retires on.
+    plan = _repo(tmp_path, git=True) / "005-old-idea" / "plan.md"
+    created = "2026-12-01T12:00:00-08:00"
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace("2026-06-07T12:00:00-07:00", created),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["retire", "005", "--note", "moot", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    meta = PlanMetadata.from_file(plan)
+    assert meta.concluded == created
+    assert meta.validate() == []
+
+
 @pytest.mark.parametrize(
     ("args", "message"),
     [

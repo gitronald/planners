@@ -124,6 +124,23 @@ def test_conclude_falls_back_to_head_without_a_work_commit(
     assert "branch: null\n" in plan.read_text(encoding="utf-8")
 
 
+def test_conclude_dates_a_plan_written_after_its_work_at_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The last work commit predates the plan: its date would fail `validate`, and
+    # so the hook on this very commit, with no sanctioned way to change it.
+    created = "2026-06-25T12:00:00-07:00"
+    text = _plan().replace("2026-06-07T12:00:00-07:00", created)
+    plan = _repo(tmp_path, git_repo=True, text=text)
+    _branch_with_work(tmp_path, plan)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["conclude", "5"])
+    assert result.exit_code == 0, result.output
+    meta = PlanMetadata.from_file(plan)
+    assert meta.concluded == created
+    assert meta.validate() == []
+
+
 def test_conclude_leaves_out_base_commits_a_stale_remote_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

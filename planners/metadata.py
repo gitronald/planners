@@ -20,6 +20,7 @@ from planners.utils import (
     Serializable,
     is_safe_slug,
     parse_frontmatter,
+    parse_instant,
     render_frontmatter_line,
     split_frontmatter,
 )
@@ -88,6 +89,12 @@ def _parses_iso(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _predates(value: str | None, start: str | None) -> bool:
+    """True when both parse as timestamps and ``value`` is earlier than ``start``."""
+    at, floor = parse_instant(value), parse_instant(start)
+    return at is not None and floor is not None and at < floor
 
 
 @dataclass
@@ -249,6 +256,15 @@ class PlanMetadata(Serializable):
             "title": self.title,
         }
 
+    def conclude_at(self, stamp: str) -> None:
+        """Set ``concluded`` to ``stamp``, or to ``created`` if ``stamp`` predates it.
+
+        A stamp read from git predates the plan when the work was committed before
+        the plan was written. ``validate`` rejects that order, so the lifecycle
+        commands must not write it.
+        """
+        self.concluded = self.created if _predates(stamp, self.created) else stamp
+
     def validate(self) -> list[str]:
         """Return a list of human-readable rule violations (empty = valid)."""
         errors: list[str] = []
@@ -312,6 +328,11 @@ class PlanMetadata(Serializable):
                     )
             if self.concluded:
                 errors.append(f"{self.status.value} plan must leave concluded empty")
+
+        if _predates(self.concluded, self.created):
+            errors.append(
+                f"concluded {self.concluded} is before created {self.created}"
+            )
 
         return errors
 
