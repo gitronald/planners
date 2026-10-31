@@ -67,6 +67,7 @@ These tools can be used manually via CLI commands, but they are largely intended
 ```bash
 planners add <slug> --title "<Title>"    # scaffold a new plan (--defer: stage it unnumbered)
 planners finalize                        # number and commit the deferred batch, in one commit
+planners start <NNN>                     # run a plan's start-up steps, resuming: activate, branch, worktree, setup, draft PR
 planners activate <NNN>                  # flip a plan to active, fill branch:, log where the work is, and commit
 planners set-pr <NNN> <url>              # record a plan's PR, log it, refresh the index, and commit
 planners implemented <NNN>               # mark pushed work implemented, log it, and take the PR out of draft
