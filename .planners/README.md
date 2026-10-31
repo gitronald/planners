@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 020 | [Refuse to run outside a git repository](plans/020-refuse-outside-a-repository/plan.md) | active | — | — |
+| 020 | [Refuse to run outside a git repository](plans/020-refuse-outside-a-repository/plan.md) | active | — | [#60](https://github.com/gitronald/planners/pull/60) |
 | 019 | [Add a resumable planners start command](plans/019-resumable-start/plan.md) | active | — | — |
 | 018 | [Keep install working across planners upgrades](plans/018-install-upgrade-compat/plan.md) | draft | — | — |
 | 017 | [Validate concluded is not before created](plans/017-validate-timestamp-ordering/plan.md) | done | 2026-10-31 14:55 PT | [#59](https://github.com/gitronald/planners/pull/59) |

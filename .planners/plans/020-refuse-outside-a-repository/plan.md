@@ -5,7 +5,7 @@ status: active
 branch: feature/refuse-outside-a-repository
 created: 2026-10-31T15:20:15-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/60
 ---
 
 # Refuse to run outside a git repository
@@ -87,3 +87,4 @@ and a library change would not reach `add` or `index`. So the fix goes here.
   - Base: `dev` at `a86eb2e`
   - Worktree: `.worktrees/020-refuse-outside-a-repository`
   - PR: pending
+- **2026-10-31T15:24:37-07:00** — PR opened: https://github.com/gitronald/planners/pull/60
