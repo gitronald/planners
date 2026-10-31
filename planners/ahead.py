@@ -137,12 +137,9 @@ def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:
     comparison. Returns ``None`` when there is nothing to compare against: no
     upstream configured, no remote, or git unavailable.
     """
-    upstream = proc.git_out(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
-    )
-    if upstream is None or not upstream.strip():
+    upstream = proc.upstream(root)
+    if upstream is None:
         return None
-    upstream = upstream.strip()
     found = commits(root, f"{upstream}..HEAD")
     if found is None:
         return None

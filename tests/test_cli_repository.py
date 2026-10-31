@@ -29,6 +29,7 @@ GUARDED = {
     "retire": ["retire", "001"],
     "review": ["review"],
     "set-pr": ["set-pr", "001", URL],
+    "start": ["start", "001"],
     "subplans": ["subplans", "001"],
 }
 

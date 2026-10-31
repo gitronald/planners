@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners start <NNN>` runs a plan's mechanical start-up steps in order: check the
+  base, activate, ignore the worktree directory, create the branch and worktree, set
+  the worktree up, and open the draft PR. Each prints `done`, `ran`, or `skipped` with
+  the reason, and a re-run resumes where the last one stopped. It publishes no code:
+  at each push it stops and prints the command to run, so the permission profile
+  still governs it
+
 ### Changed
 
+- The implement skill runs `planners start` instead of walking through its steps in
+  prose
 - `planners` refuses to run outside a git repository: it exits 1, changes nothing,
   and says so. A stray empty `.git` does not count. `install` is refused in every
   form, so a first install has to run inside a repository, and `install --check`

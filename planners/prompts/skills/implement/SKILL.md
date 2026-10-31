@@ -1,15 +1,17 @@
 ---
 name: implement
-description: Start implementing a plan — activate it on the base, branch from that commit, begin coding, open a draft PR, and mark it implemented when the work is pushed.
+description: Start implementing a plan — run the start command to activate it on the base and create its branch and worktree, begin coding, open a draft PR, and mark it implemented when the work is pushed.
 metadata:
   version: "1.0.0"
 ---
 
 # implement — start work on a plan
 
-Flip the plan to `active` on the base and commit it there, branch (and worktree)
-from that activation commit, start building, open a draft PR, and mark the plan
-`implemented` once the work is pushed. Parse the plan
+`{cli} start {NNN}` runs the mechanical steps: it activates the plan on the base,
+creates the branch and worktree from that commit, sets the worktree up, and opens
+the draft PR. A re-run resumes where the last one stopped. This skill is the
+judgment around it: reading the plan, answering its stops, the work itself, and
+marking the plan `implemented` once the work is pushed. Parse the plan
 number (e.g. `021`) or path from the request; if ambiguous, glob
 `.planners/plans/{NNN}-*/plan.md`.
 
@@ -18,10 +20,9 @@ A reference with a letter (e.g. `012d`) that matches no plan directory names a
 activate on the mainline and no branch to create, so skip the steps below and
 follow *Implementing one nested subplan*.
 
-The worktree, commit, and push steps below each shell out to git. If they prompt
-for permission on every command, `{cli} permissions` writes an allow-rule profile
-(default `assist`) that pre-authorizes the reversible ones — see *Automation
-levels* in the planners rule.
+`start` shells out to git. If commands prompt for permission every time,
+`{cli} permissions` writes an allow-rule profile (default `assist`) that
+pre-authorizes the reversible ones — see *Automation levels* in the planners rule.
 
 ## Steps
 
@@ -30,162 +31,92 @@ levels* in the planners rule.
 Read the plan file for its `# Title`, current `status`, `branch`, and the full
 spec. If `status` is `done` or `retired`, stop and tell the user — it is closed.
 
-### 2. Check git state and choose the base
+### 2. Run `start` from the base
 
 ```bash
-git status
-git branch --show-current
-{cli} base --all
-{cli} remote
-git rev-list --left-right --count HEAD...@{upstream}
+{cli} start {NNN}
 ```
 
-- `{cli} remote` names what kind of remote `origin` is, from its URL and config
-  without contacting it: `github`, `single-branch` (a hosted editor's git
-  bridge that takes one branch, where every push lands in the live document),
-  `other-forge`, `bare`, or `none`. The steps below assume `github`. **Any other
-  kind has no PR**: skip step 6, and the plan closes through `close`'s no-PR
-  path, so say that now. `single-branch` also changes steps 3, 4, and 7: step
-  3's push of the base would publish, step 4's push of the new branch would be
-  rejected, and step 7 skips its push. When the kind is wrong for this
-  repo, commit `.planners/config.toml` with `kind = "<kind>"` under `[remote]`
-  (for every clone), or set `git config planners.remoteKind <kind>` (this
-  clone only, and it wins).
+Run it on the **base branch**, before any branch for the plan exists, so the
+activation is recorded on the mainline whether or not the feature branch lands.
+`{cli} base --all` prints the branches this repo counts as mainline. **The base may
+live in a worktree of its own**: when the main checkout is on some other branch, find
+the base with `git worktree list` and run `start` there. Do not check the base out a
+second time (git refuses a branch that is already checked out).
 
-- The activation commit (step 3) lands on the **base**, so be on the base branch
-  in the main checkout. `{cli} base --all` prints the branches this repo counts
-  as mainline (`dev` when it exists, plus the default branch) — the same
-  detection `{cli} add` enforces, so trust it over the `dev` convention. If the
-  current branch is not one of them, ask whether to base the work on the current
-  branch or on the first mainline branch, then check that branch out.
-- **Do not create the branch or worktree first.** Running add/activate from
-  inside a feature branch puts both commits only on that branch, so the mainline
-  never records the plan if the branch does not land. `{cli} add` and
-  `{cli} activate` both refuse outright in that position. This check keeps you
-  from hitting that refusal in step 3; it is not the only protection.
-- If `{cli} base` exits non-zero, the repo's mainline could not be detected
-  (no `dev`, no `refs/remotes/origin/HEAD`, no `main`/`master`). Ask the user
-  which branch is the base rather than guessing — and note that
-  `git remote set-head origin --auto` records the remote's default branch if
-  that is what is missing.
-- Behind upstream → pull the base first so the activation commit sits on top of
-  the latest, and so the report in step 3 compares against a current upstream.
-- **The base may live in a worktree of its own**, not in the main checkout. When
-  the main checkout is on some other branch, find the base with
-  `git worktree list` and run step 3 from that worktree. Do not check the base out
-  a second time (git refuses a branch that is already checked out).
-- The activation commit stages only the plan file and the index, so unrelated
-  uncommitted changes in the checkout are left untouched.
+`--branch <name>` chooses the branch (default `feature/<NNN>-<slug>`; a plan that
+already records one keeps it). `--worktree <path>` (repo-relative) or `--no-worktree`
+puts the work somewhere other than `.worktrees/<NNN>-<slug>`.
 
-### 3. Activate the plan on the base
+Each step reads its result first and prints one line, `done`, `ran`, or `skipped`,
+with the reason:
 
-Do this **on the base branch, before creating the branch**, so the activation is
-recorded on the mainline regardless of whether the feature branch ever lands.
+| Step | What it settles |
+|---|---|
+| `base` | HEAD on the mainline, tree clean, not behind its upstream |
+| `activate` | `status: active`, `branch:`, the Log entry, the index, the commit |
+| `ignore` | the worktree path is ignored (`.worktrees/` committed when missing) |
+| `push-base` | nothing on the base waits for a push |
+| `branch` | the branch exists, from the base's tip or its copy on `origin` |
+| `worktree` | the branch is checked out at the recorded path |
+| `setup` | `.planners/hooks/post-worktree` ran, or else `.claude/` copied and `uv sync` run |
+| `push` | the branch is on `origin` with tracking set |
+| `pr` | a draft PR is open and recorded with `set-pr` |
 
-```bash
-{cli} activate {NNN}
-git push
-```
+**After any interruption, run it again.** The output is the resume record, so a lost
+VM, a refused command, or a context reset costs one re-run. Do not edit the
+frontmatter, run `{cli} index`, or redo a step by hand.
 
-**Read `activate`'s report before the push.** `git push` publishes every
-unpushed commit on the base along with the activation, so after its commit
-`activate` counts them and sorts them, against the upstream as last fetched:
+**A stop exits 1 and says what to do. Do that, then re-run:**
 
-    committed the activation on dev
-    dev is 6 ahead of origin/dev (as last fetched): 6 are plan 008's own, 0 are other
+- **A push.** `start` publishes no code: a permission rule sees only the command a
+  session runs, so a push from inside `start` would skip the gate that the `confirm`
+  level exists to open. It prints the `git push` to run, and a first run stops this
+  way for the base and again for the branch. A push from inside a worktree fails when
+  `origin` is a relative path (`git remote get-url origin`), since it resolves from
+  the main checkout; push from there instead.
+- **Commits on the base that are not the plan's.** The stop before the base's push
+  prints the same sorted report `activate` does (`6 are plan 008's own, 0 are other`).
+  A commit is the plan's own when every path it touches is under the plan's directory
+  or is the index. When the report says `0 are other`, push: a plan edited or split
+  before activation arrives with several of its own. When it says more, show the
+  listed commits to the user and confirm before pushing.
+- **Off the mainline.** Ask whether to base the work on the current branch or on the
+  first mainline branch, then check that branch out.
+- **No mainline detected** (no `dev`, no `refs/remotes/origin/HEAD`, no
+  `main`/`master`). Ask the user which branch is the base rather than guessing;
+  `git remote set-head origin --auto` records the remote's default branch if that is
+  what is missing. For a base `start` will not accept, go by hand: `{cli} activate
+  {NNN} --allow-branch`, `git push`, then `git worktree add
+  .worktrees/<NNN>-<slug> -b <branch> <base>`, and `git push -u origin <branch>`
+  from inside it. Once on that branch `start` works again, for the setup and the PR.
+- **A dirty tree.** Commit it or set it aside. If it belongs to other work the user
+  wants left in place, ask.
+- **Behind upstream.** Pull, so the activation commit sits on top of the latest.
 
-A commit is the plan's own when every path it touches is under the plan's
-directory (nested subplans included) or is the index. When the report says
-`0 are other`, push: a plan that was edited or split before activation arrives
-with several of its own, and that is the usual case. When it says more, the
-commits follow, one per line, as `git log --oneline` prints them; show that
-list and confirm before pushing. The report is withheld when the base has no
-upstream to compare against — no remote, or a base created without `-u` —
-and silence is not a count of zero: when no report prints, check
-`git status -sb` (or `git log --oneline @{upstream}..`) before pushing, and set
-the upstream first when there is none.
+**Read the `note:` lines under `setup`.** A worktree has the tracked files and nothing
+else, and the rest is per-repo knowledge, so `start` reports what it does not guess: a
+dependency on a relative path (`path = "../lib"`, which resolves from the main checkout
+and not a worktree), a top-level symlink the worktree lacks, an environment no
+`uv.lock` describes. Deal with each as the repo's own instructions say. A repo that
+needs more than the defaults says so once, in an executable
+`.planners/hooks/post-worktree`, which `start` runs from inside the new worktree in
+place of its defaults.
 
-**On a `single-branch` remote, do not push the base as a routine step.** The
-push lands in the live document collaborators are editing, so it is a publish,
-not a backup. Show the ahead count from the report and ask before pushing.
+**Other remotes.** `{cli} remote` names what `origin` is, from its URL and config:
+`github`, `single-branch` (a hosted editor's git bridge that takes one branch, where
+every push lands in the live document), `other-forge`, `bare`, or `none`. **Any kind but
+`github` has no PR**: `start` skips the `pr` step, and the plan closes through `close`'s
+no-PR path, so say that now. `single-branch` also skips both push steps. Pushing the
+base there is a publish, so show the count `start` prints and ask before pushing; a
+feature branch would be rejected, and the work is merged locally at close. When the
+kind is wrong for this repo, commit `.planners/config.toml` with `kind = "<kind>"` under
+`[remote]` (for every clone), or set `git config planners.remoteKind <kind>` (this
+clone only, and it wins).
 
-`activate` prints two lines before the report, and they name different
-branches: the branch it **recorded** in the frontmatter, where the work will
-go, and the branch it **committed on**, which is the base.
+`start` ends by naming the worktree. **Run the remaining steps from inside it.**
 
-One command does all of the following. It sets `status: active`. It fills
-`branch:` (the plan's own field if set, otherwise `feature/<NNN>-<slug>`, whose
-suffix is the worktree's name; `--branch <name>` to choose). A plan that already
-records a branch keeps it, and `--branch` then only warns. It appends the activation entry to the plan's Log (branch,
-base and commit, worktree, PR). It refreshes the index, and commits as
-`plan [activate]: {NNN} - <slug>`.
-
-The entry records the worktree step 4 creates, `.worktrees/<NNN>-<slug>`; pass
-`--worktree <path>` (repo-relative) or `--no-worktree` when the work will be
-somewhere else. The command carries the same mainline guard as `{cli} add` and
-refuses here if you are already on a feature branch. That is the check step 2
-exists to pass, now enforced rather than remembered.
-
-Do not edit the frontmatter, run `{cli} index`, or write the commit yourself; the
-CLI handles all of it. `--no-commit` writes the file only, and is unguarded because
-it strands nothing.
-
-### 4. Create the worktree and branch from the activation commit
-
-By default, do the plan's work in a dedicated **git worktree** under
-`.worktrees/` (gitignored) so the main checkout stays on the base.
-
-First make sure `.worktrees/` is ignored, so the worktree never shows up as
-untracked in the parent tree:
-
-```bash
-grep -qxF '.worktrees/' .gitignore 2>/dev/null \
-  || { echo '.worktrees/' >> .gitignore && git add .gitignore \
-       && git commit -m "ignore .worktrees"; }
-```
-
-Then create the worktree on a new branch off the base — whose HEAD is now the
-activation commit — and set upstream:
-
-```bash
-root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-git worktree add "$root/.worktrees/<NNN>-<slug>" -b <branch> <base>
-cd "$root/.worktrees/<NNN>-<slug>"
-git push -u origin <branch>
-```
-
-On a `single-branch` remote, skip the `git push -u`: the remote rejects any
-branch but its own, and the work is merged locally at close. On `other-forge`
-and `bare` remotes the push is a backup and is fine.
-
-`<NNN>-<slug>` is the plan's directory name (e.g. `026-dependency-apply`),
-whatever the branch is called; `<base>` is the branch chosen in step 2. `$root` is the
-**main repo root**, so `.worktrees/` lands there and not under the current
-directory, which is a worktree itself when the base lives in one. **Run the
-remaining steps from inside the worktree.** To work in the main checkout
-instead, use `git checkout -b <branch>` here and skip the worktree.
-
-**Set the worktree up.** A fresh worktree has the tracked files and nothing
-else. What it still needs is per-repo knowledge, so the repo says it once:
-
-```bash
-[ -x "$root/.planners/hooks/post-worktree" ] && "$root/.planners/hooks/post-worktree"
-```
-
-Run it from inside the new worktree. It covers the environment sync and the
-gitignored links and files a fresh worktree lacks. When the repo defines no
-hook, do the setup the repo's own instructions describe, e.g. `uv sync` for a
-uv project, which needs its own environment per worktree.
-
-A dependency given as a **relative path** (`path = "../lib"`) resolves from the
-main checkout and not from a worktree, which sits deeper. Check the project's
-dependency table for one before syncing, and say so when it is there. A
-**remote** given as a relative path (`git remote get-url origin`) fails the same
-way: every `git push` from inside the worktree reports that the remote is not a
-repository. Push from the main checkout instead, with
-`git -C "$root" push -u origin <branch>`.
-
-### 5. Implement
+### 3. Implement
 
 Work inside the worktree. Follow the plan's implementation order; commit in
 logical chunks and push as you go.
@@ -211,41 +142,31 @@ worth keeping, copy it into the plan's directory as a sidecar and name that
 repo-relative path. Write the entry right the first time: the Log is
 append-only, and a later rewrite to remove a path is the edit it forbids.
 
-### 6. Open a draft PR
+### 4. Open the draft PR
 
-Only on a `github` remote (step 2). For any other kind, skip this step: there is
-no PR to open or record, and `pr:` stays empty until `close` writes `pr: null`.
+Only on a `github` remote. For any other kind `pr:` stays empty until `close` writes
+`pr: null`.
 
-The activation commit lives on the base, so the new branch starts even with it —
-`gh pr create` has nothing to open until the branch is a commit ahead. After your
-first implementation commit, open the draft PR.
-
-Point the body at the plan with a markdown link so it resolves on GitHub — a bare
-relative path renders as inert text in PR bodies. The link text stays the
-repo-relative plan path (greppable and clickable in a local checkout); the href is
-a blob URL pinned to the **base** branch, where the activation commit already
-landed the plan file — so it is live the moment the PR opens and survives merge and
-branch deletion. Derive `<owner>/<repo>` with `gh repo view --json nameWithOwner -q
-.nameWithOwner`:
+The activation commit lives on the base, so the new branch starts level with it, and
+GitHub opens no PR until it is a commit ahead: `start` reports the `pr` step as
+`skipped` until then. After your first implementation commit, push it and run `start`
+again, from the worktree:
 
 ```bash
-repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh pr create --draft --base <base> \
-  --title "<plan title>" \
-  --body "Implements [.planners/plans/{NNN}-<slug>/plan.md](https://github.com/$repo/blob/<base>/.planners/plans/{NNN}-<slug>/plan.md)"
+git push
+{cli} start {NNN}
+git push
 ```
 
-Record the PR URL with one command, which writes `pr:`, appends a `PR opened`
-Log entry, refreshes the index, and commits as `plan [pr]: {NNN} - <slug>`:
-
-```bash
-{cli} set-pr {NNN} <url>
-```
+It opens the draft, titled from the plan, with a body linking the plan on the base
+branch, where the link is live at once and survives merge and branch deletion. It
+records the URL with `{cli} set-pr`, which commits on the branch; the last push
+publishes that. An open PR the plan does not record yet is adopted, not opened twice.
 
 Keep pushing as you work so the draft PR stays current; it stays a draft until
 the work is implemented.
 
-### 7. Mark it implemented
+### 5. Mark it implemented
 
 Once the plan's work is finished, committed, and pushed, and its checks pass:
 

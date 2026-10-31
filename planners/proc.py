@@ -34,6 +34,7 @@ __all__ = [
     "git_out",
     "pinned_env",
     "run",
+    "upstream",
     "worktrees",
 ]
 
@@ -87,6 +88,14 @@ def git_out(root: Path, args: Sequence[str]) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def upstream(root: Path) -> str | None:
+    """HEAD's upstream as ``origin/<branch>``, or ``None`` when it has none."""
+    out = git_out(
+        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+    )
+    return (out or "").strip() or None
 
 
 def worktrees(root: Path) -> list[tuple[Path, str | None]]:
