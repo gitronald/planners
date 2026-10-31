@@ -59,3 +59,11 @@ exists, so ordering is a schema-level invariant validate should enforce.
   - Survey, read-only: the new `validate --no-index` over the 50 local repos with a `.planners/` tree flags 60 plans in 16 repos. To repeat it, run that command in each repo and count `is before created`.
   - The survey contradicts the Background's reading of these values as paste errors. Most are migration batches that stamped one `created` on many plans, and retroactive plans written after their work, so `concluded` is true and `created` is what is off. See the Handoff.
   - Timestamps with no offset read as UTC, per `parse_instant`. A naive or date-only value on the same day as an offset value could be flagged falsely. Conscious no-op: the survey's 1149 closed plans hold no naive value and 3 date-only `created` values, and of those 3 the one flagged is days apart.
+
+## Handoff
+
+- State: the check, the lifecycle fix, the docs, and the tests are committed and pushed on the plan's branch, with the PR open.
+- Open questions:
+  1. The check flags 60 existing plans in 16 local repos, 15 of which have the validate hook. Merge it as a hard error, as the plan specifies, and repair those plans in a follow-up before the next stable release? The hook passes only staged plan files, so a flagged plan fails when it is next edited or on a whole-repo `planners validate`, not on every commit. None of the 16 runs `planners validate` in CI.
+- Not verified: the hook's behavior after a release in a downstream repo. The survey ran this branch's CLI read-only and changed nothing in those repos.
+- Remaining: the review gate, then close. Waits on the owner's answer to question 1.
