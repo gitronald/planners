@@ -1,8 +1,8 @@
 ---
 id: 20
 slug: refuse-outside-a-repository
-status: draft
-branch:
+status: active
+branch: feature/refuse-outside-a-repository
 created: 2026-10-31T15:20:15-07:00
 concluded:
 pr:
@@ -79,3 +79,11 @@ and a library change would not reach `add` or `index`. So the fix goes here.
   report the line as `missing` outside a repository, but it writes nothing.
 - `permissions --apply` without `--global` writing a settings file in the current directory.
 - Changing `pkgskills`. Its plan for this question closes in favor of this one.
+
+## Log
+
+- **2026-10-31T15:20:36-07:00** — Activated.
+  - Branch: `feature/refuse-outside-a-repository`
+  - Base: `dev` at `a86eb2e`
+  - Worktree: `.worktrees/020-refuse-outside-a-repository`
+  - PR: pending
