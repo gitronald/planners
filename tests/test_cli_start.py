@@ -616,3 +616,48 @@ def test_start_stops_when_it_cannot_read_the_plan(scene: Scene) -> None:
     result = scene.start()
     assert result.exit_code == 1
     assert "cannot read" in result.output
+
+
+def test_start_stops_when_no_mainline_can_be_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch, kind=None)
+    git(scene.root, "branch", "-m", "main", "trunk")
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "cannot tell which branch is the mainline" in result.output
+    assert "status: draft" in scene.plan.read_text(encoding="utf-8")
+
+
+def test_start_stops_on_a_gh_answer_it_cannot_read(scene: Scene) -> None:
+    scene.to_worktree_stage()
+    scene.first_commit()
+    scene.gh_prs.write_text("not json\n", encoding="utf-8")
+    result = scene.start(cwd=scene.worktree)
+    assert result.exit_code == 1
+    assert "is not JSON" in result.output
+    assert scene.gh_creates() == 0
+
+
+def test_setup_stops_when_it_cannot_copy_claude(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (scene.root / ".claude").mkdir()
+    (scene.root / ".gitignore").write_text(".worktrees/\n.claude/\n", encoding="utf-8")
+    commit_all(scene.root, "ignore claude")
+    git(scene.root, "push", "-q", "origin", "main")
+    scene.start()
+    git(scene.root, "push", "-q", "origin", "main")
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("planners.start.shutil.copytree", refuse)
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "cannot copy .claude/ into the worktree: disk full" in result.output
+
+    monkeypatch.undo()
+    # Undoing the patch also undoes the Scene's PATH and working directory.
+    monkeypatch.setenv("PATH", f"{scene.bin}{os.pathsep}{os.environ['PATH']}")
+    assert "ran setup: copied .claude/" in scene.start().output

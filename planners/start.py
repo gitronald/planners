@@ -160,9 +160,6 @@ def ensure_ignored(root: Path, recorded: str) -> Step:
             f"{recorded} is not ignored",
             (f"{recorded} is outside {_WORKTREES_DIR}/; add it to .gitignore",),
         )
-    # The pathspec commit below would carry an edit someone else was making.
-    if must(root, ["git", "status", "--porcelain", "--", ".gitignore"]):
-        raise Stop(".gitignore has uncommitted changes; commit them, then run again")
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     if text and not text.endswith("\n"):
@@ -326,7 +323,10 @@ def set_up_worktree(worktree: Path, main: Path) -> Step:
     ]
     claude = main / ".claude"
     if claude.is_dir() and not (worktree / ".claude").exists():
-        shutil.copytree(claude, worktree / ".claude", symlinks=True)
+        try:
+            shutil.copytree(claude, worktree / ".claude", symlinks=True)
+        except OSError as exc:
+            raise Stop(f"cannot copy .claude/ into the worktree: {exc}") from None
         ran.append("copied .claude/")
     if (worktree / "uv.lock").exists():
         must(worktree, ["uv", "sync"])
