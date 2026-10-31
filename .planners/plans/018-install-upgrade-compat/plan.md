@@ -1,8 +1,8 @@
 ---
 id: 18
 slug: install-upgrade-compat
-status: draft
-branch:
+status: active
+branch: feature/install-upgrade-compat
 created: 2026-10-27T14:55:54-07:00
 concluded:
 pr:
@@ -67,3 +67,11 @@ host moves from an older release to the current one.
 
 - Recognizing older renders by content (hashing past releases' output).
 - Changing how pkgskills treats other dists' stamps.
+
+## Log
+
+- **2026-10-31T15:46:51-07:00** — Activated.
+  - Branch: `feature/install-upgrade-compat`
+  - Base: `dev` at `7bc9ee5`
+  - Worktree: `.worktrees/018-install-upgrade-compat`
+  - PR: pending
