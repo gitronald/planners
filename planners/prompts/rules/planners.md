@@ -366,8 +366,9 @@ Drive the lifecycle through the `/planners` skill (which replaces the retired `/
 skills):
 
 - `/planners add` — scaffold a new plan
-- `/planners implement` — check git status, activate on the mainline, branch from
-  that commit, start coding
+- `/planners implement` — run `{cli} start <NNN>` on the mainline (activate, branch from
+  that commit, worktree, setup, draft PR; a re-run resumes, and each push stays the
+  session's own command), then start coding
 - `/planners update` — activate, log, close, or retire a plan
 - `/planners close` — close end-to-end: log, retrospective, merge the PR, then `{cli} finish
   <NNN>` from the main checkout to clean up the worktree, branches, index, and hooks.
