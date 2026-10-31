@@ -1,7 +1,7 @@
 ---
 id: 19
 slug: resumable-start
-status: active
+status: implemented
 branch: feature/resumable-start
 created: 2026-10-28T10:18:56-07:00
 concluded:
@@ -69,3 +69,4 @@ in that direction.
   - Setup finishing is recorded in a marker under the worktree's git directory, since a hook's result cannot be read back and a `.venv` can be a sync that stopped partway.
   - Checks at c9e9ed3: 663 tests pass with coverage 94.83%, ruff and pyrefly clean, and the start and entry tests pass on Python 3.11. Run on this plan from its worktree, `start` opened this PR through real `gh`. The other paths ran against a bare local remote and a fake `gh`, so the base-push and branch-push stops have not run against GitHub.
   - This plan's branch is `feature/resumable-start` because it was activated with the installed 0.13.4, which predates the `feature/<NNN>-<slug>` default.
+- **2026-10-31T15:33:19-07:00** — Implemented: 9 commits ahead of `dev`.
