@@ -1,7 +1,7 @@
 ---
 id: 20
 slug: refuse-outside-a-repository
-status: active
+status: implemented
 branch: feature/refuse-outside-a-repository
 created: 2026-10-31T15:20:15-07:00
 concluded:
@@ -96,3 +96,4 @@ and a library change would not reach `add` or `index`. So the fix goes here.
   - Verified as real processes beyond the test runner: from a bare directory under a temporary directory whose parent holds a stray empty `.git`, each of `install --global`, `--check`, `--force`, `add`, and `index .` exits 1 and leaves the directory empty, and `skill` and `add --help` exit 0.
   - Checked the one other caller found that shells out to `planners`: it runs with its working directory set to a repository clone, so the guard does not affect it. That is from reading its code, not from running it.
   - Not verified: the guard against released `pkgskills` other than the version this repository locks.
+- **2026-10-31T15:24:55-07:00** — Implemented: 4 commits ahead of `dev`.
