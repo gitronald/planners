@@ -1,5 +1,6 @@
 """The pkgskills host declaration, and the repo wiring planners layers on it."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,12 +16,14 @@ from typer.testing import CliRunner
 from planners.cli import app
 from planners.host import HOST, SKILL_NAMES
 
+pytestmark = pytest.mark.no_repo
+
 runner = CliRunner()
 
 
 @pytest.fixture
 def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Sandbox:
-    """A pinned home and repo, with pre-commit and git unreachable.
+    """A pinned home and a real repo, with pre-commit's shell-outs unreachable.
 
     Hook registration shells out; making every such call a missing binary keeps
     the tests deterministic and off the developer's machine state.
@@ -30,7 +33,10 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Sandbox:
         raise FileNotFoundError
 
     monkeypatch.setattr(precommit, "run", missing)
-    return sandbox(tmp_path, monkeypatch)
+    pinned = sandbox(tmp_path, monkeypatch)
+    # The sandbox's `.git` is an empty marker, which the CLI does not count.
+    subprocess.run(["git", "init", "-q"], cwd=pinned.repo, check=True)
+    return pinned
 
 
 def test_host_skills_follow_the_agent_skills_spec() -> None:

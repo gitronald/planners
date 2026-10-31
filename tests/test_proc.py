@@ -14,6 +14,8 @@ import pytest
 
 from planners import proc
 
+pytestmark = pytest.mark.no_repo
+
 
 def _init_git(path: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=path, check=True)

@@ -20,7 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - The implement skill runs `planners start` instead of walking through its steps in
   prose
-
+- `planners` refuses to run outside a git repository: it exits 1, changes nothing,
+  and says so. A stray empty `.git` does not count. `install` is refused in every
+  form, so a first install has to run inside a repository, and `install --check`
+  no longer sends a session outside one to a repair that left `.gitattributes` and
+  `.pre-commit-config.yaml` behind. `skill`, `rule`, `schema`, `validate`,
+  `permissions`, and `--help` run anywhere, and `index`, `base`, and `remote` check
+  the path they are given
 - `planners activate` defaults the branch to `feature/<NNN>-<slug>`, so its
   suffix matches the plan's worktree, `.worktrees/<NNN>-<slug>`. It warns when
   `--branch` is ignored because the plan already records a branch

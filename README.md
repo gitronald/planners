@@ -21,6 +21,8 @@ These tools can be used manually via CLI commands, but they are largely intended
 
 2. **Install the global rules and skills** — This installs a global Claude Code rule file and a skills stub: the actual skills are included within this package and are accessible via the CLI; the skills stub just tells the model how to access them and allows you to use the skills via slash commands.
 
+   Run it from inside a git repository, since it also wires that repository:
+
    ```bash
    planners install
    ```
@@ -88,6 +90,10 @@ planners rule <name>                     # print a bundled convention rule body
 planners install                         # install holder + rule + repo hook + merge attr (--local: per-repo)
 planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
 ```
+
+> **Run it inside a git repository.** Outside one, every command exits 1 and changes nothing,
+> including `install` in all its forms. `skill`, `rule`, `schema`, `validate`, `permissions`, and
+> `--help` run anywhere, and `index`, `base`, and `remote` check the path they are given.
 
 > **Plan commits land on the mainline.** `add`, `finalize`, and `activate` refuse to commit when `HEAD` is off it,
 > so a plan is recorded on the mainline even if the feature branch never merges. The accepted set is
