@@ -5,7 +5,7 @@ status: active
 branch: feature/resumable-start
 created: 2026-10-28T10:18:56-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/61
 ---
 
 # Add a resumable planners start command
@@ -57,3 +57,4 @@ in that direction.
   - Base: `dev` at `d34beac`
   - Worktree: `.worktrees/019-resumable-start`
   - PR: pending
+- **2026-10-31T15:28:48-07:00** — PR opened: https://github.com/gitronald/planners/pull/61
