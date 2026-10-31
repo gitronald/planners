@@ -1433,9 +1433,7 @@ def _unpublished_work(
         problems.append(f"{changed} uncommitted change(s); commit them first")
     if origin is remote_mod.RemoteKind.single_branch:
         return problems
-    upstream = proc.git_out(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
-    )
+    upstream = proc.upstream(root)
     if upstream is None:
         if (
             origin is remote_mod.RemoteKind.github
@@ -1450,9 +1448,7 @@ def _unpublished_work(
         proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"]) or 0
     )
     if unpushed > 0:
-        problems.append(
-            f"{unpushed} commit(s) not pushed to {upstream.strip()}; push first"
-        )
+        problems.append(f"{unpushed} commit(s) not pushed to {upstream}; push first")
     return problems
 
 
@@ -2045,7 +2041,11 @@ def _start(
             start_mod.Step(start_mod.DONE, f"plan {meta.prefix} is active"),
         )
     else:
-        pending = (plan, root / INDEX_PATH) if meta.status == Status.active else ()
+        pending: tuple[Path, ...] = ()
+        if meta.status == Status.active:
+            pending = (plan, root / INDEX_PATH)
+            if start_mod.ignore_rule_pending(root):
+                pending += (root / ".gitignore",)
         show("base", start_mod.check_base(root, mainline, ignore=pending))
         active = (
             meta.status == Status.active

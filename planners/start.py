@@ -45,6 +45,7 @@ __all__ = [
     "ensure_branch",
     "ensure_ignored",
     "ensure_worktree",
+    "ignore_rule_pending",
     "open_pr",
     "push_command",
     "set_up_worktree",
@@ -59,9 +60,6 @@ SKIPPED = "skipped"
 # hook's result cannot be read back, and a `.venv` can be a sync that stopped
 # partway, so neither says whether the step finished.
 _SETUP_MARKER = "planners-setup"
-
-# The directory the default worktree lives under, which the step below ignores.
-_WORKTREES_DIR = ".worktrees"
 
 
 @dataclass(frozen=True)
@@ -85,14 +83,6 @@ def _uncommitted(root: Path, ignore: tuple[Path, ...]) -> list[str]:
     status = must(root, ["git", "status", "--porcelain"])
     paths = (line[3:] for line in status.splitlines())
     return [path for path in paths if path not in skipped]
-
-
-def _upstream(root: Path) -> str | None:
-    """HEAD's upstream as ``origin/<branch>``, or ``None`` when it has none."""
-    out = proc.git_out(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
-    )
-    return (out or "").strip() or None
 
 
 def check_base(
@@ -124,7 +114,7 @@ def check_base(
             f"them aside, then run start again:\n{listed}"
         )
     base = mainline.current
-    upstream = _upstream(root)
+    upstream = proc.upstream(root)
     if upstream is None:
         return Step(DONE, f"on {base}, clean, no upstream to compare with")
     must(root, ["git", "fetch"])
@@ -137,6 +127,34 @@ def check_base(
     return Step(DONE, f"on {base}, clean, not behind {upstream}")
 
 
+def _with_ignore_rule(text: str) -> str:
+    """``text``, a ``.gitignore``, with the rule :func:`ensure_ignored` adds."""
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return f"{text}{entries.WORKTREES_DIR}/\n"
+
+
+def ignore_rule_pending(root: Path) -> bool:
+    """``.gitignore`` differs from HEAD by the rule alone: a run wrote it and stopped.
+
+    Any other edit to the file is the user's, so it still counts as a dirty tree.
+    """
+    path = root / ".gitignore"
+    if not path.exists():
+        return False
+    head = proc.git_out(root, ["show", "HEAD:.gitignore"]) or ""
+    return path.read_text(encoding="utf-8") == _with_ignore_rule(head)
+
+
+def _commit_ignore_rule(root: Path) -> Step:
+    must(root, ["git", "add", ".gitignore"])
+    must(
+        root,
+        ["git", "commit", "-m", f"ignore {entries.WORKTREES_DIR}", "--", ".gitignore"],
+    )
+    return Step(RAN, f"committed {entries.WORKTREES_DIR}/ to .gitignore")
+
+
 def ensure_ignored(root: Path, recorded: str) -> Step:
     """The worktree path is ignored, so it never shows as untracked in the parent.
 
@@ -145,6 +163,9 @@ def ensure_ignored(root: Path, recorded: str) -> Step:
     """
     if recorded == entries.NO_WORKTREE:
         return Step(SKIPPED, "the work is in the main checkout")
+    in_worktrees_dir = recorded.startswith(f"{entries.WORKTREES_DIR}/")
+    if in_worktrees_dir and ignore_rule_pending(root):
+        return _commit_ignore_rule(root)
     # The trailing slash: a directory pattern matches a path that does not exist
     # yet only when the path is spelled as a directory.
     ignored = proc.run(
@@ -154,20 +175,16 @@ def ensure_ignored(root: Path, recorded: str) -> Step:
     )
     if ignored.returncode == 0:
         return Step(DONE, f"{recorded} is ignored")
-    if not recorded.startswith(f"{_WORKTREES_DIR}/"):
+    if not in_worktrees_dir:
         return Step(
             SKIPPED,
             f"{recorded} is not ignored",
-            (f"{recorded} is outside {_WORKTREES_DIR}/; add it to .gitignore",),
+            (f"{recorded} is outside {entries.WORKTREES_DIR}/; add it to .gitignore",),
         )
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    if text and not text.endswith("\n"):
-        text += "\n"
-    path.write_text(f"{text}{_WORKTREES_DIR}/\n", encoding="utf-8")
-    must(root, ["git", "add", ".gitignore"])
-    must(root, ["git", "commit", "-m", "ignore .worktrees", "--", ".gitignore"])
-    return Step(RAN, f"committed {_WORKTREES_DIR}/ to .gitignore")
+    path.write_text(_with_ignore_rule(text), encoding="utf-8")
+    return _commit_ignore_rule(root)
 
 
 def check_base_pushed(
@@ -286,6 +303,22 @@ def _missing_links(worktree: Path, main: Path) -> list[str]:
     )
 
 
+def _copy_claude(source: Path, worktree: Path, marker: Path) -> None:
+    """Copy ``.claude/`` in whole or not at all.
+
+    It is built beside the setup marker and renamed in, since a copy that stopped
+    partway would otherwise read as done on the re-run: the worktree would have a
+    ``.claude/``, and setup would go on to record that it finished.
+    """
+    partial = marker.with_name(f"{_SETUP_MARKER}-claude")
+    shutil.rmtree(partial, ignore_errors=True)
+    try:
+        shutil.copytree(source, partial, symlinks=True)
+        os.replace(partial, worktree / ".claude")
+    except OSError as exc:
+        raise Stop(f"cannot copy .claude/ into the worktree: {exc}") from None
+
+
 def set_up_worktree(worktree: Path, main: Path) -> Step:
     """Give a fresh worktree what its tracked files do not: the repo's own hook, or
     an environment sync and the untracked ``.claude/``.
@@ -323,10 +356,7 @@ def set_up_worktree(worktree: Path, main: Path) -> Step:
     ]
     claude = main / ".claude"
     if claude.is_dir() and not (worktree / ".claude").exists():
-        try:
-            shutil.copytree(claude, worktree / ".claude", symlinks=True)
-        except OSError as exc:
-            raise Stop(f"cannot copy .claude/ into the worktree: {exc}") from None
+        _copy_claude(claude, worktree, marker)
         ran.append("copied .claude/")
     if (worktree / "uv.lock").exists():
         must(worktree, ["uv", "sync"])
@@ -348,7 +378,7 @@ def check_branch_pushed(work_dir: Path, branch: str, origin: RemoteKind) -> Step
         return Step(SKIPPED, "no remote to push to")
     if origin is RemoteKind.single_branch:
         return Step(SKIPPED, "origin is single-branch and takes no feature branch")
-    upstream = _upstream(work_dir)
+    upstream = proc.upstream(work_dir)
     if upstream is None:
         command = push_command(branch, upstream=True)
         raise Stop(f"push {branch}, then run start again:\n  {command}")
@@ -392,13 +422,11 @@ def create_draft_pr(
     """Open a draft PR for ``branch`` and return its URL.
 
     The body links the plan on the base branch, where the activation commit already
-    landed it, so the link is live when the PR opens and survives the branch.
+    landed it, so the link is live when the PR opens and survives the branch. ``gh``
+    gives the repo's URL, since a GitHub origin can be an enterprise host.
     """
-    repo = must(
-        work_dir,
-        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-    ).strip()
-    href = f"https://github.com/{repo}/blob/{base}/{plan_path}"
+    repo = must(work_dir, ["gh", "repo", "view", "--json", "url", "-q", ".url"]).strip()
+    href = f"{repo}/blob/{base}/{plan_path}"
     out = must(
         work_dir,
         [

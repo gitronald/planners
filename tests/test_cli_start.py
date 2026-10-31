@@ -79,7 +79,7 @@ class Scene:
             f'if [ -e "{self.gh_fail}" ]; then echo "gh says no" >&2; exit 1; fi\n'
             'case "$1 $2" in\n'
             f'  "pr list") cat "{self.gh_prs}" ;;\n'
-            '  "repo view") echo owner/repo ;;\n'
+            '  "repo view") echo https://ghe.example.com/owner/repo ;;\n'
             f'  "pr create") echo \'[{{"url": "{_URL}"}}]\' > "{self.gh_prs}"; '
             f'echo "{_URL}" ;;\n'
             "esac\n",
@@ -173,7 +173,7 @@ def test_start_runs_to_a_draft_pr_with_a_stop_at_each_push(scene: Scene) -> None
     assert "--title My thing" in calls
     assert (
         "Implements [.planners/plans/005-my-thing/plan.md]"
-        "(https://github.com/owner/repo/blob/main/.planners/plans/005-my-thing/plan.md)"
+        "(https://ghe.example.com/owner/repo/blob/main/.planners/plans/005-my-thing/plan.md)"
     ) in calls
 
     git(scene.worktree, "push", "-q", "origin", _BRANCH)
@@ -316,6 +316,39 @@ def test_start_appends_the_ignore_rule_to_a_gitignore_without_a_newline(
     assert (scene.root / ".gitignore").read_text(encoding="utf-8") == (
         "*.pyc\n.worktrees/\n"
     )
+
+
+def test_start_finishes_an_ignore_rule_that_failed_to_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch, ignore=False)
+    hook = scene.root / ".git" / "hooks" / "pre-commit"
+    # Lets the activation through and rejects the commit after it.
+    write_script(
+        hook, "git diff --cached --name-only | grep -q gitignore && exit 1\nexit 0\n"
+    )
+    assert scene.start().exit_code == 1
+    assert git_out(scene.root, "log", "-1", "--format=%s").strip() == (
+        "plan [activate]: 005 - my-thing"
+    )
+    assert ".gitignore" in git_out(scene.root, "status", "--porcelain")
+
+    hook.unlink()
+    resumed = scene.start()
+    assert "done base:" in resumed.output
+    assert "ran ignore: committed .worktrees/ to .gitignore" in resumed.output
+    assert (scene.root / ".gitignore").read_text(encoding="utf-8") == ".worktrees/\n"
+    assert git_out(scene.root, "status", "--porcelain") == ""
+
+
+def test_start_counts_any_other_gitignore_edit_as_a_dirty_tree(scene: Scene) -> None:
+    scene.start()
+    gitignore = scene.root / ".gitignore"
+    gitignore.write_text(".worktrees/\n*.log\n", encoding="utf-8")
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "1 uncommitted change(s)" in result.output
+    assert ".gitignore" in result.output
 
 
 def test_start_reports_a_custom_worktree_path_that_is_not_ignored(
@@ -661,3 +694,30 @@ def test_setup_stops_when_it_cannot_copy_claude(
     # Undoing the patch also undoes the Scene's PATH and working directory.
     monkeypatch.setenv("PATH", f"{scene.bin}{os.pathsep}{os.environ['PATH']}")
     assert "ran setup: copied .claude/" in scene.start().output
+
+
+def test_setup_does_not_take_a_partial_claude_copy_for_a_finished_one(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claude = scene.root / ".claude"
+    claude.mkdir()
+    (claude / "settings.json").write_text("{}\n", encoding="utf-8")
+    (scene.root / ".gitignore").write_text(".worktrees/\n.claude/\n", encoding="utf-8")
+    commit_all(scene.root, "ignore claude")
+    git(scene.root, "push", "-q", "origin", "main")
+    scene.start()
+    git(scene.root, "push", "-q", "origin", "main")
+
+    def stop_partway(_source: Path, target: Path, **_kwargs: object) -> None:
+        target.mkdir()
+        (target / "half-written").write_text("", encoding="utf-8")
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("planners.start.shutil.copytree", stop_partway)
+        assert scene.start().exit_code == 1
+    assert not (scene.worktree / ".claude").exists()
+
+    assert "ran setup: copied .claude/" in scene.start().output
+    copied = scene.worktree / ".claude"
+    assert sorted(path.name for path in copied.iterdir()) == ["settings.json"]

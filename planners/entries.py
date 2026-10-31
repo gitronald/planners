@@ -19,6 +19,7 @@ from planners.body import fenced_lines, section_span
 
 __all__ = [
     "NO_WORKTREE",
+    "WORKTREES_DIR",
     "activation_entry",
     "default_worktree",
     "implemented_entry",
@@ -33,6 +34,9 @@ __all__ = [
 
 # What the Worktree field says when the work happens in the main checkout.
 NO_WORKTREE = "none (main checkout)"
+
+# The directory a default worktree lives under.
+WORKTREES_DIR = ".worktrees"
 
 # The base branch as the activation entry records it: "- Base: `dev` at `abc1234`".
 _BASE_RE = re.compile(r"^\s*-\s+Base:\s+`([^`]+)`")
@@ -62,7 +66,7 @@ def default_worktree(prefix: str, slug: str) -> str:
     ``dependency-apply`` works in ``.worktrees/026-dependency-apply`` whatever
     its branch is called, and the worktree names the plan it belongs to.
     """
-    return f".worktrees/{prefix}-{slug}"
+    return f"{WORKTREES_DIR}/{prefix}-{slug}"
 
 
 def worktree_error(path: str) -> str | None:
