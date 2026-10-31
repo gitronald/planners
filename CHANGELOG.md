@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   rewrite to remove one; `--allow-local-paths` overrides
 - The implement skill says when to merge the base: once, before the final
   checks, with the commit they ran at named in the Log
+- `planners validate` fails a plan whose `concluded` is earlier than its
+  `created`, comparing instants across UTC offsets. `planners conclude` and
+  `planners retire` write `created` when the date they read from git is older
+  than the plan, so a plan written after its work can still close
 
 ### Fixed
 

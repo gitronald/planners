@@ -91,6 +91,22 @@ def test_validate_fails_on_violations(
     assert result.exit_code == 1
 
 
+def test_validate_names_the_plan_and_both_timestamps_when_out_of_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created, concluded = "2026-06-07T12:00:00-07:00", "2026-06-07T11:59:00-07:00"
+    body = (
+        f"---\nid: 3\nslug: bad-order\nstatus: done\nbranch: null\n"
+        f"created: {created}\nconcluded: {concluded}\npr: null\n---\n\n# Bad order\n"
+    )
+    _write_plan(tmp_path / ".planners" / "plans", "003-bad-order", body)
+    monkeypatch.chdir(tmp_path)
+    path = ".planners/plans/003-bad-order/plan.md"
+    result = runner.invoke(app, ["validate", path])
+    assert result.exit_code == 1
+    assert f"{path}: concluded {concluded} is before created {created}" in result.output
+
+
 def test_validate_named_plan_dir_checks_its_plan_md(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

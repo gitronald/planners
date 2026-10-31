@@ -128,7 +128,8 @@ decision, a manual check, access only they have. It is an open state, so
 
 **Retire** — run `{cli} retire {NNN}`, with `--into <NNN>` when the work moved
 to another plan and `--note "<sentence>"` for why. It sets `status: retired`,
-fills `concluded` from the authored date of `HEAD`, writes `null` for a
+fills `concluded` from the authored date of `HEAD` (or `created`, when that date
+is older than the plan), writes `null` for a
 `branch`/`pr` that was never filled, appends the Log entry, refreshes the index,
 and commits `plan [retire]: {NNN} - <slug>`. Do not hand-edit the frontmatter
 for this; the CLI owns it. The Log entry already says "Retired. The work moved

@@ -1967,9 +1967,9 @@ def retire(
 
     What ``activate`` does for ``active``, for the other end of a plan that was
     superseded or is no longer needed. ``concluded`` is the authored date of
-    ``HEAD``, the commit the decision was made against. A ``branch`` or ``pr``
-    that was never filled becomes ``null``, since the plan is closed and they are
-    confirmed absent.
+    ``HEAD``, the commit the decision was made against, or ``created`` when that
+    commit is older than the plan. A ``branch`` or ``pr`` that was never filled
+    becomes ``null``, since the plan is closed and they are confirmed absent.
 
     A nested subplan closes the same way in its own file, with ``moved_to``
     recording ``--into``, and the umbrella's table follows.
@@ -2014,7 +2014,7 @@ def retire(
         _refuse_open_subplans(plan, meta.prefix, "retiring")
         _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
         meta.status = Status.retired
-        meta.concluded = _authored(root) or _now()
+        meta.conclude_at(_authored(root) or _now())
         meta.branch = meta.branch or None
         meta.pr = meta.pr or None
         body = append_to_section(
@@ -2181,9 +2181,10 @@ def conclude(
     The ``done`` counterpart of ``retire``, run by ``close`` on the feature branch
     after the final Log entry and the Retrospective, before the merge.
     ``concluded`` is the authored date of the last work commit on the branch,
-    else of ``HEAD``, so it is read from git rather than typed. A ``branch`` or
-    ``pr`` that was never filled becomes ``null``, since the plan is closed and
-    they are confirmed absent. The commit is ``plan [close]`` and carries the plan
+    else of ``HEAD``, so it is read from git rather than typed; ``created`` stands
+    in when that date is older than the plan. A ``branch`` or ``pr`` that was never
+    filled becomes ``null``, since the plan is closed and they are confirmed
+    absent. The commit is ``plan [close]`` and carries the plan
     file as it stands, so a Retrospective written by hand goes in with it.
     ``--no-pr`` is the close that merges locally: ``pr`` is ``null`` even when a
     PR was opened and then closed unmerged.
@@ -2232,7 +2233,7 @@ def conclude(
         text = plan.read_text(encoding="utf-8")
         _, body = split_frontmatter(text)
         meta.status = Status.done
-        meta.concluded = _work_authored(root, plan, text) or _authored(root) or _now()
+        meta.conclude_at(_work_authored(root, plan, text) or _authored(root) or _now())
         meta.branch = meta.branch or None
         meta.pr = None if no_pr else meta.pr or None
         plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")

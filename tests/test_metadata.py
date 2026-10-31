@@ -256,6 +256,78 @@ def test_validate_unparseable_timestamp() -> None:
     assert any("not ISO-8601" in e for e in meta.validate())
 
 
+def _closed(created: str, concluded: str | None) -> PlanMetadata:
+    meta = _valid_active()
+    meta.status = Status.done
+    meta.created, meta.concluded = created, concluded
+    return meta
+
+
+def test_validate_accepts_concluded_after_or_equal_to_created() -> None:
+    created = "2026-06-07T12:00:00-07:00"
+    assert _closed(created, "2026-06-08T09:00:00-07:00").validate() == []
+    assert _closed(created, created).validate() == []
+
+
+def test_validate_rejects_concluded_before_created_and_prints_both() -> None:
+    created, concluded = "2026-06-07T12:00:00-07:00", "2026-06-07T11:59:00-07:00"
+    assert _closed(created, concluded).validate() == [
+        f"concluded {concluded} is before created {created}"
+    ]
+
+
+def test_validate_orders_concluded_and_created_as_instants_across_offsets() -> None:
+    # Lexically the concluded value sorts first, but it is an hour later.
+    created, concluded = "2026-06-07T12:00:00-07:00", "2026-06-07T20:00:00+00:00"
+    assert _closed(created, concluded).validate() == []
+    # Lexically the concluded value sorts last, but it is an hour earlier.
+    created, concluded = "2026-06-07T12:00:00+00:00", "2026-06-07T12:00:00+01:00"
+    assert any("is before created" in e for e in _closed(created, concluded).validate())
+
+
+@pytest.mark.parametrize(
+    ("status", "concluded"),
+    [
+        (Status.active, ""),
+        (Status.inactive, ""),
+        (Status.done, ""),
+        (Status.done, None),
+    ],
+)
+def test_validate_skips_the_order_check_without_a_concluded(
+    status: Status, concluded: str | None
+) -> None:
+    meta = _closed("2026-06-07T12:00:00-07:00", concluded)
+    meta.status = status
+    assert not any("is before created" in e for e in meta.validate())
+
+
+def test_validate_skips_the_order_check_for_an_unparseable_timestamp() -> None:
+    # Each already has its own "not ISO-8601" error; ordering adds nothing to it.
+    for created, concluded in (
+        ("not-a-date", "2026-06-07T12:00:00-07:00"),
+        ("2026-06-07T12:00:00-07:00", "not-a-date"),
+    ):
+        errors = _closed(created, concluded).validate()
+        assert any("not ISO-8601" in e for e in errors)
+        assert not any("is before created" in e for e in errors)
+
+
+def test_conclude_at_keeps_a_stamp_at_or_after_created() -> None:
+    meta = _closed("2026-06-07T12:00:00-07:00", "")
+    meta.conclude_at("2026-06-07T12:00:00-07:00")
+    assert meta.concluded == "2026-06-07T12:00:00-07:00"
+    meta.conclude_at("2026-06-08T12:00:00-07:00")
+    assert meta.concluded == "2026-06-08T12:00:00-07:00"
+
+
+def test_conclude_at_raises_an_older_stamp_to_created() -> None:
+    meta = _closed("2026-06-07T12:00:00-07:00", "")
+    meta.conclude_at("2026-06-01T12:00:00-07:00")
+    assert meta.concluded == meta.created
+    assert meta.validate() == []
+
+
 def test_validate_inactive_keeps_fields_empty() -> None:
     meta = PlanMetadata(
         id=2,
