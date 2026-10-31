@@ -1,8 +1,8 @@
 ---
 id: 19
 slug: resumable-start
-status: draft
-branch:
+status: active
+branch: feature/resumable-start
 created: 2026-10-28T10:18:56-07:00
 concluded:
 pr:
@@ -49,3 +49,11 @@ in that direction.
 
 - Closing out (`finish` already covers it).
 - Harness-specific setup for other agents (see the Codex harness work in pkgskills).
+
+## Log
+
+- **2026-10-31T15:07:37-07:00** — Activated.
+  - Branch: `feature/resumable-start`
+  - Base: `dev` at `d34beac`
+  - Worktree: `.worktrees/019-resumable-start`
+  - PR: pending
