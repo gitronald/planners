@@ -81,3 +81,8 @@ host moves from an older release to the current one.
   - The pkgskills hook already has a design there: its plan 012 (`Host.legacy_stamps`), still a draft and unbuilt. It needs a stable pkgskills release, because a git-URL dependency cannot go on PyPI.
   - Status: use `drifted` as pkgskills 012 specifies, not the `stale` this plan names. In pkgskills `stale` means a superseded copy, and its remedy is `remove:`, not a reinstall. `--check` prints `repair: planners install --force` for `drifted`, though a plain install also fixes it.
   - Measured at pkgskills dev 307c350 (68 commits past v0.5.1): the full planners suite passes (717). That dev adds the Codex harness, so a global install also writes `~/.agents/skills/planners/SKILL.md`.
+- **2026-10-31T16:48:23-07:00** — Update on the entry above: pkgskills plan 012 was a draft at 15:49 but has since merged (PR #27, 16:24), and it differs from that draft.
+  - `Host.legacy_stamps` is on pkgskills `dev` only. Not tagged, not on `main`, and PyPI is still 0.5.1, so declaring it here fails on the locked version.
+  - A mode mismatch reads `drifted`, not `foreign` as this plan's Approach says. A recognized stamp counts as generated everywhere, so it can also be removed as a stale local copy or at a previous name.
+  - pkgskills plan 010 is in progress (draft PR #28). It moves the stamp into `pkgskills-*` keys under `metadata`, which breaks three assertions in `tests/test_host.py` that read the old stamp text. Read from its plan, not run: its code is uncommitted.
+  - Old stamp history checked: planners added one stamp format in `dc6e5a0` and removed it in `9369792` (first in v0.7.0), with no other form between them.
