@@ -15,7 +15,9 @@ environment on two axes:
   under a repo), a test that uses a synthetic or absent ``.git`` would resolve to
   the *enclosing* repo's hooks and mis-detect the validate hook as already
   active. Capping discovery at the temp-dir boundary keeps each test anchored to
-  the repo it actually created.
+  the repo it actually created. Each temp dir is itself a repository unless the
+  test is marked ``no_repo``, so without the mark a subdirectory with a synthetic
+  or absent ``.git`` resolves to the temp dir.
 """
 
 import subprocess

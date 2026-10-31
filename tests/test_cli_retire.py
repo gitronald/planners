@@ -27,8 +27,8 @@ def _plan(number: int, slug: str, status: str = "draft", branch: str = "") -> st
 _SUBPLAN = "---\nstatus: blocked\nbranch:\n---\n\n# Step\n\n## Plan\n\n## Log\n"
 
 
-def _repo(root: Path, *, git: bool = False) -> Path:
-    if git:
+def _repo(root: Path, *, committed: bool = False) -> Path:
+    if committed:
         init_git(root)
     plans = root / ".planners" / "plans"
     for number, slug in ((5, "old-idea"), (15, "follow-up")):
@@ -38,7 +38,7 @@ def _repo(root: Path, *, git: bool = False) -> Path:
     sub = plans / "015-follow-up" / "subplans" / "d-step.md"
     sub.parent.mkdir()
     sub.write_text(_SUBPLAN, encoding="utf-8")
-    if git:
+    if committed:
         commit_all(root, "initial commit", date="2026-06-20T08:00:00-07:00")
     return plans
 
@@ -92,7 +92,7 @@ def test_retire_keeps_a_branch_that_was_filled(
 def test_retire_commits_with_the_date_of_head_and_a_fresh_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plans = _repo(tmp_path, git=True)
+    plans = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["retire", "005", "--into", "015"])
     assert result.exit_code == 0, result.output
@@ -115,7 +115,7 @@ def test_retire_dates_a_plan_newer_than_head_at_created(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A plan written with `add --no-commit` is newer than the HEAD it retires on.
-    plan = _repo(tmp_path, git=True) / "005-old-idea" / "plan.md"
+    plan = _repo(tmp_path, committed=True) / "005-old-idea" / "plan.md"
     created = "2026-12-01T12:00:00-08:00"
     plan.write_text(
         plan.read_text(encoding="utf-8").replace("2026-06-07T12:00:00-07:00", created),
@@ -168,7 +168,7 @@ def test_retire_refuses_a_closed_or_unreadable_plan(
 def test_retire_a_nested_subplan_records_where_it_moved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plans = _repo(tmp_path, git=True)
+    plans = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["retire", "015d", "--into", "5"])
     assert result.exit_code == 0, result.output
@@ -269,7 +269,7 @@ def test_retire_closes_an_umbrella_whose_subplans_are_finished(
 def test_retire_keeps_other_staged_changes_out_of_its_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _repo(tmp_path, git=True)
+    _repo(tmp_path, committed=True)
     (tmp_path / "unrelated.txt").write_text("staged by hand\n", encoding="utf-8")
     subprocess.run(["git", "add", "unrelated.txt"], cwd=tmp_path, check=True)
     monkeypatch.chdir(tmp_path)
