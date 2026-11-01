@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   activation, without the mainline guard, and logs `Reactivated`. The only route before
   was the mainline, where the new activation entry conflicted with the branch's Log at
   merge. Elsewhere a blocked plan is guarded as before
-- Requires pkgskills 0.6.2. A `planners-validate` entry that `planners install` adds now
+- Requires pkgskills 0.6.3. A `planners-validate` entry that `planners install` adds now
   says `stages: [pre-commit]`, so it no longer takes the config's `default_stages`.
   Entries already in a config stay as they are
 
@@ -30,9 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - `planners install` no longer breaks a valid `.pre-commit-config.yaml` (`repos: []`, a
   key after `repos`, an unindented list), finds a hook entry however it is written instead
-  of adding a duplicate, and keeps CRLF line endings. A config it cannot safely add to is
-  left alone with a note, and `install --check` says to add the entry by hand
-
+  of adding a duplicate, and keeps each line's own ending. A config it cannot safely add
+  to is left alone with a note, and `install --check` says to add the entry by hand
 - The `close` skill said a `finish` stop leaves the state as it was. The steps before
   the stop stay done, and it now says so. A branch that holds commits the base lacks,
   the stop that comes after the worktree is removed and the base is pulled, is back in

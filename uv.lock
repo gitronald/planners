@@ -298,15 +298,15 @@ wheels = [
 
 [[package]]
 name = "pkgskills"
-version = "0.6.2"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/9d/f94ca5c92d9a77deffccf3d4641afd03bc0534e8f4b0c6fa898ba5df5554/pkgskills-0.6.2.tar.gz", hash = "sha256:6c9335f0194ff9c47bbaa7f7d8ebde4a4da44a3a24219a04ff53ca68ce6715ed", size = 89294, upload-time = "2026-11-01T19:31:34.268Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/b2/b171edeee60563a6bc6161c5ed56514743ae270793f11576985a88f07e55/pkgskills-0.6.3.tar.gz", hash = "sha256:717c59c03037bd4a13d84ffeacb537fdd786265239998b8523392f387299ca1b", size = 88208, upload-time = "2026-11-01T20:01:43.391Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/a2/f1b384189dc8b3ea80ce19c3346fa59a36ff5a73156dc9a9a04bc8ed31f2/pkgskills-0.6.2-py3-none-any.whl", hash = "sha256:84ebba8cdf3e8a56c4d0ec900bbc061db922d7c076f851002083670157da9054", size = 79455, upload-time = "2026-11-01T19:31:32.752Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/95/44255ed9498c342709fbecfa201ae33652282393e2f79abce3a0cc236787/pkgskills-0.6.3-py3-none-any.whl", hash = "sha256:ab2b0297d3e01df13c9c545daced16474c879136902c35bd61b5329372bd9999", size = 78268, upload-time = "2026-11-01T20:01:41.909Z" },
 ]
 
 [[package]]
@@ -330,7 +330,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pkgskills", specifier = ">=0.6.2" },
+    { name = "pkgskills", specifier = ">=0.6.3" },
     { name = "typer" },
 ]
 

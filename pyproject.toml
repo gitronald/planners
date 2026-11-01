@@ -7,7 +7,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "pkgskills>=0.6.2",
+    "pkgskills>=0.6.3",
     "typer",
 ]
 readme = "README.md"
