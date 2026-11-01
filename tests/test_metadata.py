@@ -440,7 +440,16 @@ def test_render_omits_sub_for_ordinary_plan() -> None:
 
 @pytest.mark.parametrize(
     ("subs", "expected"),
-    [([], "a"), ([""], "a"), (["", "a"], "b"), (["a", "b", ""], "c"), (["c"], "d")],
+    [
+        ([], "a"),
+        ([""], "a"),
+        (["", "a"], "b"),
+        (["a", "b", ""], "c"),
+        (["c"], "d"),
+        # A gap is not filled: letters follow creation order.
+        (["b", "c"], "d"),
+        (["a", "b", "d"], "e"),
+    ],
 )
 def test_next_sub(subs: list[str], expected: str) -> None:
     assert next_sub(subs) == expected

@@ -53,15 +53,16 @@ These tools can be used manually via CLI commands, but they are largely intended
 
    **Upgrading.** A plain `planners install` upgrades files from any earlier release, so
    no `--force` is needed. `install --check` reads `drifted` and exits 1 until you run it,
-   and prints `planners install --force` as the repair, though the plain install is
-   enough. The install treats those files as generated, which has two effects:
+   and prints `planners install` as the repair. The install treats those files as
+   generated, which has two effects:
    - It overwrites edits made to them. Their stamp said not to edit them.
    - A global install removes the repo's local copies, and each install removes an old
      stamped `plan-files.md` from the scope it writes to. If the repo tracks `.claude/`,
      the removals show as deletions in `git status`.
 
    `--force` is still needed for a file it does not recognize as generated: one with no
-   stamp, another package's stamp, or an altered stamp.
+   stamp, another package's stamp, or an altered stamp. `install --check` prints that form
+   on an `overwrite:` line, naming what it would replace.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 
@@ -99,14 +100,16 @@ planners index .                         # regenerate .planners/README.md
 planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check; --json prints parsed records)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
+planners doc <name>                      # print a bundled reference document (--list names them)
 planners rule <name>                     # print a bundled convention rule body
 planners install                         # install holder + rule + repo hook + merge attr (--local: per-repo)
 planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
 ```
 
 > **Run it inside a git repository.** Outside one, every command exits 1 and changes nothing,
-> including `install` in all its forms. `skill`, `rule`, `schema`, `validate`, `permissions`, and
-> `--help` run anywhere, and `index`, `base`, and `remote` check the path they are given.
+> including `install` in all its forms. `skill`, `doc`, `rule`, `schema`, `validate`,
+> `permissions`, and `--help` run anywhere, and `index`, `base`, and `remote` check the path
+> they are given.
 
 > **Plan commits land on the mainline.** `add`, `finalize`, and `activate` refuse to commit when `HEAD` is off it,
 > so a plan is recorded on the mainline even if the feature branch never merges. The accepted set is

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-01
+
+### Added
+
+- `planners doc` prints a bundled reference document; `--list` names them
+
+### Changed
+
+- Requires pkgskills 0.6.1. `install --check` and the skill stub now give the plain
+  `planners install` as the repair, and print the `--force` form only on an `overwrite:`
+  line that names what it would replace. The stub changes with this, so `install --check`
+  reads `drifted` until a plain `planners install` has run
+- The planners rule is shorter: the nested-subplan authoring guidance, the index merge
+  cases, and the close-out procedure each have one home (the `add`, `index`, and `close`
+  skills), the rule describes the generated frontmatter and Log entries instead of
+  reproducing them, and *Automation levels* says what each level adds and leaves the
+  options to `planners permissions --help`
+- The skill bodies no longer restate what the CLI prints or enforces: `start`'s step
+  table, `finish`'s step list, and `conclude`'s dating rule are each a sentence, the
+  `review` skill writes every Log entry through `planners log`, and the `backfill` skill
+  points at the rule for the status glossary
+- `planners permissions` is described as printing a profile unless `--apply` is given,
+  which is what it does
+- The guidance for an orchestrated run moved out of the `implement` skill into
+  `planners doc orchestrated-run`, which a session prints when the user asks for subagents
+  or a workflow. Sessions that do not fan out no longer load it
+
+### Removed
+
+- The unused `planners.cli.main` wrapper; the console script targets `planners.cli:app`
+
 ## [0.14.0] - 2026-10-31
 
 ### Added

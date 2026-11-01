@@ -53,6 +53,18 @@ def test_bare_skill_lists_the_lifecycle_bodies_in_order() -> None:
     assert result.output.split() == list(SKILL_NAMES)
 
 
+def test_orchestrated_run_guidance_prints_as_a_doc_not_with_implement() -> None:
+    doc = runner.invoke(app, ["doc", "orchestrated-run"])
+    assert doc.exit_code == 0, doc.output
+    assert doc.output.startswith("# An orchestrated run\n")
+    assert "{cli}" not in doc.output
+
+    implement = runner.invoke(app, ["skill", "implement"])
+    assert implement.exit_code == 0, implement.output
+    assert "An orchestrated run" not in implement.output
+    assert "doc orchestrated-run" in implement.output
+
+
 def test_install_local_writes_stub_rule_hooks_and_merge_attribute(
     box: Sandbox,
 ) -> None:
@@ -225,6 +237,15 @@ def test_an_old_stamp_upgrades_with_a_plain_install(box: Sandbox, mode: str) -> 
     assert before.exit_code == 1
     assert _row(before.output, HOLDER) == ["drifted", mode]
     assert _row(before.output, RULE) == ["drifted", mode]
+    # The advice is the install below, and nothing that could replace other files.
+    hints = [
+        line
+        for line in before.output.splitlines()
+        if line.startswith(("repair:", "overwrite:"))
+    ]
+    assert len(hints) == 1, before.output
+    assert hints[0].startswith("repair:")
+    assert "--force" not in hints[0]
 
     installed = runner.invoke(app, ["install", flag])
     assert installed.exit_code == 0, installed.output

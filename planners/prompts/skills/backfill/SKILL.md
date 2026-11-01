@@ -12,22 +12,13 @@ cross-referencing git history and GitHub PRs, and auto-retire stale `inactive`
 plans. Plan state lives only in frontmatter — there is no checklist file to
 reconcile.
 
-## Status labels and order
+## What to fill
 
-`status` is one of, in the index's sort order:
-
-1. `active` — in progress (open)
-2. `implemented` — finished and pushed, PR awaiting review (open)
-3. `blocked` — waiting on a person (open)
-4. `draft` — proposed, not started (open)
-5. `done` — finished (closed; fill `concluded` + `pr`)
-6. `inactive` — parked, may resume (keep `concluded`/`branch`/`pr` empty)
-7. `retired` — neutrally dead: superseded or no longer needed (closed; fill
-   `concluded` = the date it was retired)
-
-Closure is always `retired` — there is no separate failed status. For the closed
-states (`done`/`retired`), fill `concluded` and use explicit `null` for a
-genuinely-absent `branch`/`pr`. For `inactive`, keep those fields empty (pending).
+The planners rule defines each `status` and the empty-vs-`null` convention.
+For the closed states (`done`/`retired`), fill `concluded` and use explicit
+`null` for a genuinely-absent `branch`/`pr`; for `inactive`, keep those fields
+empty (pending). Closure is always `retired` — there is no separate failed
+status.
 
 ## Auto-retire: inactive → retired (90-day rule)
 
@@ -65,10 +56,9 @@ before editing.
 ### 4. Apply edits
 
 Edit only the frontmatter fields (`branch`, `concluded`, `pr`, and `status` for
-auto-retire flips). **Empty vs `null`:** empty = pending (open plans); explicit
-`null` = closed and confirmed absent (only on `done`/`retired`). Never write the
-string `none`. Split large batches across edit subagents, giving each the explicit
-values to write.
+auto-retire flips), with the empty-vs-`null` convention above and never the
+string `none`. Split large batches across edit subagents, giving each the
+explicit values to write.
 
 ### 5. Refresh the index and validate
 
