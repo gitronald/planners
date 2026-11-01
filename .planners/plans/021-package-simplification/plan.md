@@ -93,6 +93,13 @@ Two kinds of cut are in scope:
   - Ran in a throwaway repo: a `Review: still open.` entry through `log --no-commit`, then `review --commit`. It committed as `plan [review]: 1 plan`, and the next `review --json` used that entry as `window_start`.
   - Found three wording problems, none of which changes an instruction: the `gh pr ready` bullet in the close skill, `--no-worktree` in the rule's *Generated Log entries*, and the orchestrated-run opening, which assumes an umbrella though the implement skill sends any plan there. Carried to plan 022, not fixed here.
   - Not verified: only the opening of `finish` was compared with the close skill's step list, not every later step.
+- **2026-11-01T10:40:33-08:00** — Finished the comparison the last entry left open: the close skill's account of `finish`, step by step, against the source and real runs. The order is right; one statement is wrong.
+  - Read `_finish` and the two branch-deletion helpers in full. The skill's order matches: merge check, worktree check, `pre-worktree-remove` hook, worktree removal, base checkout and fast-forward, remote then local branch deletion, index commit, hook re-install.
+  - Ran `finish --no-pr` in a throwaway repo with a local bare origin: a clean run, a dirty worktree, an origin branch that gained a commit after the merge, and a branch carrying the hook. Each printed its steps in that order, and the dirty worktree stopped before anything changed.
+  - Wrong: the skill says a stop "leaves the state as it was". With the origin branch ahead, `finish` stopped only after it had removed the worktree, checked out the base, and pulled it. A re-run skips the removal and stops at the same place. The 0.14.0 text made the same claim.
+  - A cut in this plan made that worse: it dropped "a branch that holds such commits" from the skill's list of causes, and that is the stop that reaches furthest. `finish --help` still lists it. Corrects the last entry, which reported no wrong statements. Carried to plan 022, not fixed here.
+  - Not run here, only read: the PR path, the index commit, and the hook re-install, which need `gh` or a stale state. `tests/test_cli_finish.py` covers those and passes (25 tests).
+  - The `pre-worktree-remove` step has no test: a search of `tests/` for it finds nothing. The throwaway run above is its only check.
 
 ## Retrospective
 
