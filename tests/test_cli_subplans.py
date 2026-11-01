@@ -700,3 +700,17 @@ def test_needs_applies_to_nested_subplans_only(
     result = runner.invoke(app, ["add", "x", "--needs", "a", "--no-commit"])
     assert result.exit_code == 1
     assert "--needs applies to --nested subplans only" in result.output
+
+
+def test_add_nested_refuses_needs_that_close_a_cycle_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path, subplans={"a-one.md": _subplan("draft", "needs: [b]\n")})
+    monkeypatch.chdir(tmp_path)
+    before = _snapshot(plan_dir)
+    result = runner.invoke(
+        app, ["add", "two", "--parent", "12", "--nested", "--needs", "a", "--no-commit"]
+    )
+    assert result.exit_code == 1
+    assert "needs form a cycle among: a, b" in result.output
+    assert _snapshot(plan_dir) == before

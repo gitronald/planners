@@ -145,8 +145,8 @@ the command fills them in.
   --needs <letter>` (repeatable) writes it as a line in the subplan's frontmatter
   after `branch:` (`needs: [a]`). For a subplan that already exists, edit that
   line by hand. `{cli} subplans <N>` prints the chain those lists describe and
-  fails on a cycle or on a letter with no subplan, which `add` warns about when
-  it writes one. A retired subplan is left out of the chain, since it is not run.
+  fails on a cycle or on a letter with no subplan. `add` refuses a `--needs` that
+  closes a cycle and warns on a letter with no subplan yet. A retired subplan is left out of the chain, since it is not run.
 - **A subplan is one node in the order.** An order that needs part of one
   subplan before another and the rest after it, e.g. `c (1-2) -> b -> c (3)`,
   is a sign that `c` is two subplans. Splitting by workstream reads well and

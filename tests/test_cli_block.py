@@ -160,3 +160,17 @@ def test_block_commits_on_a_feature_branch_and_activate_returns_it_on_the_mainli
     assert runner.invoke(app, ["block", "005"]).exit_code == 0
     assert runner.invoke(app, ["activate", "005"]).exit_code == 0
     assert "status: active\n" in path.read_text(encoding="utf-8")
+
+
+def test_block_refuses_an_edit_to_a_plan_already_blocked_at_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _repo(tmp_path, "blocked")
+    head = git_out(tmp_path, "rev-parse", "HEAD")
+    monkeypatch.chdir(tmp_path)
+    path.write_text(path.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+    result = runner.invoke(app, ["block", "005"])
+    assert result.exit_code == 1
+    assert "plan 005 is blocked; only a draft or active plan" in result.output
+    assert git_out(tmp_path, "rev-parse", "HEAD") == head
+    assert "An edit." in path.read_text(encoding="utf-8")

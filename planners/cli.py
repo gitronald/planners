@@ -831,6 +831,12 @@ def _add_nested(
 
     path = umbrella.parent / SUBPLANS_DIRNAME / f"{letter}-{slug}.md"
     text = subplans_mod.render_subplan(title, meta.title, branch, needs)
+    if needs:
+        try:
+            subplans_mod.phases(_load_subplans(umbrella, {path: text})[0])
+        except ValueError as exc:
+            _err(f"--needs: {exc}.")
+            raise typer.Exit(1) from None
     _sync_subplans(root, umbrella, {path: text})
     typer.echo(f"wrote {path.relative_to(root)}")
     # A later subplan can be named before it exists, so this is not a refusal,
@@ -2413,6 +2419,17 @@ def retire(
     )
 
 
+def _status_at_head(root: Path, plan: Path) -> Status | None:
+    """The plan's status as ``HEAD`` has it, or ``None`` when that cannot be read."""
+    text = proc.git_out(root, ["show", f"HEAD:{plan.relative_to(root).as_posix()}"])
+    if text is None:
+        return None
+    try:
+        return PlanMetadata.from_text(text, plan.parent.name).status
+    except PlanError:
+        return None
+
+
 @app.command()
 def block(
     ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
@@ -2435,11 +2452,13 @@ def block(
     meta = _read_plan(root, plan)
 
     # An earlier run that wrote the status and then failed to commit (a rejecting
-    # hook, say) is finished here rather than refused, as `implemented` does.
+    # hook, say) is finished here rather than refused. A plan HEAD already has as
+    # blocked is not that run, and an edit to it is not a block to commit.
     resuming = (
         meta.status == Status.blocked
         and not no_commit
         and not _is_unmodified(root, plan)
+        and _status_at_head(root, plan) != Status.blocked
     )
     if meta.status not in (Status.draft, Status.active) and not resuming:
         _err(

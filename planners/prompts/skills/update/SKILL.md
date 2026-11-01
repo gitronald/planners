@@ -120,7 +120,9 @@ decision, a manual check, access only they have. It is an open state, so
   goes in with it. When the wait is over, `{cli} activate {NNN}` sets it back to
   `active`. It carries the mainline guard, as any activation of a blocked plan
   does, which is why the block belongs on the mainline too: `block` itself has no
-  guard and commits on whatever branch it runs on.
+  guard and commits on whatever branch it runs on. For a plan whose feature branch
+  already has Log entries, that activation's new entry conflicts with them when
+  the branch merges. Keep both sides of the Log.
 - **A nested subplan:** `{cli} subplans {NNN} --set <letter>=blocked`. Write
   what it waits on in the Note column of its row in the umbrella's table, by
   hand: the command writes the Status column and no other. When the wait is a
