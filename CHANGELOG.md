@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-01
+
 ### Added
 
 - `planners block <NNN>` marks a draft or active plan blocked, refreshes the index, and
