@@ -98,6 +98,11 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Checks at `6710ed4`: 778 tests passed, coverage 95.07%, ruff, ruff format, and pyrefly clean.
   - Not verified: `--print-merge` against a real fork PR.
 - **2026-11-01T11:05:45-08:00** — Implemented: 12 commits ahead of `dev`.
+- **2026-11-01T11:24:00-08:00** — Closed two gaps the retrospective and the review left, directly on `dev` at the user's direction: `3168b8c` and `4edc024`.
+  - `implemented` and `conclude` now resume only when HEAD's copy lacks the status, as `block` does, and otherwise refuse. `_status_at_head` reads the frontmatter directly, so it covers nested subplans too. `conclude` was found while looking at `implemented`; the retrospective did not name it.
+  - `finish`'s stop message and `--print-merge` share `_pr_merge_command`, which shell-quotes the command, so the review's no-op on the duplicated command no longer stands. The stop message's subject now prints in single quotes, and a fork PR keeps its owner there.
+  - Checks at `4edc024`: 784 tests passed, coverage 95.03%, ruff, ruff format, and pyrefly clean. Five of the new or updated tests failed against the previous code.
+  - Not pushed, and not released: the fixes are in `[Unreleased]`.
 
 ## Retrospective
 
