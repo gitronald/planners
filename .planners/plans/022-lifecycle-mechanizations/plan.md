@@ -36,9 +36,9 @@ them. Implement each with a test and a skill-text update that points at it.
 
 ### Wording carried from 021
 
-021's end-to-end read of the rendered text found three wording problems. None changes an
-instruction, so they did not justify a change of their own; they land here because this
-plan edits the same text.
+021's end-to-end read of the rendered text found these wording problems. They did not
+justify a change of their own; they land here because this plan edits the same text. The
+last one is a wrong statement about `finish`, and the others change no instruction.
 
 - **`close` skill, the `gh pr ready` bullet.** It ends "stop before the merge (a draft
   can't be merged), or the user can mark it ready by hand", which reads as if stopping
@@ -50,6 +50,12 @@ plan edits the same text.
 - **`orchestrated-run` doc, the opening.** It describes a run over an umbrella's subplans,
   while the `implement` skill sends any plan there. Add a line for a plan with no
   subplans.
+- **`close` skill, *When `finish` stops*.** It says `finish` "leaves the state as it was",
+  and its list of causes no longer names a branch that holds commits the base lacks. That
+  stop comes after the worktree is removed and the base is checked out and pulled, so
+  those steps stay done. Say that the steps before the stop stay done and the one it
+  stopped on is left undone, and restore the missing cause, which `finish --help` still
+  lists.
 
 ### Out of scope
 
