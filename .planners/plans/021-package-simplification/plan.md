@@ -5,7 +5,7 @@ status: active
 branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/64
 ---
 
 # Simplify the package and its skill text
@@ -71,3 +71,4 @@ Two kinds of cut are in scope:
   - Deferred as follow-ups, since each adds behavior: #10 a `block` command for top-level plans, #11 a `finish --print-merge` that prints the merge command, #13 an `add --needs` flag for nested subplans.
   - Upstream, not implemented here: #20 the generic agent-orchestration guidance in the implement skill overlaps a global orchestration rule and belongs in a shared convention; #21 the permission-profile explanation belongs in pkgskills, which owns the command.
   - What the brief got right: numbered findings with file:line evidence and a category each made triage mechanical. What it got wrong: the read-only sandbox blocked uv, so every measurement in the report was derived from source, not run.
+- **2026-10-31T20:03:13-07:00** — PR opened: https://github.com/gitronald/planners/pull/64
