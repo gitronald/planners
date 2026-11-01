@@ -135,11 +135,15 @@ Approach 2 is closed. Where this section and the Approach differ, this section h
   Correction to the 18:03 entry: merging `dev` did conflict on the plan, because `activate` added its entry at the same place in the Log. Kept both sides and refreshed the index.
   Open questions 1 and 2 went with their proposed answers, as the Handoff directed.
 - **2026-10-31T18:13:52-07:00** — Implemented: 12 commits ahead of `dev`.
+- **2026-10-31T18:17:43-07:00** — Closed after the review gate. No code changed since the implemented entry.
+  - Review follow-up: `/code-review` at medium raised 5 candidates and no correctness defects, posted to PR #62. Actioned: none. Conscious no-ops: the scope-flag `--check` test overlaps the old-stamp upgrade test but is the named pin for the plan's requirement to test the flags with `--check`; a CRLF stamp line reads `foreign`, which fails safe; `_row` parses output by column, and pkgskills has no structured accessor. Two tests raised as redundant were each found to pin something unique.
+  - Checks on the head: ruff check, ruff format --check, pyrefly, and pytest (729 passed) locally; CI passed on Python 3.11 through 3.14.
 
 ## Handoff
 
-**Waiting on the owner:** review of [PR #62](https://github.com/gitronald/planners/pull/62).
-All three steps are done and pushed. What remains is `/planners close` after that review.
+Closed on 2026-10-31 through [PR #62](https://github.com/gitronald/planners/pull/62). All
+three steps are done and pushed, and nothing is left to pick up here. The change reaches
+users with the next stable release, whose changelog carries the upgrade note.
 
 ### State of each piece
 
@@ -153,7 +157,7 @@ All three steps are done and pushed. What remains is `/planners close` after tha
 1. pkgskills 0.6.0 makes a global install also write `~/.agents/skills/planners/SKILL.md`.
    Does planners accept that default, or declare `harnesses=(CLAUDE_CODE,)`? Resolved
    2026-10-31 on the proposed answer, as the Handoff said a request to continue would:
-   accept the default. The README says so. The owner can still overrule it in review.
+   accept the default. The README says so. The owner closed the plan with this in place.
 2. For a `drifted` file, `--check` prints `repair: planners install --force`, while
    this plan asked for `planners install` as the remedy. Resolved 2026-10-31 the same way:
    accept it, and the README says a plain install is enough.
@@ -173,3 +177,11 @@ All three steps are done and pushed. What remains is `/planners close` after tha
   between them were not run.
 - A global install does not remove a repo's stamped `plan-files.md`. That was read from
   pkgskills' `remove_previous` and seen in one failing test run, and no test pins it.
+
+## Retrospective
+
+- The mechanism question settled itself by waiting. The plan preferred a pkgskills hook, and pkgskills 0.6.0 shipped one, so planners needs one regex and a floor bump rather than a pre-pass that could never have changed what `--check` prints.
+- Building on a dependency's unreleased work made the plan go stale three times in a day: a draft design merged different from its draft, and the status, the mode-mismatch outcome, and the removal behavior all moved. Measuring against the tagged release is what closed those gaps; reading the dependency's plans was not enough.
+- The biggest cost of the upgrade was not in the original Problem. A global install also deletes stamped local copies, and moving to 0.6.0 adds a Codex stub on every host. Both came from running real upgrades in scratch homes rather than from reading code.
+- Scratch-home upgrades also corrected the plan's own claims: `--global` was already rejected in v0.3.1, and an old `plan-files.md` is removed only from the scope being installed. Those runs are worth doing before writing behavior into a README.
+- Copying a Handoff to the mainline to pause work still conflicted on the next merge, despite the Log saying it would not. A pause needs only the branch's Handoff, and the mainline copy adds a merge to reconcile.
