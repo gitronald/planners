@@ -251,3 +251,19 @@ def test_conclude_keeps_a_recorded_pr_unless_told_there_was_none(
     result = runner.invoke(app, ["conclude", "5", "--no-pr", "--no-commit"])
     assert result.exit_code == 0, result.output
     assert "pr: null\n" in plan.read_text(encoding="utf-8")
+
+
+def test_conclude_refuses_an_edit_to_a_plan_already_done_at_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _repo(tmp_path, committed=True)
+    _branch_with_work(tmp_path, plan)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["conclude", "5"]).exit_code == 0
+    head = git_out(tmp_path, "rev-parse", "HEAD")
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+    result = runner.invoke(app, ["conclude", "5"])
+    assert result.exit_code == 1
+    assert "plan 005 is done; it is closed." in result.output
+    assert git_out(tmp_path, "rev-parse", "HEAD") == head
+    assert "An edit." in plan.read_text(encoding="utf-8")

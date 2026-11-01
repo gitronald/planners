@@ -700,6 +700,25 @@ def _is_unmodified(root: Path, path: Path) -> bool:
     return not _git_status_porcelain(root, spec)
 
 
+def _status_at_head(root: Path, path: Path) -> Status | None:
+    """The status of a plan or subplan file as ``HEAD`` has it, if it can be read.
+
+    Tells a run that wrote the status and failed to commit, where ``HEAD`` still has
+    the old one, from a later edit to a file ``HEAD`` already has in that status.
+    """
+    text = proc.git_out(root, ["show", f"HEAD:{path.relative_to(root).as_posix()}"])
+    if text is None:
+        return None
+    frontmatter, _ = split_frontmatter(text)
+    if frontmatter is None:
+        return None
+    status = parse_frontmatter(frontmatter).get("status")
+    try:
+        return Status(status) if isinstance(status, str) else None
+    except ValueError:
+        return None
+
+
 def _finalize_self_check(
     root: Path,
     finalized: list[tuple[int, str, Path]],
@@ -1690,10 +1709,12 @@ def implemented(
     # An earlier run that wrote the status and then failed to commit (a rejecting
     # hook, say) left the plan reading `implemented` with its change uncommitted.
     # That run is finished here rather than refused, as `activate` and `set-pr` do.
+    # A file HEAD already has as implemented is not that run.
     resuming = (
         status == Status.implemented
         and not no_commit
         and not _is_unmodified(root, target)
+        and _status_at_head(root, target) != Status.implemented
     )
     if status != Status.active and not resuming:
         _err(
@@ -2442,17 +2463,6 @@ def retire(
     )
 
 
-def _status_at_head(root: Path, plan: Path) -> Status | None:
-    """The plan's status as ``HEAD`` has it, or ``None`` when that cannot be read."""
-    text = proc.git_out(root, ["show", f"HEAD:{plan.relative_to(root).as_posix()}"])
-    if text is None:
-        return None
-    try:
-        return PlanMetadata.from_text(text, plan.parent.name).status
-    except PlanError:
-        return None
-
-
 @app.command()
 def block(
     ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
@@ -2672,9 +2682,13 @@ def conclude(
 
     # An earlier run that wrote the frontmatter and then failed to commit (a
     # rejecting hook, say) left the plan reading `done` with its change
-    # uncommitted. That run is finished here rather than refused.
+    # uncommitted. That run is finished here rather than refused. A plan HEAD
+    # already has as done is not that run.
     resuming = (
-        meta.status == Status.done and not no_commit and not _is_unmodified(root, plan)
+        meta.status == Status.done
+        and not no_commit
+        and not _is_unmodified(root, plan)
+        and _status_at_head(root, plan) != Status.done
     )
     if meta.status not in (Status.active, Status.implemented) and not resuming:
         closed = meta.status in CLOSED_STATUSES
