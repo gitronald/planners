@@ -53,15 +53,16 @@ These tools can be used manually via CLI commands, but they are largely intended
 
    **Upgrading.** A plain `planners install` upgrades files from any earlier release, so
    no `--force` is needed. `install --check` reads `drifted` and exits 1 until you run it,
-   and prints `planners install --force` as the repair, though the plain install is
-   enough. The install treats those files as generated, which has two effects:
+   and prints `planners install` as the repair. The install treats those files as
+   generated, which has two effects:
    - It overwrites edits made to them. Their stamp said not to edit them.
    - A global install removes the repo's local copies, and each install removes an old
      stamped `plan-files.md` from the scope it writes to. If the repo tracks `.claude/`,
      the removals show as deletions in `git status`.
 
    `--force` is still needed for a file it does not recognize as generated: one with no
-   stamp, another package's stamp, or an altered stamp.
+   stamp, another package's stamp, or an altered stamp. `install --check` prints that form
+   on an `overwrite:` line, naming what it would replace.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Requires pkgskills 0.6.1. `install --check` and the skill stub now give the plain
+  `planners install` as the repair, and print the `--force` form only on an `overwrite:`
+  line that names what it would replace. The stub changes with this, so `install --check`
+  reads `drifted` until a plain `planners install` has run
+
 ## [0.14.0] - 2026-10-31
 
 ### Added

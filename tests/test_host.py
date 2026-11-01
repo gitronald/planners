@@ -225,6 +225,15 @@ def test_an_old_stamp_upgrades_with_a_plain_install(box: Sandbox, mode: str) -> 
     assert before.exit_code == 1
     assert _row(before.output, HOLDER) == ["drifted", mode]
     assert _row(before.output, RULE) == ["drifted", mode]
+    # The advice is the install below, and nothing that could replace other files.
+    hints = [
+        line
+        for line in before.output.splitlines()
+        if line.startswith(("repair:", "overwrite:"))
+    ]
+    assert len(hints) == 1, before.output
+    assert hints[0].startswith("repair:")
+    assert "--force" not in hints[0]
 
     installed = runner.invoke(app, ["install", flag])
     assert installed.exit_code == 0, installed.output
