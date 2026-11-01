@@ -80,3 +80,4 @@ Two kinds of cut are in scope:
     - Checks: 731 tests passed, coverage 94.88%, ruff and pyrefly clean, and a built wheel carries the doc.
 - **2026-11-01T10:04:01-08:00** — Implemented: 12 commits ahead of `dev`.
 - **2026-11-01T10:12:52-08:00** — Reactivated: back to active after review.
+- **2026-11-01T10:13:29-08:00** — Dropped the upstream proposal for finding #21 and trimmed the rule's Automation levels section instead. `planners permissions --help` already explains the levels, print versus `--apply`, the target file, and the no-downgrade guarantee, and what each level adds is planners' own declaration, so pkgskills could not state it generically. A search of pkgskills also found no way to render a shared section into a host's rule. The rule now says what each level adds and points at `--help`; the short permission notes in the close and implement skills stay, since a session needs them at that step.
