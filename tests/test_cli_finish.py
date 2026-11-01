@@ -338,6 +338,71 @@ def test_finish_stops_on_a_branch_the_base_lacks(
     assert scene.has_branch(f"refs/heads/{_BRANCH}")
 
 
+def test_finish_stop_keeps_the_steps_before_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    scene.merge_on_github()
+    # A commit on the remote branch after the merge, which the worktree never saw.
+    merger = scene.state / "merger"
+    git(merger, "fetch", "-q", "origin")
+    git(merger, "checkout", "-q", "-b", "late", f"origin/{_BRANCH}")
+    (merger / "late.txt").write_text("late\n", encoding="utf-8")
+    commit_all(merger, "late")
+    git(merger, "push", "-q", "origin", f"HEAD:{_BRANCH}")
+
+    first = scene.finish()
+    assert first.exit_code == 1
+    assert f"origin/{_BRANCH} holds commits main does not" in first.output
+    # The worktree and the pull were done before the stop, and they stay done.
+    assert not scene.worktree.exists()
+    assert (scene.root / "work.txt").is_file()
+    # The step it stopped on, and the one after it, were not.
+    assert git_out(scene.root, "ls-remote", "--heads", "origin", _BRANCH).strip()
+    assert scene.has_branch(f"refs/heads/{_BRANCH}")
+
+    second = scene.finish()
+    assert second.exit_code == 1
+    assert f"no worktree has {_BRANCH} checked out" in second.output
+    assert f"origin/{_BRANCH} holds commits main does not" in second.output
+
+
+def _add_pre_worktree_remove(scene: Scene, body: str) -> None:
+    """Commit a ``pre-worktree-remove`` hook on the branch, and push it."""
+    hooks = scene.worktree / ".planners" / "hooks"
+    hooks.mkdir()
+    write_script(hooks / "pre-worktree-remove", body)
+    commit_all(scene.worktree, "add the hook")
+    git(scene.worktree, "push", "-q")
+
+
+def test_finish_runs_the_pre_worktree_remove_hook_inside_the_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    marker = tmp_path / "hook-ran"
+    _add_pre_worktree_remove(scene, f'pwd > "{marker}"\n')
+    scene.merge_on_github()
+    result = scene.finish()
+    assert result.exit_code == 0, result.output
+    assert Path(marker.read_text(encoding="utf-8").strip()) == scene.worktree.resolve()
+    assert result.output.index(
+        "ran the pre-worktree-remove hook"
+    ) < result.output.index("removed the worktree")
+    _assert_finished(scene)
+
+
+def test_finish_stops_when_the_pre_worktree_remove_hook_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    _add_pre_worktree_remove(scene, "exit 3\n")
+    scene.merge_on_github()
+    result = scene.finish()
+    assert result.exit_code == 1
+    _assert_untouched(scene)
+
+
 def test_finish_stops_on_a_plan_that_is_not_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
