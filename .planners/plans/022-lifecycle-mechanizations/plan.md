@@ -89,3 +89,11 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - `pr_number` moved to `utils.py`, so `index.py` and `finish` share one parser.
 - **2026-11-01T10:53:54-08:00** — Implemented: 6 commits ahead of `dev`.
 - **2026-11-01T10:59:03-08:00** — Reactivated: back to active after review.
+- **2026-11-01T11:05:43-08:00** — Scope widened at the user's direction at the review gate: `activate` changed, which the plan's Out of scope excluded, because the review showed `block` could not be used cleanly without it. Commits since the last entry: `ef88873`, `0a441a0`, `6710ed4`.
+  - `activate` returns a blocked plan without the mainline guard on the branch it records, after an earlier activation, and logs `Reactivated: back to active after a block.` Other blocked plans stay guarded, and the skill and rule now say to block on the feature branch. This revises the earlier entry's advice to block on the mainline.
+  - Review follow-up, first pass at medium effort on the PR. Raised: a re-run of `block` committed an unrelated edit to a plan already blocked at HEAD; `add --needs` could complete a cycle; blocking on the mainline conflicted at merge (found with a scratch-repo probe). All three actioned, each with tests.
+  - Review follow-up, second pass on the `activate` commit. Raised: the return printed the base-push report, listing branch commits as "other". Actioned, with a test.
+  - Conscious no-ops: `_print_merge` and the stop message each spell out the `gh pr merge` argv, since sharing one changes the stop message's quoting; `block` and `implemented` each carry a resume check, and `implemented` keeps the weaker one, so an uncommitted edit to an `implemented` plan can still commit under its subject.
+  - Rejected on review: the fork subject in `--print-merge` and its lack of a done check are both intended.
+  - Checks at `6710ed4`: 778 tests passed, coverage 95.07%, ruff, ruff format, and pyrefly clean.
+  - Not verified: `--print-merge` against a real fork PR.
