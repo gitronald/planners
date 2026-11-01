@@ -82,3 +82,7 @@ Two kinds of cut are in scope:
 - **2026-11-01T10:12:52-08:00** — Reactivated: back to active after review.
 - **2026-11-01T10:13:29-08:00** — Dropped the upstream proposal for finding #21 and trimmed the rule's Automation levels section instead. `planners permissions --help` already explains the levels, print versus `--apply`, the target file, and the no-downgrade guarantee, and what each level adds is planners' own declaration, so pkgskills could not state it generically. A search of pkgskills also found no way to render a shared section into a host's rule. The rule now says what each level adds and points at `--help`; the short permission notes in the close and implement skills stay, since a session needs them at that step.
 - **2026-11-01T10:13:36-08:00** — Implemented: 16 commits ahead of `dev`.
+- **2026-11-01T10:19:11-08:00** — Close review ran at medium level on PR 64 and was posted to it.
+  - Review follow-up: 4 candidates. Actioned: the rule's condensed guard paragraph implied `retire` belongs on the feature branch, so the "wherever the decision is made" point is back (a prose fix, no test); `next_letter` had become a pass-through, so `cli.py` calls `next_sub` directly; the duplicate `next_letter` tests are gone, with their two gap cases moved into `test_next_sub`.
+  - Conscious no-op: the nested path's exhausted-letters error now has the en dash `next_sub` already printed for lettered plans. Nothing matches on the old text.
+  - Checks: 731 tests passed, coverage 94.87%, ruff, ruff format, and pyrefly clean.
