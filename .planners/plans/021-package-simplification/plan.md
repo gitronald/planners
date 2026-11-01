@@ -74,3 +74,7 @@ Two kinds of cut are in scope:
 - **2026-10-31T20:03:13-07:00** — PR opened: https://github.com/gitronald/planners/pull/64
 - **2026-10-31T20:03:22-07:00** — Implemented: 6 commits ahead of `dev`.
 - **2026-11-01T09:58:11-08:00** — Reactivated: back to active after review.
+- **2026-11-01T09:59:33-08:00** — Moved the orchestrated-run guidance out of the implement skill into a pkgskills Doc, printed by `planners doc orchestrated-run`, so a session loads it only when the user asks for subagents or a workflow. This replaces the upstream proposal for finding #20: a personal rule cannot carry guidance for a package other people install, and the text is about plan work far more than it duplicates any shared rule.
+    - Why now: a transcript count on one machine found the section loaded in 161 sessions since it shipped, and at most 16 of them ran two or more working agents or workflows. It is about 7 kB, roughly 1,800 tokens by estimate.
+    - Scope: an exception to this plan's 'no new subcommands' line, made at the user's direction. `doc` comes from pkgskills and adds no command code here beyond the declaration and the repository-guard exemption. The text moved unchanged apart from heading levels and one cross-reference; the implement skill gained a pointer that applies to any plan, not only an umbrella.
+    - Checks: 731 tests passed, coverage 94.88%, ruff and pyrefly clean, and a built wheel carries the doc.
