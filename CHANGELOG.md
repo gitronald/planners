@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners doc` prints a bundled reference document; `--list` names them
+
 ### Changed
 
 - Requires pkgskills 0.6.1. `install --check` and the skill stub now give the plain
