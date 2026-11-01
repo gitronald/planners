@@ -45,7 +45,10 @@ These tools can be used manually via CLI commands, but they are largely intended
    saying whether it is actually registered **in this clone** — registration is
    per-clone state that a fresh clone silently lacks, so it is reported rather than
    assumed. The hooks only fire once `pre-commit` is available: in a uv project, run
-   `uv add --dev pre-commit` once, then re-run `planners install`.
+   `uv add --dev pre-commit` once, then re-run `planners install`. A
+   `.pre-commit-config.yaml` that install cannot safely add to, such as one with a
+   non-empty flow-style `repos` list, is left alone, and its hook rows say to add the
+   entries by hand.
 
    The install, check, and print commands (`install`, `skill`, `rule`, `permissions`)
    come from [pkgskills](https://pypi.org/project/pkgskills/), which planners
