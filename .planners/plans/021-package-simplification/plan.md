@@ -65,3 +65,9 @@ Two kinds of cut are in scope:
   - Base: `dev` at `ed9f15f`
   - Worktree: `.worktrees/021-package-simplification`
   - PR: pending
+- **2026-10-31T20:03:04-07:00** — Codex (gpt-6-astra) ran a read-only review pass; the main session verified each finding against the source and the tests, then implemented the accepted ones.
+  - Accepted and done: code (#14 `_commit` at finalize and activate, #15 `next_letter` delegates to `next_sub`, #16 `_collect_metas` strict mode, #17 `cli.main`, #18 note trimming in `log_entry`, #19 `is_safe_slug` whitelist only); rule cuts (#1 nested subplans, #2 index merge cases, #6 frontmatter template, generated entries, numbering, and the guard heuristic, #5 close-out ownership); skill cuts (#3 backfill glossary, #4 update's Handoff, #7 finish's step list and implement's cleanup paragraph, #8 start's step table, #9 conclude's dating rule, #12 review entries through `log`); and the #21 drift fix (`permissions` prints unless `--apply`).
+  - Prompt text went from 1909 to 1794 lines; the always-on rule from 412 to 340. Tests 729 passed, coverage 94.88%, ruff and pyrefly clean, run by the main session (Codex's sandbox could not take uv's lock).
+  - Deferred as follow-ups, since each adds behavior: #10 a `block` command for top-level plans, #11 a `finish --print-merge` that prints the merge command, #13 an `add --needs` flag for nested subplans.
+  - Upstream, not implemented here: #20 the generic agent-orchestration guidance in the implement skill overlaps a global orchestration rule and belongs in a shared convention; #21 the permission-profile explanation belongs in pkgskills, which owns the command.
+  - What the brief got right: numbered findings with file:line evidence and a category each made triage mechanical. What it got wrong: the read-only sandbox blocked uv, so every measurement in the report was derived from source, not run.
