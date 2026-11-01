@@ -36,6 +36,8 @@ them. Implement each with a test and a skill-text update that points at it.
 
 ### Wording carried from 021
 
+**Done on `dev` ahead of this plan (see the Log), so nothing in this section remains.**
+
 021's end-to-end read of the rendered text found these wording problems. They did not
 justify a change of their own; they land here because this plan edits the same text. The
 last one is a wrong statement about `finish`, and the others change no instruction.
@@ -64,3 +66,11 @@ last one is a wrong statement about `finish`, and the others change no instructi
   and 021's Log settles both: the orchestration guidance became `planners doc
   orchestrated-run`, and the permission-profile explanation became a trim that points at
   `planners permissions --help`.
+
+## Log
+
+- **2026-11-01T10:43:54-08:00** — Fixed the four items under *Wording carried from 021* directly on `dev`, at the user's direction, ahead of this plan (`d05f48b`), so none remains for it. Items 1 to 3 are unchanged and still open.
+  - The same wrong claim about a stop was also in the docstrings of `planners/finish.py`; those are corrected too.
+  - Added tests in `2a4dd77`: a stop on an origin branch ahead of the base keeps the worktree removal and the pull, and a re-run stops at the same place; the `pre-worktree-remove` hook runs inside the worktree before removal, and a failing hook stops `finish` with everything untouched. That hook had no test before.
+  - Checks: 734 tests passed, coverage 94.94%, ruff, ruff format, and pyrefly clean, run before these commits on the same tree.
+  - Not released: the fixes are in `[Unreleased]`, so the published 0.15.0 still carries the old text.
