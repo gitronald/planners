@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reads `drifted` until a plain `planners install` has run
 - The planners rule is shorter: the nested-subplan authoring guidance, the index merge
   cases, and the close-out procedure each have one home (the `add`, `index`, and `close`
-  skills), and the rule describes the generated frontmatter and Log entries instead of
-  reproducing them
+  skills), the rule describes the generated frontmatter and Log entries instead of
+  reproducing them, and *Automation levels* says what each level adds and leaves the
+  options to `planners permissions --help`
 - The skill bodies no longer restate what the CLI prints or enforces: `start`'s step
   table, `finish`'s step list, and `conclude`'s dating rule are each a sentence, the
   `review` skill writes every Log entry through `planners log`, and the `backfill` skill

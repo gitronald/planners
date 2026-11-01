@@ -331,10 +331,7 @@ the instructions change with the installed version.
 ## Automation levels
 
 The lifecycle commands shell out to git and `gh`; whether each runs unprompted
-depends on the ambient Claude Code permission config. `{cli} permissions
-[--level none|assist|confirm|full]` prints (or, with `--apply`, additively
-merges) a matching allow-rule profile so you can pick how hands-off the run is:
-`assist` (default) grants the local, reversible spine plus the self-authored PR
-writes; `confirm` adds `git push`; `full` adds the irreversible `gh pr merge`. It
-writes the repo's `.claude/settings.local.json` by default (`--global` for the
-user-wide file) and never downgrades an existing `deny`/`ask` rule.
+depends on the ambient Claude Code permission config. `{cli} permissions` prints the
+allow rules for a level (`--help` has the options): `assist` (default) grants the local,
+reversible spine plus the self-authored PR writes, `confirm` adds `git push`, and `full`
+adds the irreversible `gh pr merge`.
