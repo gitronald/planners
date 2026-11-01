@@ -282,9 +282,9 @@ by name, not a way past the check.
 
 The guard covers activating a `draft`, `blocked`, or `inactive` plan. Returning one from
 `implemented` is not guarded, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
-`{cli} conclude`, and `{cli} retire` commit where they are run, on the feature branch
-where the work is; `conclude` checks instead that HEAD is on the plan's recorded branch,
-since the date it records is that branch's.
+`{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its feature
+branch, and a plan is retired wherever the decision is made. `conclude` checks instead that
+HEAD is on the plan's recorded branch, since the date it records is that branch's.
 
 ### Plan commit subjects name the slug
 
