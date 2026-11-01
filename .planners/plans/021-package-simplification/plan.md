@@ -1,10 +1,10 @@
 ---
 id: 21
 slug: package-simplification
-status: implemented
+status: done
 branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
-concluded:
+concluded: 2026-11-01T10:19:02-08:00
 pr: https://github.com/gitronald/planners/pull/64
 ---
 
@@ -86,3 +86,12 @@ Two kinds of cut are in scope:
   - Review follow-up: 4 candidates. Actioned: the rule's condensed guard paragraph implied `retire` belongs on the feature branch, so the "wherever the decision is made" point is back (a prose fix, no test); `next_letter` had become a pass-through, so `cli.py` calls `next_sub` directly; the duplicate `next_letter` tests are gone, with their two gap cases moved into `test_next_sub`.
   - Conscious no-op: the nested path's exhausted-letters error now has the en dash `next_sub` already printed for lettered plans. Nothing matches on the old text.
   - Checks: 731 tests passed, coverage 94.87%, ruff, ruff format, and pyrefly clean.
+
+## Retrospective
+
+- The review, triage, and implement split worked: numbered findings with file and line evidence let the main session judge each one quickly. The sandbox blocking `uv` meant no number in the report had been measured, so the brief should say so up front or run from a tree where the tool can lock.
+- The biggest single cut came after the first pass. Moving the orchestrated-run guidance to a printed doc rested on a transcript count of how often it was used, which is better evidence for a cut than the text looking redundant. It needed an exception to the "no new subcommands" line, which the Log records.
+- Two proposals to send text upstream did not survive a closer look: #20 stayed in this package as a doc, and #21 became a trim because what each level adds is planners' own. "Belongs upstream" deserves the same check as any other finding.
+- Condensing prose is where the "behavior is held fixed" rule was hardest to hold. Merging the guard paragraph quietly changed where `retire` was said to run, and only the close review caught it. A cut that merges sentences should be read against the base text for each clause it drops.
+- A simplification can stop halfway: `next_letter` delegating to `next_sub` removed the copy and left a wrapper with no job. Finishing a cut means checking what is left around it.
+- Not verified: the plan's checks that `planners install --check` is clean after a reinstall, and that the rendered text is re-read end to end. From this branch the check reports the global rule as drifted, which is expected while the installed package is older than this text; no reinstall was run, and the close review read the diff, not the rendered text. Both fall to the next release and install.
