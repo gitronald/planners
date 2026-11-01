@@ -1,7 +1,7 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: active
+status: implemented
 branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
 concluded:
@@ -97,3 +97,4 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Rejected on review: the fork subject in `--print-merge` and its lack of a done check are both intended.
   - Checks at `6710ed4`: 778 tests passed, coverage 95.07%, ruff, ruff format, and pyrefly clean.
   - Not verified: `--print-merge` against a real fork PR.
+- **2026-11-01T11:05:45-08:00** — Implemented: 12 commits ahead of `dev`.
