@@ -1,8 +1,8 @@
 ---
 id: 21
 slug: package-simplification
-status: draft
-branch:
+status: active
+branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
 concluded:
 pr:
@@ -57,3 +57,11 @@ Two kinds of cut are in scope:
 - New features or new subcommands.
 - Changes to the plan-file schema or the index format.
 - Rewording that changes meaning (plan 015 covered the language pass).
+
+## Log
+
+- **2026-10-31T19:48:33-07:00** — Activated.
+  - Branch: `feature/021-package-simplification`
+  - Base: `dev` at `ed9f15f`
+  - Worktree: `.worktrees/021-package-simplification`
+  - PR: pending
