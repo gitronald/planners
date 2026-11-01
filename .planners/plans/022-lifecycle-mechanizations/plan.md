@@ -80,3 +80,10 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Worktree: `.worktrees/022-lifecycle-mechanizations`
   - PR: pending
 - **2026-11-01T10:53:46-08:00** — PR opened: https://github.com/gitronald/planners/pull/66
+- **2026-11-01T10:53:48-08:00** — Implemented the three items, one commit each plus a docs commit: `2997b33` (`block`), `9885496` (`finish --print-merge`), `728a090` (`add --needs`), `c123f58` (rule, README, changelog).
+  - Checks at `c123f58`: 769 tests passed, coverage 95.03%, ruff, ruff format, and pyrefly clean. `dev` had not moved, so no merge was needed.
+  - `block` has no mainline guard, as the spec names none. It commits where it runs, like `log` and `retire`. `activate` returns a blocked plan only on the mainline, so a plan blocked on its feature branch reads `active` on the mainline and cannot return without `--allow-branch`. The by-hand flow had the same trap. The skill and the rule say to block on the mainline, and a test records the behavior.
+  - `--print-merge` reads the PR number from the plan's URL and makes no network call, taking "without fetching" literally. So it does not check the PR's state, and a fork PR's subject lacks the `<owner>/` that `finish`'s stop message gets from `gh`. The `close` skill says to add it.
+  - `finish`'s stop message still double-quotes its subject while `--print-merge` uses `shlex.join`. Changing the stop message is out of scope here, so a branch name holding `$(...)` stays unsafe to paste from that message.
+  - `--needs` refuses a malformed letter, the subplan's own letter, and a repeat. It warns, without refusing, on a letter with no subplan yet, since the `add` skill's order allows naming one later.
+  - `pr_number` moved to `utils.py`, so `index.py` and `finish` share one parser.
