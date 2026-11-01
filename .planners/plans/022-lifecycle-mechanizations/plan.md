@@ -1,8 +1,8 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: draft
-branch:
+status: active
+branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
 concluded:
 pr:
@@ -74,3 +74,8 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Added tests in `2a4dd77`: a stop on an origin branch ahead of the base keeps the worktree removal and the pull, and a re-run stops at the same place; the `pre-worktree-remove` hook runs inside the worktree before removal, and a failing hook stops `finish` with everything untouched. That hook had no test before.
   - Checks: 734 tests passed, coverage 94.94%, ruff, ruff format, and pyrefly clean, run before these commits on the same tree.
   - Not released: the fixes are in `[Unreleased]`, so the published 0.15.0 still carries the old text.
+- **2026-11-01T10:46:44-08:00** — Activated.
+  - Branch: `feature/022-lifecycle-mechanizations`
+  - Base: `dev` at `726fb65`
+  - Worktree: `.worktrees/022-lifecycle-mechanizations`
+  - PR: pending
