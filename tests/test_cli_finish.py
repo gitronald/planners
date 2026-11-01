@@ -255,7 +255,7 @@ def test_finish_stops_on_an_open_pr_and_names_the_merge(
     assert result.exit_code == 1
     assert "PR #7 is not merged yet" in result.output
     assert (
-        f'gh pr merge 7 --merge --subject "merge: PR #7 - {_BRANCH}"' in result.output
+        f"gh pr merge 7 --merge --subject 'merge: PR #7 - {_BRANCH}'" in result.output
     )
     assert scene.merges() == []
     _assert_untouched(scene)
@@ -742,3 +742,30 @@ def test_print_merge_stops_without_a_usable_pr(
     result = scene.finish("--print-merge")
     assert result.exit_code == 1
     assert message in result.output
+
+
+def _stop_merge_line(result: Result) -> list[str]:
+    """The ``gh pr merge`` line of a stop message, as a shell would split it."""
+    line = next(ln for ln in result.output.splitlines() if "gh pr merge" in ln)
+    return shlex.split(line)
+
+
+def test_finish_stop_quotes_a_branch_name_a_shell_would_expand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    scene.set_view({**_pr(), "headRefName": "feature/$(touch-me)"})
+    result = scene.finish()
+    assert result.exit_code == 1
+    assert "'merge: PR #7 - feature/$(touch-me)'" in result.output
+    assert _stop_merge_line(result)[-1] == "merge: PR #7 - feature/$(touch-me)"
+
+
+def test_finish_stop_keeps_the_owner_of_a_fork_pr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    scene.set_view(_pr(fork=True))
+    result = scene.finish()
+    assert result.exit_code == 1
+    assert _stop_merge_line(result)[-1] == f"merge: PR #7 - owner/{_BRANCH}"

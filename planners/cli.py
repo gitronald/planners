@@ -1888,6 +1888,14 @@ def _merge_command(branch: str) -> str:
     return shlex.join(["git", "merge", "--no-ff", branch, "-m", subject])
 
 
+def _pr_merge_command(number: int, label: str) -> str:
+    """The ``gh pr merge`` line for a PR, quoted the way :func:`_merge_command` is."""
+    subject = finish_mod.merge_subject(label, number)
+    return shlex.join(
+        ["gh", "pr", "merge", str(number), "--merge", "--subject", subject]
+    )
+
+
 def _check_merged(
     root: Path,
     branch: str,
@@ -1910,10 +1918,9 @@ def _check_merged(
             return pr
         if pr.state == "CLOSED":
             raise finish_mod.Stop(f"PR #{pr.number} is closed without being merged")
-        subject = finish_mod.merge_subject(pr.label, pr.number)
         raise finish_mod.Stop(
             f"PR #{pr.number} is not merged yet. Merge it, then run finish again:\n"
-            f'  gh pr merge {pr.number} --merge --subject "{subject}"'
+            f"  {_pr_merge_command(pr.number, pr.label)}"
         )
     source = next(
         (
@@ -1987,10 +1994,7 @@ def _print_merge(root: Path, ref: str, *, no_pr: bool) -> str:
     number = pr_number(pr)
     if number is None:
         raise finish_mod.Stop(f"plan {label} records {pr}, which names no PR number")
-    subject = finish_mod.merge_subject(branch, number)
-    return shlex.join(
-        ["gh", "pr", "merge", str(number), "--merge", "--subject", subject]
-    )
+    return _pr_merge_command(number, branch)
 
 
 def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:

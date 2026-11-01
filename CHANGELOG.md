@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the stop that comes after the worktree is removed and the base is pulled, is back in
   its list of causes
 - The planners rule said `--no-worktree` records a worktree; it records the main checkout
+- `planners implemented` and `planners conclude`, re-run on a plan already `implemented`
+  or `done` at HEAD, committed any uncommitted edit to its file under their own subject.
+  They now refuse, and still finish a run whose own commit failed
+- The merge command in `finish`'s stop message is now shell-quoted, so a branch name
+  holding `$(...)` is safe to paste. The subject prints in single quotes
 - `planners doc orchestrated-run` now covers a plan with no subplans, since the
   `implement` skill sends any plan there
 
