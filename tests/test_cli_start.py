@@ -721,3 +721,17 @@ def test_setup_does_not_take_a_partial_claude_copy_for_a_finished_one(
     assert "ran setup: copied .claude/" in scene.start().output
     copied = scene.worktree / ".claude"
     assert sorted(path.name for path in copied.iterdir()) == ["settings.json"]
+
+
+def test_start_stops_on_an_edit_to_a_plan_already_active_at_head(scene: Scene) -> None:
+    scene.start()
+    head = git_out(scene.root, "rev-parse", "HEAD")
+    assert git_out(scene.root, "log", "-1", "--format=%s").startswith("plan [activate]")
+    text = scene.plan.read_text(encoding="utf-8")
+    scene.plan.write_text(text + "\nAn edit.\n", encoding="utf-8")
+
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "1 uncommitted change(s)" in result.output
+    assert git_out(scene.root, "rev-parse", "HEAD") == head
+    assert "An edit." in scene.plan.read_text(encoding="utf-8")

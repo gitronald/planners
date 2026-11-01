@@ -700,19 +700,28 @@ def _is_unmodified(root: Path, path: Path) -> bool:
     return not _git_status_porcelain(root, spec)
 
 
-def _status_at_head(root: Path, path: Path) -> Status | None:
-    """The status of a plan or subplan file as ``HEAD`` has it, if it can be read.
+def _frontmatter_at_head(root: Path, path: Path) -> dict[str, str | None]:
+    """A plan or subplan file's frontmatter as ``HEAD`` has it; empty if unreadable.
 
-    Tells a run that wrote the status and failed to commit, where ``HEAD`` still has
-    the old one, from a later edit to a file ``HEAD`` already has in that status.
+    Tells a run that wrote a field and failed to commit, where ``HEAD`` still has
+    the old value, from a later edit to a file ``HEAD`` already has that value in.
     """
     text = proc.git_out(root, ["show", f"HEAD:{path.relative_to(root).as_posix()}"])
     if text is None:
-        return None
+        return {}
     frontmatter, _ = split_frontmatter(text)
-    if frontmatter is None:
-        return None
-    status = parse_frontmatter(frontmatter).get("status")
+    return parse_frontmatter(frontmatter) if frontmatter is not None else {}
+
+
+def _activation_committed(root: Path, plan: Path, branch: str | None) -> bool:
+    """True when ``HEAD`` already has ``plan`` active on ``branch``."""
+    head = _frontmatter_at_head(root, plan)
+    return head.get("status") == Status.active.value and head.get("branch") == branch
+
+
+def _status_at_head(root: Path, path: Path) -> Status | None:
+    """The status of a plan or subplan file as ``HEAD`` has it, if it can be read."""
+    status = _frontmatter_at_head(root, path).get("status")
     try:
         return Status(status) if isinstance(status, str) else None
     except ValueError:
@@ -1345,10 +1354,15 @@ def _activate(
     # as *already committed* — an earlier run can have written and staged the plan and
     # then failed at the commit (a rejecting hook, no commit identity). Deciding from
     # the frontmatter alone would report that failure as success and strand the
-    # activation staged forever, so the file must also be unmodified against HEAD.
+    # activation staged forever, so HEAD must also have the activation. An uncommitted
+    # edit to a plan HEAD already has active is not one, and is left where it is.
     # This runs before the guard: a genuine no-op commits nothing, so there is nothing
     # for a feature branch to strand and nothing for the guard to protect.
-    if unchanged and (no_commit or _is_unmodified(root, path)):
+    if unchanged and (
+        no_commit
+        or _is_unmodified(root, path)
+        or _activation_committed(root, path, new_branch)
+    ):
         typer.echo(
             f"plan {meta.prefix} is already active on {meta.branch}; nothing to do."
         )
@@ -1517,7 +1531,13 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
         slug = meta.slug
         staged = [plan]
 
-    if updated == text and (no_commit or _is_unmodified(root, target)):
+    # An uncommitted edit to a file HEAD already has this URL in is not a write an
+    # earlier run failed to commit, and is left where it is.
+    if updated == text and (
+        no_commit
+        or _is_unmodified(root, target)
+        or _frontmatter_at_head(root, target).get("pr") == url
+    ):
         typer.echo(f"plan {label} already records {url}; nothing to do.")
         return
     if updated != text:
@@ -2246,7 +2266,10 @@ def _start(
     else:
         pending: tuple[Path, ...] = ()
         if meta.status == Status.active:
-            pending = (plan, root / INDEX_PATH)
+            pending = (root / INDEX_PATH,)
+            # An edit to a plan HEAD already has active is the tree's to answer for.
+            if not _activation_committed(root, plan, meta.branch):
+                pending += (plan,)
             if start_mod.ignore_rule_pending(root):
                 pending += (root / ".gitignore",)
         show("base", start_mod.check_base(root, mainline, ignore=pending))
