@@ -13,9 +13,9 @@ and reinstall.
 
 `{cli}` refuses to run outside a git repository: the command exits 1 and changes nothing.
 That is not a broken install, and `{cli} install --force` is refused the same way, so there
-is nothing to repair. Work from a repository, or run `git init` first. `skill`, `rule`,
-`schema`, `validate`, `permissions`, and `--help` run anywhere, and `index`, `base`, and
-`remote` check the path they are given.
+is nothing to repair. Work from a repository, or run `git init` first. `skill`, `doc`,
+`rule`, `schema`, `validate`, `permissions`, and `--help` run anywhere, and `index`, `base`,
+and `remote` check the path they are given.
 
 ## Storage layout
 
@@ -32,27 +32,12 @@ live in `docs/` — a curated `docs/README.md` landing page, never a generated p
 
 `{cli} validate` fails when the tracked index disagrees with the plan frontmatter, so an
 edit that changes a plan's title, status, `concluded`, or `pr` must be committed together
-with a refreshed index. The lifecycle commands (`add`, `finalize`, `activate`, `set-pr`,
-`implemented`, `conclude`, `retire`) already do that, and `log` refreshes a tracked index
-it finds stale and commits it with the entry; a hand edit to the frontmatter is the case to remember — run
-`{cli} index .` before committing. (`validate --no-index` skips the index comparison, for a
-caller checking plans in a repo whose index it cannot regenerate.) The same check catches a
-merge: `install` marks the index `merge=union` in `.gitattributes`, so a **local** merge
-resolves it instead of conflicting — at the cost of duplicating a row when both branches
-rewrote the same one.
-Regenerating repairs it, and `install` wires a `post-merge` hook (`planners-index`) that
-runs the regeneration for you after a clean merge. It cannot get the result *into* the
-merge commit — git writes the merge tree before `post-merge` runs — so the refreshed
-index lands as an **uncommitted change**; commit it alongside.
-
-Two gaps are worth knowing, because both look like the hook having done its job:
-
-- **A conflicted merge does not run `post-merge`.** Git skips it when the merge stops on
-  conflicts, and finishing by hand with `git commit` runs the *pre-commit* hooks instead.
-  Run `{cli} index .` yourself before committing a merge you resolved.
-- **GitHub does not apply the attribute**, nor run the hook, so a PR can still report a
-  conflict on the index; merge the base in locally and push rather than hand-editing the
-  generated file.
+with a refreshed index. The lifecycle commands refresh and commit it themselves, and `log`
+repairs a stale one it finds; after a hand edit to frontmatter, or a merge you resolved by
+hand, run `{cli} index .` before committing (`validate --no-index` skips the comparison).
+`install` marks the index `merge=union` and wires a `post-merge` hook that regenerates it,
+as an **uncommitted change**, after a clean local merge; the `index` skill covers the merge
+cases, including the conflicted merge and the PR that GitHub still reports as conflicting.
 
 > **Migration in progress.** Some repos are still on the legacy `docs/plans/{NNN}-{slug}.md`
 > + `TODO.md` layout. Keep using that layout in a repo until it is migrated to `.planners/`;
@@ -60,11 +45,9 @@ Two gaps are worth knowing, because both look like the hook having done its job:
 
 ## Naming
 
-`<NNN>-<slug>` directory with an auto-incrementing prefix. Next number =
-max(existing prefixes) + 1, and **the first plan in a fresh repo is `000`** —
-numbering starts at zero, not one. Never reuse a number. `{cli} add <slug>`
-scaffolds the directory, `plan.md`, and conformant frontmatter; check existing
-plans first for the number.
+`<NNN>-<slug>` directory with an auto-incrementing prefix; **the first plan in a fresh
+repo is `000`**, and a number is never reused. `{cli} add <slug>` assigns the number and
+scaffolds the directory, `plan.md`, and conformant frontmatter.
 
 For **batch creation**, do not run parallel `{cli} add`s — they can race on the
 number. Instead, each creator runs `{cli} add <slug> --defer` to stage an
@@ -75,23 +58,12 @@ writer, so there is no race.
 
 ## Frontmatter
 
-Every `plan.md` starts with YAML frontmatter (field order:
-`id, slug, status, branch, created, concluded, pr` — keep all seven keys present):
-
-    ---
-    id: <int, = the NNN directory prefix>
-    slug: <kebab-slug, = the directory slug>
-    status: draft
-    branch:
-    created: YYYY-MM-DDTHH:MM:SS-TZ:TZ
-    concluded:
-    pr:
-    ---
-
-A **lettered subplan** carries one extra key, `sub:` (its letter), rendered directly after
-`slug` — `id, slug, sub, status, …`. Ordinary and umbrella plans omit the line
-entirely rather than writing it empty, so their frontmatter stays exactly the seven
-keys above. `{cli} schema PlanMetadata` is the authority on both.
+Every `plan.md` starts with YAML frontmatter of exactly seven keys, in this order:
+`id, slug, status, branch, created, concluded, pr` (`id` is the NNN prefix as an integer,
+`slug` the directory slug, `created` an ISO timestamp with its UTC offset). A **lettered
+subplan** adds `sub:` (its letter) directly after `slug`; every other plan omits the line
+rather than writing it empty. `{cli} add` writes the frontmatter, and
+`{cli} schema PlanMetadata` is the authority on it.
 
 > **Field name.** The terminal-timestamp field is **`concluded`** — renamed from `completed`,
 > shipped in planners 004 (>= 0.2.0) as a hard cutover with **no read-alias**. A legacy plan
@@ -138,22 +110,13 @@ command covers a stamp, read it from the clock (`date -Iseconds`) or from git
 Fill `pr` with the full PR URL (e.g., `https://github.com/owner/repo/pull/1`), not just the
 number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 
-**Generated Log entries.** `{cli} activate` appends a standard entry to the plan's `## Log`
-(creating the section, ahead of Handoff and Retrospective, when it is missing), so every plan
-records where its work lives:
-
-    - **2026-01-01T12:00:00-08:00** — Activated.
-      - Branch: `feature/<NNN>-<slug>`
-      - Base: `dev` at `abc1234`
-      - Worktree: `.worktrees/<NNN>-<slug>`
-      - PR: pending
-
-`Base` is the branch and commit the activation sits on. `Worktree` defaults to
-`.worktrees/<NNN>-<slug>`, the plan's directory name; `--worktree <path>` records another repo-relative path, and
-`--no-worktree` records the main checkout. An absolute path is refused. `set-pr` adds `PR opened:
-<url>` and `implemented` adds `Implemented: <n> commits ahead of <base>`, each a one-line entry,
-so the Log reads as a timeline: activated, PR opened, implemented. A re-run of `activate` on an
-active plan writes no second entry; a return from `implemented` writes `Reactivated`.
+**Generated Log entries.** `{cli} activate` appends an `Activated.` entry (branch, base
+branch and commit, worktree, PR) to the plan's `## Log`, creating the section ahead of
+Handoff and Retrospective when it is missing, so every plan records where its work lives.
+`--worktree <path>` (repo-relative) or `--no-worktree` records a worktree other than
+`.worktrees/<NNN>-<slug>`. `set-pr` adds `PR opened: <url>`, `implemented` adds
+`Implemented: <n> commits ahead of <base>`, and a return from `implemented` writes
+`Reactivated`, so the Log reads as a timeline.
 
 **Empty vs `null`.** An empty value (`pr:`) means "pending / not yet determined" — use it for
 a field that may still be filled (an open plan's `concluded`/`pr`, or a branch not yet
@@ -225,56 +188,33 @@ When a split is due, it takes one of two forms:
 
 ## Nested subplans
 
-**Subplans are nested.** Any request for subplans gets this shape, whatever words it uses:
+**Subplans are nested**, whatever words the request uses: the parent stays as the *umbrella*
+(goal, decisions, order, risks, out of scope, and the generated subplan table) and each step
+is a file under the plan's `subplans/` directory, `<letter>-<step>.md`. "Sidecar" stays the
+word for any other file in a plan directory. `{cli} add <slug> --parent <NNN> --nested`
+scaffolds one. `--parent` without `--nested` makes a **lettered sibling plan**
+(`<NNN><letter>-<slug>/plan.md`, `id` = the parent integer, `sub` = the letter) with its own
+branch, PR, and lifecycle: made only when the request describes that shape, and folded back
+by hand when made by mistake.
 
-    .planners/plans/NNN-<slug>/
-      plan.md                  # umbrella: goal, decisions, order, risks, out of scope
-      subplans/
-        a-<step>.md            # one file per step or workstream
-        b-<step>.md
-
-"Sidecar" stays the word for any other file in a plan directory (a script, a fixture, a data
-file), which a plan can hold alongside its subplans.
-
-| Shape | Use when |
-|---|---|
-| nested subplans | the default whenever a plan is split. One PR into the mainline carries the whole effort |
-| `NNN<letter>` subplans | on request only: each step has its own branch, PR, and lifecycle |
-
-Lettered sibling plans (`<NNN><letter>-<slug>/plan.md`, with `id` = the parent integer and
-`sub` = the letter) are made only when the request describes them, and stay supported for the
-plans that already use them. Building the lettered shape by mistake means folding it back by
-hand. `{cli} add <slug> --parent <NNN> --nested` scaffolds a nested subplan; `--parent` without
-`--nested` still makes a lettered sibling.
-
-- **The umbrella holds decisions, not findings.** It keeps the goal, the numbered decisions,
-  the order, the risks, and what is out of scope, with a subplan table and the execution
-  order as a one-line dependency chain, e.g. `a -> (b, c, d) -> e`. The inventory, the
-  research, and the measurements belong to an investigation subplan.
-- **A subplan has its own `## Log`, and a minimal frontmatter** of `status` and `branch`, with
-  `pr`, `needs` (the letters it depends on), and `moved_to` optional. It carries no `id` or
-  `sub`, so it stays out of the index and out of `validate` (`validate --subplans` opts in).
-- **The subplan's frontmatter is the status of record, and the umbrella's table is generated
-  from it.** Change a status with `{cli} subplans <NNN> --set <letter>=<status>`, which
-  regenerates the table in the same step, and check the two with `{cli} subplans <NNN>`. The
-  table's Status column holds only the enum. Anything else ("waiting on review") goes in a
-  Note column that stays hand-written.
-- **An empty `branch` means the umbrella's branch.** A value names a sub-branch that merges
-  into the umbrella's branch, or the branch of a step that lands in another repo through that
-  repo's own PR, with the URL in the subplan's `pr`.
-- **Letters are fixed once assigned**, as plan numbers are. They follow creation order from
-  `a`, and none is held back: an investigation takes the next letter like any other step, and
-  a step that depends on it names it in `needs`.
-- **A subplan is one node in the order.** An order that needs part of one subplan before
-  another and the rest after it is a sign that it is two subplans. When splitting by
-  workstream and splitting by order disagree, split by order.
-- **A subplan closes when its own work is finished**, not when the effort is.
-- **An umbrella does not close over unfinished subplans.** `{cli} subplans <NNN>
-  --require-closed` fails while one is `draft`, `active`, `implemented`, or `blocked`, and
-  `{cli} retire <NNN>` refuses the umbrella for the same reason. Each is finished, or
-  moved: a step carried to a follow-up plan closes as `retired` with `moved_to: <NNN>`
-  (`{cli} retire <NNN><letter> --into <NNN>`), and one that was partly done closes as `done`
+- **The subplan's frontmatter is the status of record** (`status`, `branch`, with `pr`,
+  `needs`, and `moved_to` optional), and the umbrella's table is generated from it:
+  `{cli} subplans <NNN> --set <letter>=<status>` changes one and regenerates the other in
+  the same step, and `{cli} subplans <NNN>` checks the two. The table's Note column stays
+  hand-written. A subplan has no `id`, so it is outside the index and `validate`
+  (`validate --subplans` opts in).
+- **Letters are fixed once assigned** and follow creation order; **an empty `branch` means
+  the umbrella's branch**; **a subplan closes when its own work is finished**, not when the
+  effort is.
+- **An umbrella does not close over an unfinished subplan.** `{cli} subplans <NNN>
+  --require-closed` and `{cli} retire <NNN>` refuse while one is `draft`, `active`,
+  `implemented`, or `blocked`. A step carried to a follow-up plan closes as `retired` with
+  `moved_to` (`{cli} retire <NNN><letter> --into <NNN>`); one partly done closes as `done`
   with what moved named in the Note column.
+
+The `add` skill holds the authoring guidance: what the umbrella keeps and what goes to an
+investigation subplan, the execution order as a dependency chain, and how to split a plan
+that already exists.
 
 ## No local or personal specifics
 
@@ -333,27 +273,18 @@ branch never merges. Creating the branch first and running add/activate inside i
 puts both commits only on that branch — a plan the mainline has no trace of.
 
 `{cli} add`, `{cli} finalize`, and `{cli} activate` enforce this: they refuse when
-HEAD is off the mainline. The accepted set is `dev` (when that branch exists) plus
-the repo's default branch, so a plan added on either is fine; `{cli} base --all`
-prints it. `--allow-branch` overrides the refusal, and is for a repo whose mainline
-is genuinely not detectable by name — not a way past the check.
+HEAD is off the mainline, which is `dev` (when that branch exists) plus the repo's
+default branch. `{cli} base --all` prints the set, read from git's current refs (`dev`,
+then `origin/HEAD`, then a local `main`/`master`; the guard goes inert when none
+resolve). `git fetch` does not refresh `origin/HEAD`; `git remote set-head origin --auto`
+re-derives it. `--allow-branch` is for a repo whose mainline is genuinely not detectable
+by name, not a way past the check.
 
-Detection is a heuristic over git's current refs, not a record of where plans
-were committed. It reads `dev`, then `refs/remotes/origin/HEAD`, then a local
-`main`/`master`, and goes **inert** (never blocks) when none resolve or the repo
-has no commits yet. `git fetch` does not refresh `origin/HEAD`, so it can be
-unset or stale; `git remote set-head origin --auto` re-derives it.
-
-Activation is `{cli} activate {NNN}`, which carries the same guard — it flips the
-status, fills `branch`, logs the activation entry, refreshes the index, and commits, so the
-ordering is enforced rather than remembered. The guard covers activating a `draft`,
-`blocked`, or `inactive` plan; returning one from `implemented` happens on the feature
-branch and is not guarded. `{cli} log` and `{cli} conclude` commit on the feature branch,
-where the work is. `{cli} set-pr`, `{cli} implemented`, `{cli} log`, `{cli} conclude`, and
-`{cli} retire` commit where they are run and carry no mainline guard: a PR exists once the
-branch does, the work is implemented and logged on its branch, and a plan is retired
-wherever the decision is made. `conclude` checks instead that HEAD is on the plan's
-recorded branch, since the date it records is that branch's.
+The guard covers activating a `draft`, `blocked`, or `inactive` plan. Returning one from
+`implemented` is not guarded, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
+`{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its feature
+branch, and a plan is retired wherever the decision is made. `conclude` checks instead that
+HEAD is on the plan's recorded branch, since the date it records is that branch's.
 
 ### Plan commit subjects name the slug
 
@@ -388,13 +319,10 @@ skills):
 - `/planners index` — regenerate `.planners/README.md`
 - `/planners backfill` — backfill missing frontmatter from git history and PRs
 
-**Close-out steps are the session's to run.** Once the review gate has passed, removing the
-worktree, merging, pulling, deleting the branch, and re-pointing hooks need no decision, so
-the session runs them: `gh pr merge`, then `{cli} finish`. A step goes to the user only after a call to it
-was actually refused, with the refusal quoted. Before reporting a block, try the command: a
-worktree shown as the working directory after a `cd` is not an isolation block until a command
-run from the main checkout fails. Reach a worktree with a subshell (`(cd .worktrees/<name> &&
-...)`), not a bare `cd` in the persistent shell.
+**Close-out steps are the session's to run.** Once the review gate has passed, the merge
+and `{cli} finish` need no decision. A step goes to the user only after a call to it was
+refused, with the refusal quoted; the `close` skill says how to tell a refusal from a
+worktree that merely looks like an isolation block.
 
 **Print a subcommand's instructions before describing it**, not only before running it:
 `{cli} skill <subcommand>`. A lifecycle step described from memory is described wrongly, and
@@ -403,10 +331,7 @@ the instructions change with the installed version.
 ## Automation levels
 
 The lifecycle commands shell out to git and `gh`; whether each runs unprompted
-depends on the ambient Claude Code permission config. `{cli} permissions
-[--level none|assist|confirm|full]` prints (or, with `--apply`, additively
-merges) a matching allow-rule profile so you can pick how hands-off the run is:
-`assist` (default) grants the local, reversible spine plus the self-authored PR
-writes; `confirm` adds `git push`; `full` adds the irreversible `gh pr merge`. It
-writes the repo's `.claude/settings.local.json` by default (`--global` for the
-user-wide file) and never downgrades an existing `deny`/`ask` rule.
+depends on the ambient Claude Code permission config. `{cli} permissions` prints the
+allow rules for a level (`--help` has the options): `assist` (default) grants the local,
+reversible spine plus the self-authored PR writes, `confirm` adds `git push`, and `full`
+adds the irreversible `gh pr merge`.

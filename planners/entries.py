@@ -153,11 +153,7 @@ def log_entry(when: str, note: str) -> str:
 
     Raises ``ValueError`` when the note has no text.
     """
-    lines = [line.rstrip() for line in note.splitlines()]
-    while lines and not lines[0]:
-        lines.pop(0)
-    while lines and not lines[-1]:
-        lines.pop()
+    lines = [line.rstrip() for line in note.strip().splitlines()]
     if not lines:
         raise ValueError("the note is empty")
     first, *rest = lines

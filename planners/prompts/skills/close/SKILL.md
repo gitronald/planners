@@ -105,15 +105,11 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   auto-permission mode, the classifier often **blocks** this self-authored
   external write (closing a plan doesn't obviously request posting a comment).
   If it's denied, don't retry or stall — surface the review inline and note it
-  wasn't posted, then carry on. To post automatically, pre-authorize the command
-  with a Bash allow-rule `Bash(gh pr comment:*)` (and optionally
-  `Bash(gh pr ready:*)`). `{cli} permissions --level assist` writes the planners
-  profile that includes them, or add the rule by hand via `/update-config`. The
-  rule lives in the repo's `.claude/settings.local.json` (or
-  `~/.claude/settings.json` for all repos); precedence is deny > allow >
-  classifier. `gh pr merge` is irreversible, so by default it stays behind the
-  classifier — the `full` level (`{cli} permissions --level full`) is the
-  explicit opt-in to pre-authorize it.
+  wasn't posted, then carry on. The `assist` profile
+  (`{cli} permissions --level assist --apply`) pre-authorizes `gh pr comment`
+  and `gh pr ready`; `gh pr merge` is irreversible and stays behind the
+  classifier below the `full` level (see *Automation levels* in the planners
+  rule).
 - Fix actionable findings at the source, each with a paired regression test.
   Record intentional skips as conscious no-ops.
 - Run the full check gate until clean, then commit fixes and push. **Mirror the
@@ -125,9 +121,8 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   for a plan that skipped that step (still `active`); it is harmless on a PR
   that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
-  PR is still a draft and stop before the merge (a draft can't be merged). The
-  same `Bash(gh pr ready:*)` allow-rule pre-authorizes it, or the user can mark
-  it ready by hand.
+  PR is still a draft and stop before the merge (a draft can't be merged), or
+  the user can mark it ready by hand.
 
 ### 3. Final log entry
 
@@ -169,20 +164,16 @@ opens, so it is usually filled already; when it is not, run `{cli} set-pr {NNN}
 (cd .worktrees/<NNN>-<slug> && {cli} conclude {NNN})
 ```
 
-It sets `status: done` and fills `concluded` from git: the authored date of the
-last work commit on the branch (one that touches more than the plan's own files
-and the index), else of `HEAD`, or `created` when that date is older than the plan.
-A `branch` or `pr` that was never filled becomes `null`. It refreshes the index and commits `plan [close]: {NNN} - <slug>`,
-carrying the plan file as it stands, so the Handoff and Retrospective from
-step 4 go in with it. Do not edit the frontmatter or write `concluded` by
-hand; the CLI owns it. On the no-PR path pass `--no-pr`, which writes `pr: null`
-even when a PR was opened and then closed unmerged in favor of the local merge
-(see *The no-PR path*).
-
-`conclude` refuses a plan that is not `active` or `implemented`, an umbrella
-with an unfinished subplan, and a HEAD off the plan's recorded branch. When its
-commit fails (a rejecting hook), fix the cause and run it again: it commits the
-change it already wrote.
+It sets `status: done`, fills `concluded` from git (the authored date of the
+branch's last work commit, never earlier than `created`), writes `null` for a
+`branch` or `pr` never filled, refreshes the index, and commits
+`plan [close]: {NNN} - <slug>` with the plan file as it stands, so the Handoff
+and Retrospective from step 4 go in with it. Do not write `concluded` by hand.
+On the no-PR path pass `--no-pr`, which writes `pr: null` even when a PR was
+opened and then closed unmerged in favor of the local merge (see *The no-PR
+path*). It refuses a plan that is not `active` or `implemented`, an umbrella
+with an unfinished subplan, and a HEAD off the plan's recorded branch; when its
+commit fails (a rejecting hook), fix the cause and run it again.
 
 ### 6. Commit, then finish from the main checkout
 
@@ -211,35 +202,24 @@ it recomputes. Poll `gh pr view <N> --json mergeable,mergeStateStatus` until it
 reads `MERGEABLE`, then merge.
 
 The merge is the session's own command, not part of `finish`, so the
-automation level still governs it. A permission rule sees only the command a
-session runs, not what that command runs in turn. `gh pr merge` is
-pre-authorized only at the `full` level (`{cli} permissions --level full`).
-Below it, the merge goes to the permission prompt or the classifier.
+automation level still governs it: below `full`, it goes to the permission
+prompt or the classifier.
 
-`finish` does the rest in order, and prints a line for each step:
+`finish` does the rest in order and prints a line per step: it confirms the PR
+reads `MERGED` (else it stops and prints the merge command), checks the worktree
+has nothing uncommitted and no commit the merged base lacks, runs
+`.planners/hooks/pre-worktree-remove` when the repo defines one, removes the
+worktree, checks the base out and fast-forwards it, deletes the branch on the
+remote and then locally (each only when the base contains it, never with `-D`,
+never a mainline), commits the plan index when the merge left it stale (it does
+not push: run `git push` when it says it committed), and re-installs any
+`.git/hooks/` hook whose `INSTALL_PYTHON` points into `.worktrees/`.
 
-1. It fetches with `--prune` and confirms the PR reads `MERGED`. If it does not,
-   it stops and prints the merge command.
-2. It checks that the worktree has nothing uncommitted and no commit the merged
-   base lacks (not its upstream, which GitHub may have deleted). It runs
-   `.planners/hooks/pre-worktree-remove` when the repo defines one (the
-   counterpart of the setup step in `implement`), then removes the worktree.
-3. It checks the base out and fast-forwards it. The main checkout is never
-   treated as a worktree; a branch checked out there is replaced by the base.
-4. It deletes the branch on the remote, and then locally, each only when the
-   base contains it. It never uses `-D` and never deletes a mainline branch.
-5. It commits the plan index when the merge left it stale. It does not push;
-   when it says it committed, run `git push`.
-6. It re-installs any hook in `.git/hooks/` whose `INSTALL_PYTHON` points into
-   `.worktrees/`. A hook installed from inside the worktree runs that worktree's
-   `.venv`, and the generated script skips quietly once the venv is gone.
-
-**When `finish` stops.** It exits 1 and leaves the state as it was when there is
-something to look at: a branch that is not merged, a worktree with uncommitted
-changes or commits the base lacks, a branch that holds such commits, an
-uncommitted edit to the plan index, or a `git` or `gh` call that was refused.
-Deal with what it names, then run `{cli} finish {NNN}` again. Each step that is
-already done is skipped, so the re-run picks up where the last one ended.
+**When `finish` stops**, it exits 1, leaves the state as it was, and names what
+to look at: an unmerged branch, a worktree with uncommitted changes or commits
+the base lacks, an uncommitted edit to the index, or a refused `git` or `gh`
+call. Deal with that, then run `{cli} finish {NNN}` again; each step already
+done is skipped.
 
 Report: review run, plan closed, PR merged, and what `finish` printed.
 
@@ -310,11 +290,8 @@ base's upstream contains the branch, and stops with the merge command if it
 does not. The rest is the same as step 6: the worktree, the branches, the index,
 and the hooks.
 
-The index is marked `merge=union`, so the local merge does not conflict on it.
-Union can leave a plan's row duplicated when both branches rewrote it, though,
-and `{cli} validate` fails on an index that disagrees with the frontmatter. The
-repo's `post-merge` hook regenerates it after a clean merge, and `finish`
-regenerates it again and commits it when it changed.
+The index is marked `merge=union`, so the local merge does not conflict on it,
+and `finish` regenerates and commits it when the merge left it stale.
 
 Report: review run (and at which gate), plan closed, branch merged locally with
 no PR (or: existing PR closed unmerged, then merged locally), branch and

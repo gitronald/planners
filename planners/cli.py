@@ -56,12 +56,22 @@ from planners.utils import (
     split_frontmatter,
 )
 
-# Commands the group lets through. `skill`, `rule`, and `schema` only print, `validate`
-# only reads the paths it is given, and `permissions` manages Claude Code settings
-# rather than a repository. `index`, `base`, and `remote` name their repository with an
-# argument, and check that path themselves.
+# Commands the group lets through. `skill`, `doc`, `rule`, and `schema` only print,
+# `validate` only reads the paths it is given, and `permissions` manages Claude Code
+# settings rather than a repository. `index`, `base`, and `remote` name their repository
+# with an argument, and check that path themselves.
 _NOT_GUARDED = frozenset(
-    {"skill", "rule", "schema", "validate", "permissions", "index", "base", "remote"}
+    {
+        "skill",
+        "doc",
+        "rule",
+        "schema",
+        "validate",
+        "permissions",
+        "index",
+        "base",
+        "remote",
+    }
 )
 
 
@@ -425,15 +435,13 @@ def _taken_numbers(plans_dir: Path) -> list[int]:
     ]
 
 
-def _collect_metas(plans_dir: Path, *, strict: bool) -> list[PlanMetadata]:
-    """Parse every ``NNN-slug/plan.md``. In non-strict mode, skip unparseable files."""
+def _collect_metas(plans_dir: Path) -> list[PlanMetadata]:
+    """Parse every ``NNN-slug/plan.md``, skipping an unparseable file with a warning."""
     metas: list[PlanMetadata] = []
     for path in _plan_files(plans_dir):
         try:
             metas.append(PlanMetadata.from_file(path))
         except PlanError as exc:
-            if strict:
-                raise
             _err(f"warning: skipping {path}: {exc}")
     return metas
 
@@ -530,7 +538,7 @@ def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
     writes it, :func:`_finalize_self_check` asserts the batch landed it, and
     ``validate`` compares the tracked file against it.
     """
-    return _index_document(_collect_metas(repo_root / PLANS_DIR, strict=False), cols)
+    return _index_document(_collect_metas(repo_root / PLANS_DIR), cols)
 
 
 def _index_is_stale(repo_root: Path) -> bool:
@@ -556,7 +564,7 @@ def _index_is_stale(repo_root: Path) -> bool:
         current = index.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return True
-    metas = _collect_metas(repo_root / PLANS_DIR, strict=False)
+    metas = _collect_metas(repo_root / PLANS_DIR)
     return all(current != _index_document(metas, cols) for cols in INDEX_COLS)
 
 
@@ -792,7 +800,7 @@ def _add_nested(
     taken = {path.name[0]: path.name for path in _subplan_files(umbrella.parent)}
     if letter is None:
         try:
-            letter = subplans_mod.next_letter(list(taken))
+            letter = next_sub(list(taken))
         except ValueError as exc:
             _err(str(exc))
             raise typer.Exit(1) from None
@@ -937,7 +945,7 @@ def add(
     plans_dir = root / PLANS_DIR
     plans_dir.mkdir(parents=True, exist_ok=True)
 
-    existing = _collect_metas(plans_dir, strict=False)
+    existing = _collect_metas(plans_dir)
     if parent is None:
         # Top-level plan: next free number, no subplan letter.
         plan_id, sub = next_number(_taken_numbers(plans_dir)), ""
@@ -1131,14 +1139,13 @@ def finalize(
     # committed" state (the documented `add` trade-off, applied uniformly).
     rels = [str(plan_dir.relative_to(root)) for _, _, plan_dir in finalized]
     rels.append(str(readme.relative_to(root)))
-    _git(root, ["add", *rels])
     first, last = finalized[0][0], finalized[-1][0]
     message = (
         f"plan [add]: {first:03d} - {finalized[0][1]}"
         if len(finalized) == 1
         else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
     )
-    _git(root, ["commit", "-m", message, "--", *rels])
+    _commit(root, message, rels)
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
 
@@ -1319,21 +1326,14 @@ def _activate(
         return
 
     readme = _refresh_index(root, cols="curated")
-    _git(root, ["add", str(path.relative_to(root)), str(readme.relative_to(root))])
     # The subject names the slug, not the title: a slug is fixed by the directory
     # name, while a title can be reworded until the subject no longer names the plan
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
-    _git(
+    _commit(
         root,
-        [
-            "commit",
-            "-m",
-            f"plan [activate]: {meta.prefix} - {meta.slug}",
-            "--",
-            str(path.relative_to(root)),
-            str(readme.relative_to(root)),
-        ],
+        f"plan [activate]: {meta.prefix} - {meta.slug}",
+        [str(path.relative_to(root)), str(readme.relative_to(root))],
     )
     current = _current_branch(root)
     typer.echo(f"committed the activation on {current}")
@@ -3192,10 +3192,6 @@ def validate(
         _err("; ".join(summary))
         raise typer.Exit(1)
     typer.echo(f"ok: {len(files)} file(s) valid")
-
-
-def main() -> None:
-    app()
 
 
 if __name__ == "__main__":

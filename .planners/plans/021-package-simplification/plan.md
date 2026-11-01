@@ -1,11 +1,11 @@
 ---
 id: 21
 slug: package-simplification
-status: active
+status: done
 branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
-concluded:
-pr:
+concluded: 2026-11-01T10:19:02-08:00
+pr: https://github.com/gitronald/planners/pull/64
 ---
 
 # Simplify the package and its skill text
@@ -65,3 +65,33 @@ Two kinds of cut are in scope:
   - Base: `dev` at `ed9f15f`
   - Worktree: `.worktrees/021-package-simplification`
   - PR: pending
+- **2026-10-31T20:03:04-07:00** — Codex (gpt-6-astra) ran a read-only review pass; the main session verified each finding against the source and the tests, then implemented the accepted ones.
+  - Accepted and done: code (#14 `_commit` at finalize and activate, #15 `next_letter` delegates to `next_sub`, #16 `_collect_metas` strict mode, #17 `cli.main`, #18 note trimming in `log_entry`, #19 `is_safe_slug` whitelist only); rule cuts (#1 nested subplans, #2 index merge cases, #6 frontmatter template, generated entries, numbering, and the guard heuristic, #5 close-out ownership); skill cuts (#3 backfill glossary, #4 update's Handoff, #7 finish's step list and implement's cleanup paragraph, #8 start's step table, #9 conclude's dating rule, #12 review entries through `log`); and the #21 drift fix (`permissions` prints unless `--apply`).
+  - Prompt text went from 1909 to 1794 lines; the always-on rule from 412 to 340. Tests 729 passed, coverage 94.88%, ruff and pyrefly clean, run by the main session (Codex's sandbox could not take uv's lock).
+  - Deferred as follow-ups, since each adds behavior: #10 a `block` command for top-level plans, #11 a `finish --print-merge` that prints the merge command, #13 an `add --needs` flag for nested subplans.
+  - Upstream, not implemented here: #20 the generic agent-orchestration guidance in the implement skill overlaps a global orchestration rule and belongs in a shared convention; #21 the permission-profile explanation belongs in pkgskills, which owns the command.
+  - What the brief got right: numbered findings with file:line evidence and a category each made triage mechanical. What it got wrong: the read-only sandbox blocked uv, so every measurement in the report was derived from source, not run.
+- **2026-10-31T20:03:13-07:00** — PR opened: https://github.com/gitronald/planners/pull/64
+- **2026-10-31T20:03:22-07:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-11-01T09:58:11-08:00** — Reactivated: back to active after review.
+- **2026-11-01T09:59:33-08:00** — Moved the orchestrated-run guidance out of the implement skill into a pkgskills Doc, printed by `planners doc orchestrated-run`, so a session loads it only when the user asks for subagents or a workflow. This replaces the upstream proposal for finding #20: a personal rule cannot carry guidance for a package other people install, and the text is about plan work far more than it duplicates any shared rule.
+    - Why now: a transcript count on one machine found the section loaded in 161 sessions since it shipped, and at most 16 of them ran two or more working agents or workflows. It is about 7 kB, roughly 1,800 tokens by estimate.
+    - Scope: an exception to this plan's 'no new subcommands' line, made at the user's direction. `doc` comes from pkgskills and adds no command code here beyond the declaration and the repository-guard exemption. The text moved unchanged apart from heading levels and one cross-reference; the implement skill gained a pointer that applies to any plan, not only an umbrella.
+    - Checks: 731 tests passed, coverage 94.88%, ruff and pyrefly clean, and a built wheel carries the doc.
+- **2026-11-01T10:04:01-08:00** — Implemented: 12 commits ahead of `dev`.
+- **2026-11-01T10:12:52-08:00** — Reactivated: back to active after review.
+- **2026-11-01T10:13:29-08:00** — Dropped the upstream proposal for finding #21 and trimmed the rule's Automation levels section instead. `planners permissions --help` already explains the levels, print versus `--apply`, the target file, and the no-downgrade guarantee, and what each level adds is planners' own declaration, so pkgskills could not state it generically. A search of pkgskills also found no way to render a shared section into a host's rule. The rule now says what each level adds and points at `--help`; the short permission notes in the close and implement skills stay, since a session needs them at that step.
+- **2026-11-01T10:13:36-08:00** — Implemented: 16 commits ahead of `dev`.
+- **2026-11-01T10:19:11-08:00** — Close review ran at medium level on PR 64 and was posted to it.
+  - Review follow-up: 4 candidates. Actioned: the rule's condensed guard paragraph implied `retire` belongs on the feature branch, so the "wherever the decision is made" point is back (a prose fix, no test); `next_letter` had become a pass-through, so `cli.py` calls `next_sub` directly; the duplicate `next_letter` tests are gone, with their two gap cases moved into `test_next_sub`.
+  - Conscious no-op: the nested path's exhausted-letters error now has the en dash `next_sub` already printed for lettered plans. Nothing matches on the old text.
+  - Checks: 731 tests passed, coverage 94.87%, ruff, ruff format, and pyrefly clean.
+
+## Retrospective
+
+- The review, triage, and implement split worked: numbered findings with file and line evidence let the main session judge each one quickly. The sandbox blocking `uv` meant no number in the report had been measured, so the brief should say so up front or run from a tree where the tool can lock.
+- The biggest single cut came after the first pass. Moving the orchestrated-run guidance to a printed doc rested on a transcript count of how often it was used, which is better evidence for a cut than the text looking redundant. It needed an exception to the "no new subcommands" line, which the Log records.
+- Two proposals to send text upstream did not survive a closer look: #20 stayed in this package as a doc, and #21 became a trim because what each level adds is planners' own. "Belongs upstream" deserves the same check as any other finding.
+- Condensing prose is where the "behavior is held fixed" rule was hardest to hold. Merging the guard paragraph quietly changed where `retire` was said to run, and only the close review caught it. A cut that merges sentences should be read against the base text for each clause it drops.
+- A simplification can stop halfway: `next_letter` delegating to `next_sub` removed the copy and left a wrapper with no job. Finishing a cut means checking what is left around it.
+- Not verified: the plan's checks that `planners install --check` is clean after a reinstall, and that the rendered text is re-read end to end. From this branch the check reports the global rule as drifted, which is expected while the installed package is older than this text; no reinstall was run, and the close review read the diff, not the rendered text. Both fall to the next release and install.

@@ -36,7 +36,6 @@ __all__ = [
     "SubplanMetadata",
     "check_set",
     "is_subplan_filename",
-    "next_letter",
     "phases",
     "render_order",
     "render_subplan",
@@ -220,22 +219,6 @@ def render_subplan(title: str, umbrella_title: str, branch: str = "") -> str:
         "\n"
         "## Log\n"
     )
-
-
-def next_letter(existing: list[str]) -> str:
-    """The next free letter: one past the highest taken, or ``a`` when none is.
-
-    Letters follow creation order and no letter is held back for a kind of
-    subplan, so an investigation takes the next letter like any other step.
-    Raises ``ValueError`` when ``a``-``z`` is used up.
-    """
-    taken = [s for s in existing if len(s) == 1 and "a" <= s <= "z"]
-    if not taken:
-        return "a"
-    following = chr(ord(max(taken)) + 1)
-    if following > "z":
-        raise ValueError("subplan letters a-z are exhausted")
-    return following
 
 
 def phases(subplans: list[SubplanMetadata]) -> list[list[str]]:

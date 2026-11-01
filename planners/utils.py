@@ -103,14 +103,11 @@ def parse_frontmatter(fm_text: str) -> dict[str, str | None]:
 
 
 def is_safe_slug(slug: str) -> bool:
-    """True when ``slug`` is kebab-case and cannot escape ``.planners/``.
+    """True when ``slug`` is kebab-case, which also keeps it inside ``.planners/``.
 
-    Rejects path separators, ``..`` traversal, and null bytes outright before
-    the kebab-case check, so a slug can never be used to write outside the
-    plans directory.
+    The whitelist admits only lowercase alphanumerics and single hyphens, so a
+    path separator, ``..`` traversal, or null byte can never pass it.
     """
-    if "/" in slug or "\\" in slug or ".." in slug or "\x00" in slug:
-        return False
     return bool(SLUG_RE.fullmatch(slug))
 
 

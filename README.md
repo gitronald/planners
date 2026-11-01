@@ -106,8 +106,9 @@ planners permissions --level assist      # print an automation-level permission 
 ```
 
 > **Run it inside a git repository.** Outside one, every command exits 1 and changes nothing,
-> including `install` in all its forms. `skill`, `rule`, `schema`, `validate`, `permissions`, and
-> `--help` run anywhere, and `index`, `base`, and `remote` check the path they are given.
+> including `install` in all its forms. `skill`, `doc`, `rule`, `schema`, `validate`,
+> `permissions`, and `--help` run anywhere, and `index`, `base`, and `remote` check the path
+> they are given.
 
 > **Plan commits land on the mainline.** `add`, `finalize`, and `activate` refuse to commit when `HEAD` is off it,
 > so a plan is recorded on the mainline even if the feature branch never merges. The accepted set is
