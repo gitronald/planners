@@ -5,7 +5,7 @@ status: active
 branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/66
 ---
 
 # Mechanize the remaining by-hand lifecycle steps
@@ -79,3 +79,4 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Base: `dev` at `726fb65`
   - Worktree: `.worktrees/022-lifecycle-mechanizations`
   - PR: pending
+- **2026-11-01T10:53:46-08:00** — PR opened: https://github.com/gitronald/planners/pull/66
