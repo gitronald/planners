@@ -74,9 +74,9 @@ pipeline-loops convention so the loop is defined once, not twice.
 
 An umbrella's subplans are worked through in their execution order, one at a
 time, in the same agent. Fan them out to subagents **only when the user asks for
-subagents or a workflow**; the guidance is *An orchestrated run* in
-`{cli} skill implement`, and it applies to the work stage of a pipeline as it
-does to a bare `implement`. Two of its points shape the pipeline itself:
+subagents or a workflow**; the guidance is `{cli} doc orchestrated-run`, and it
+applies to the work stage of a pipeline as it does to a bare `implement`. Two of
+its points shape the pipeline itself:
 
 - **Questions are held.** Collect open questions as the run goes, write them to
   the plan's `## Handoff` section as they arise, and ask them together at the

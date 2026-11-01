@@ -17,6 +17,7 @@ from pathlib import Path
 
 import typer
 from pkgskills import (
+    Doc,
     ExtraCheck,
     Hook,
     Host,
@@ -137,6 +138,9 @@ HOST = Host(
             name="planners", source="rules/planners.md", previous_names=("plan-files",)
         ),
     ),
+    # Loaded only when a run fans out, so the implement skill stays short for the
+    # sessions that do not.
+    docs=(Doc(name="orchestrated-run", source="docs/orchestrated-run.md"),),
     lines=(INDEX_ATTR,),
     render_cli=True,
     after_install=_after_install,

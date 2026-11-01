@@ -53,6 +53,18 @@ def test_bare_skill_lists_the_lifecycle_bodies_in_order() -> None:
     assert result.output.split() == list(SKILL_NAMES)
 
 
+def test_orchestrated_run_guidance_prints_as_a_doc_not_with_implement() -> None:
+    doc = runner.invoke(app, ["doc", "orchestrated-run"])
+    assert doc.exit_code == 0, doc.output
+    assert doc.output.startswith("# An orchestrated run\n")
+    assert "{cli}" not in doc.output
+
+    implement = runner.invoke(app, ["skill", "implement"])
+    assert implement.exit_code == 0, implement.output
+    assert "An orchestrated run" not in implement.output
+    assert "doc orchestrated-run" in implement.output
+
+
 def test_install_local_writes_stub_rule_hooks_and_merge_attribute(
     box: Sandbox,
 ) -> None:

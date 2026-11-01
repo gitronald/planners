@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   points at the rule for the status glossary
 - `planners permissions` is described as printing a profile unless `--apply` is given,
   which is what it does
+- The guidance for an orchestrated run moved out of the `implement` skill into
+  `planners doc orchestrated-run`, which a session prints when the user asks for subagents
+  or a workflow. Sessions that do not fan out no longer load it
 
 ### Removed
 

@@ -42,6 +42,7 @@ PATH_CHECKED = {
 
 # Commands that run anywhere, each with arguments that succeed.
 ANYWHERE = {
+    "doc": ["doc", "orchestrated-run"],
     "permissions": ["permissions"],
     "rule": ["rule"],
     "schema": ["schema"],

@@ -13,9 +13,9 @@ and reinstall.
 
 `{cli}` refuses to run outside a git repository: the command exits 1 and changes nothing.
 That is not a broken install, and `{cli} install --force` is refused the same way, so there
-is nothing to repair. Work from a repository, or run `git init` first. `skill`, `rule`,
-`schema`, `validate`, `permissions`, and `--help` run anywhere, and `index`, `base`, and
-`remote` check the path they are given.
+is nothing to repair. Work from a repository, or run `git init` first. `skill`, `doc`,
+`rule`, `schema`, `validate`, `permissions`, and `--help` run anywhere, and `index`, `base`,
+and `remote` check the path they are given.
 
 ## Storage layout
 

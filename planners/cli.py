@@ -56,12 +56,22 @@ from planners.utils import (
     split_frontmatter,
 )
 
-# Commands the group lets through. `skill`, `rule`, and `schema` only print, `validate`
-# only reads the paths it is given, and `permissions` manages Claude Code settings
-# rather than a repository. `index`, `base`, and `remote` name their repository with an
-# argument, and check that path themselves.
+# Commands the group lets through. `skill`, `doc`, `rule`, and `schema` only print,
+# `validate` only reads the paths it is given, and `permissions` manages Claude Code
+# settings rather than a repository. `index`, `base`, and `remote` name their repository
+# with an argument, and check that path themselves.
 _NOT_GUARDED = frozenset(
-    {"skill", "rule", "schema", "validate", "permissions", "index", "base", "remote"}
+    {
+        "skill",
+        "doc",
+        "rule",
+        "schema",
+        "validate",
+        "permissions",
+        "index",
+        "base",
+        "remote",
+    }
 )
 
 
