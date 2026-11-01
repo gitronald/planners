@@ -34,8 +34,27 @@ them. Implement each with a test and a skill-text update that points at it.
    passes the letters through to the rendered subplan frontmatter, after `branch:`, and
    is absent when unspecified so existing scaffolds stay byte-identical.
 
+### Wording carried from 021
+
+021's end-to-end read of the rendered text found three wording problems. None changes an
+instruction, so they did not justify a change of their own; they land here because this
+plan edits the same text.
+
+- **`close` skill, the `gh pr ready` bullet.** It ends "stop before the merge (a draft
+  can't be merged), or the user can mark it ready by hand", which reads as if stopping
+  and the user's fix were alternatives. Make it say the session stops and the user can
+  mark the PR ready.
+- **Rule, *Generated Log entries*.** "`--worktree <path>` (repo-relative) or
+  `--no-worktree` records a worktree other than" the default, but `--no-worktree` records
+  the main checkout. Say so.
+- **`orchestrated-run` doc, the opening.** It describes a run over an umbrella's subplans,
+  while the `implement` skill sends any plan there. Add a line for a plan with no
+  subplans.
+
 ### Out of scope
 
 - Any change to what the existing commands do without the new flag or command.
-- The upstream items 021 recorded: shared agent-orchestration guidance, and the
-  permission-profile explanation that belongs to pkgskills.
+- Anything upstream. The two items 021 first recorded as upstream stayed in this package,
+  and 021's Log settles both: the orchestration guidance became `planners doc
+  orchestrated-run`, and the permission-profile explanation became a trim that points at
+  `planners permissions --help`.
