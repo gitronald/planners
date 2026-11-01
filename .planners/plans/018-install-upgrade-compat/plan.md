@@ -1,7 +1,7 @@
 ---
 id: 18
 slug: install-upgrade-compat
-status: blocked
+status: active
 branch: feature/install-upgrade-compat
 created: 2026-10-27T14:55:54-07:00
 concluded:
@@ -123,6 +123,11 @@ Approach 2 is closed. Where this section and the Approach differ, this section h
   - Next: order item 1, `planners activate 18` on `dev`.
   - The owner has not answered the two open questions. Each has a proposed answer beside it.
   - This plan file is copied to `dev` at this point, so `dev` no longer shows the Handoff written before the release, and a later merge of `dev` into the branch has no plan text to reconcile.
+- **2026-10-31T18:07:22-07:00** — Activated.
+  - Branch: `feature/install-upgrade-compat`
+  - Base: `dev` at `85b1fef`
+  - Worktree: `.worktrees/018-install-upgrade-compat`
+  - PR: https://github.com/gitronald/planners/pull/62
 
 ## Handoff
 
