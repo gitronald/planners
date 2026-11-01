@@ -113,8 +113,8 @@ number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 **Generated Log entries.** `{cli} activate` appends an `Activated.` entry (branch, base
 branch and commit, worktree, PR) to the plan's `## Log`, creating the section ahead of
 Handoff and Retrospective when it is missing, so every plan records where its work lives.
-`--worktree <path>` (repo-relative) or `--no-worktree` records a worktree other than
-`.worktrees/<NNN>-<slug>`. `set-pr` adds `PR opened: <url>`, `implemented` adds
+`--worktree <path>` (repo-relative) records a worktree other than
+`.worktrees/<NNN>-<slug>`, and `--no-worktree` records the main checkout. `set-pr` adds `PR opened: <url>`, `implemented` adds
 `Implemented: <n> commits ahead of <base>`, and a return from `implemented` writes
 `Reactivated`, so the Log reads as a timeline.
 

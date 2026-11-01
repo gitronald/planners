@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The `close` skill said a `finish` stop leaves the state as it was. The steps before
+  the stop stay done, and it now says so. A branch that holds commits the base lacks,
+  the stop that comes after the worktree is removed and the base is pulled, is back in
+  its list of causes
+- The planners rule said `--no-worktree` records a worktree; it records the main checkout
+- `planners doc orchestrated-run` now covers a plan with no subplans, since the
+  `implement` skill sends any plan there
+
 ## [0.15.0] - 2026-11-01
 
 ### Added

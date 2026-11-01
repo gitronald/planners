@@ -121,8 +121,8 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   for a plan that skipped that step (still `active`); it is harmless on a PR
   that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
-  PR is still a draft and stop before the merge (a draft can't be merged), or
-  the user can mark it ready by hand.
+  PR is still a draft and stop before the merge (a draft can't be merged). The
+  user can mark it ready by hand.
 
 ### 3. Final log entry
 
@@ -215,11 +215,13 @@ never a mainline), commits the plan index when the merge left it stale (it does
 not push: run `git push` when it says it committed), and re-installs any
 `.git/hooks/` hook whose `INSTALL_PYTHON` points into `.worktrees/`.
 
-**When `finish` stops**, it exits 1, leaves the state as it was, and names what
-to look at: an unmerged branch, a worktree with uncommitted changes or commits
-the base lacks, an uncommitted edit to the index, or a refused `git` or `gh`
-call. Deal with that, then run `{cli} finish {NNN}` again; each step already
-done is skipped.
+**When `finish` stops**, it exits 1 and names what to look at: an unmerged
+branch, a worktree with uncommitted changes or commits the base lacks, a branch
+that holds such commits, an uncommitted edit to the index, or a refused `git` or
+`gh` call. The steps before the stop stay done, and the one it stopped on is left
+undone: a branch that holds such commits stops it after the worktree is removed
+and the base is pulled. Deal with what it names, then run `{cli} finish {NNN}`
+again; each step already done is skipped.
 
 Report: review run, plan closed, PR merged, and what `finish` printed.
 

@@ -16,9 +16,9 @@ same reason ``finish`` publishes no code. Its one remote write deletes a branch
 that the remote's base already contains.
 
 This module holds the pieces ``finish`` is built from. Each raises :class:`Stop`
-for a real issue and leaves the state as it found it, so a re-run after the
-issue is dealt with picks up where the last run ended. A step whose work is
-already done is a no-op.
+for a real issue and leaves its own work undone, so a re-run after the issue is
+dealt with picks up where the last run ended. A step whose work is already done
+is a no-op.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ HOOK_TYPES = frozenset(
 
 
 class Stop(Exception):
-    """A real issue: ``finish`` stops here and leaves the state as it was."""
+    """A real issue: ``finish`` stops here, with the steps before it left done."""
 
 
 Say = Callable[[str], None]
