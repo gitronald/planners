@@ -190,12 +190,15 @@ worktree with a subshell, so the session's shell stays on the main checkout:
 Then, from the **main checkout**, merge the PR and finish:
 
 ```bash
-gh pr merge <N> --merge --subject "merge: PR #<N> - <branch>"
+{cli} finish {NNN} --print-merge   # prints the gh pr merge command; run that
 {cli} finish {NNN}
 ```
 
-The subject follows the repo's merge-subject convention, with the branch cut
-with a trailing `...` past 60 characters. Leave out `--delete-branch`. On some
+`--print-merge` fetches nothing and changes nothing, and the command it prints
+carries the repo's merge subject, `merge: PR #<N> - <branch>`, with the branch cut
+with a trailing `...` past 60 characters. It reads the PR from the plan and asks
+GitHub nothing, so for a PR from a fork, put `<owner>/` before the branch in the
+subject. Leave out `--delete-branch`, as the printed command does. On some
 `gh` versions it removes the branch's worktree as well, and `finish` deletes the
 branch itself. Right after a push, GitHub can report a PR as not mergeable while
 it recomputes. Poll `gh pr view <N> --json mergeable,mergeStateStatus` until it
@@ -280,12 +283,12 @@ Then, from the **main checkout**, merge the branch, push, and finish:
 
 ```bash
 git checkout "$({cli} base)" && git pull
-git merge --no-ff <branch> -m "merge: <branch>"
+{cli} finish {NNN} --no-pr --print-merge   # prints the git merge command; run that
 git push
 {cli} finish {NNN} --no-pr
 ```
 
-For a merge made without a PR, the subject names the branch, cut with a
+For a merge made without a PR, the printed subject names the branch, cut with a
 trailing `...` past 60 characters. The plan records `pr: null`, which takes the
 no-PR path without the flag; the flag says so out loud. `finish` checks that the
 base's upstream contains the branch, and stops with the merge command if it

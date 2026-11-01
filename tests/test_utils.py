@@ -1,5 +1,6 @@
 """Tests for the pure helpers: split/parse frontmatter and the slug guard."""
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -7,6 +8,7 @@ from planners.utils import (
     is_safe_slug,
     parse_frontmatter,
     parse_instant,
+    pr_number,
     split_frontmatter,
 )
 
@@ -99,3 +101,16 @@ def test_parse_instant_reads_a_value_with_no_offset_as_utc() -> None:
     )
     assert parse_instant("") is None
     assert parse_instant("not-a-date") is None
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/owner/repo/pull/7", 7),
+        ("https://github.com/owner/repo/pull/7/files", 7),
+        ("https://example.com/owner/repo/merge_requests/7", None),
+        ("", None),
+    ],
+)
+def test_pr_number(url: str, expected: int | None) -> None:
+    assert pr_number(url) == expected

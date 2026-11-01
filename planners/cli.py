@@ -53,6 +53,7 @@ from planners.utils import (
     is_safe_slug,
     parse_frontmatter,
     parse_instant,
+    pr_number,
     split_frontmatter,
 )
 
@@ -1860,8 +1861,11 @@ def _check_merged(
     return None
 
 
-def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
-    """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
+def _finish_target(root: Path, ref: str) -> tuple[Path, str, str, base_mod.Mainline]:
+    """The plan ``ref`` names, its label, its branch, and the repo's mainline.
+
+    A plan with no branch, or one that records a mainline branch, is a stop.
+    """
     plan = _resolve_plan(root / PLANS_DIR, ref)
     parts = DIRNAME_RE.match(plan.parent.name)
     label = f"{parts.group(1)}{parts.group(2)}" if parts else ref
@@ -1878,6 +1882,43 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
             f"plan {label} records the mainline branch {branch}; finish never "
             "deletes a mainline branch"
         )
+    return plan, label, branch, mainline
+
+
+def _no_recorded_pr(label: str) -> finish_mod.Stop:
+    """The stop for a plan with an empty ``pr:`` and no ``--no-pr``."""
+    return finish_mod.Stop(
+        f"plan {label} records no PR; record it with `planners set-pr {label} "
+        "<url>`, or pass --no-pr for a branch merged locally"
+    )
+
+
+def _print_merge(root: Path, ref: str, *, no_pr: bool) -> str:
+    """The merge command for ``finish --print-merge``, read from local state.
+
+    It fetches nothing and asks GitHub nothing, so the PR's state goes unchecked
+    and a PR from a fork is named by its branch alone, without the ``<owner>/``
+    that ``finish``'s own stop message reads from ``gh``.
+    """
+    plan, label, branch, mainline = _finish_target(root, ref)
+    base = _plan_base(plan.read_text(encoding="utf-8"), mainline)
+    pr = _closed_plan(root, plan, branch, base or "").pr
+    if no_pr or pr is None:
+        return _merge_command(branch)
+    if not pr:
+        raise _no_recorded_pr(label)
+    number = pr_number(pr)
+    if number is None:
+        raise finish_mod.Stop(f"plan {label} records {pr}, which names no PR number")
+    subject = finish_mod.merge_subject(branch, number)
+    return shlex.join(
+        ["gh", "pr", "merge", str(number), "--merge", "--subject", subject]
+    )
+
+
+def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
+    """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
+    plan, label, branch, mainline = _finish_target(root, ref)
 
     if not _is_unmodified(root, root / INDEX_PATH):
         # finish commits the index it regenerates; a change it did not make
@@ -1897,10 +1938,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         )
     no_pr = no_pr or meta.pr is None
     if not no_pr and not meta.pr:
-        raise finish_mod.Stop(
-            f"plan {label} records no PR; record it with `planners set-pr {label} "
-            "<url>`, or pass --no-pr for a branch merged locally"
-        )
+        raise _no_recorded_pr(label)
     if no_pr and not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
     # A single-branch remote's base is the live document: the local merge is
@@ -1985,6 +2023,13 @@ def finish(
         help="The branch was merged locally, not through a PR. Implied when the "
         "plan records `pr: null`.",
     ),
+    print_merge: bool = typer.Option(
+        False,
+        "--print-merge",
+        help="Print the merge command for this plan (`gh pr merge`, or the local "
+        "`git merge` with --no-pr or `pr: null`) and exit, fetching nothing and "
+        "changing nothing. The session runs the merge.",
+    ),
 ) -> None:
     """Clean up after a closed plan's merge, from the main checkout.
 
@@ -2001,10 +2046,15 @@ def finish(
     lacks, a branch holding such commits, uncommitted changes to the plan index,
     or a refused git or gh call. A step already done is skipped, so
     a re-run after a stop picks up where the last one ended.
+
+    `--print-merge` runs none of that: it prints the merge command and exits.
     """
     toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
     root = Path(toplevel.strip()) if toplevel else Path.cwd()
     try:
+        if print_merge:
+            typer.echo(_print_merge(root, ref, no_pr=no_pr))
+            return
         _finish(root, ref, no_pr=no_pr, say=typer.echo)
     except finish_mod.Stop as exc:
         _err(f"stopped: {exc}")

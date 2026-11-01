@@ -7,13 +7,12 @@ curated content to preserve)."""
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from planners.metadata import PlanMetadata, Status
-from planners.utils import parse_instant
+from planners.utils import parse_instant, pr_number
 
 # The index's own location, relative to the repo root. It lives here rather than
 # in the CLI because two unrelated modules need it — the CLI writes the file, and
@@ -38,8 +37,6 @@ STATUS_ORDER = [
 ]
 _STATUS_RANK = {status: rank for rank, status in enumerate(STATUS_ORDER)}
 
-_PR_NUM_RE = re.compile(r"/pull/(\d+)")
-
 CURATED_HEADER = ("#", "Plan", "Status", "Concluded", "PR")
 WIDE_HEADER = ("#", "Plan", "Status", "Branch", "Created", "Concluded", "PR")
 
@@ -53,8 +50,7 @@ def _concluded_key(meta: PlanMetadata) -> tuple[int, float]:
 def _pr_key(meta: PlanMetadata) -> tuple[int, int]:
     if not meta.pr:
         return (0, 0)
-    match = _PR_NUM_RE.search(meta.pr)
-    return (1, int(match.group(1))) if match else (1, 0)
+    return (1, pr_number(meta.pr) or 0)
 
 
 def sort_plans(metas: list[PlanMetadata]) -> list[PlanMetadata]:
@@ -148,8 +144,8 @@ def _format_instant(value: str | None) -> str:
 def _pr_cell(pr: str | None) -> str:
     if not pr:
         return EM_DASH
-    match = _PR_NUM_RE.search(pr)
-    label = f"#{match.group(1)}" if match else "PR"
+    number = pr_number(pr)
+    label = "PR" if number is None else f"#{number}"
     return f"[{label}]({pr})"
 
 

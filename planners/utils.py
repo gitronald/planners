@@ -13,6 +13,14 @@ from datetime import UTC, datetime
 # kebab-case: lowercase alphanumeric words joined by single hyphens
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+_PR_NUMBER_RE = re.compile(r"/pull/(\d+)")
+
+
+def pr_number(url: str) -> int | None:
+    """The number in a PR URL, or ``None`` for a URL that does not carry one."""
+    match = _PR_NUMBER_RE.search(url)
+    return int(match.group(1)) if match else None
+
 
 @dataclass(frozen=True)
 class FieldDoc:
