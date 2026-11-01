@@ -1,10 +1,10 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: implemented
+status: done
 branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
-concluded:
+concluded: 2026-11-01T11:05:28-08:00
 pr: https://github.com/gitronald/planners/pull/66
 ---
 
@@ -98,3 +98,13 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - Checks at `6710ed4`: 778 tests passed, coverage 95.07%, ruff, ruff format, and pyrefly clean.
   - Not verified: `--print-merge` against a real fork PR.
 - **2026-11-01T11:05:45-08:00** — Implemented: 12 commits ahead of `dev`.
+
+## Retrospective
+
+- The three items went as specified, and most of the work was in what `block` exposed. Mechanizing a by-hand step showed that its return path did not work for a plan with a live branch, a gap the prose had hidden.
+- The Out of scope line held until the review showed the new command could not be used cleanly, and the user widened it at the gate. The spec above stays as written, and the Log records the change.
+- A scratch-repo probe of the whole round trip found the merge conflict. The finders and the unit tests did not, since each step passed on its own. Probe a lifecycle command across a merge, not only at its own exit.
+- Advice in a skill is a claim to test. The first text told sessions to block on the mainline, the one place that led to the conflict.
+- `implemented` keeps the weaker resume check that the review fixed in `block`. It commits an unrelated edit to an `implemented` plan under its own subject when re-run, which is worth changing when that command is next touched.
+- Applying scripted edits twice duplicated a sentence in the rule, and reading the full diff before the first commit caught it.
+
