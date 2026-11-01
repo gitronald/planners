@@ -100,6 +100,7 @@ planners index .                         # regenerate .planners/README.md
 planners validate                        # validate plan frontmatter (and that the index agrees; --no-index skips the index check; --json prints parsed records)
 planners schema                          # show the plan metadata schema
 planners skill <name>                    # print a bundled skill body
+planners doc <name>                      # print a bundled reference document (--list names them)
 planners rule <name>                     # print a bundled convention rule body
 planners install                         # install holder + rule + repo hook + merge attr (--local: per-repo)
 planners permissions --level assist      # print an automation-level permission profile (--apply to write it)
