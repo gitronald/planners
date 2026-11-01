@@ -17,6 +17,7 @@ import secrets
 import shlex
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
@@ -772,6 +773,7 @@ def _add_nested(
     title: str,
     branch: str,
     letter: str | None,
+    needs: Sequence[str] = (),
     allow_branch: bool,
     no_commit: bool,
 ) -> None:
@@ -814,13 +816,28 @@ def _add_nested(
         _err(f"letter {letter!r} is already taken by {taken[letter]}.")
         raise typer.Exit(1)
 
+    # The letters as given, not as parsed back from the rendered line, where a
+    # value holding a comma would read as two entries and pass.
+    problems = SubplanMetadata(
+        letter=letter, step=slug, status=Status.draft, needs=tuple(needs)
+    ).validate()
+    if problems:
+        for problem in problems:
+            _err(f"--needs: {problem}.")
+        raise typer.Exit(1)
+
     if not no_commit and meta.status != Status.active:
         _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
 
     path = umbrella.parent / SUBPLANS_DIRNAME / f"{letter}-{slug}.md"
-    text = subplans_mod.render_subplan(title, meta.title, branch)
+    text = subplans_mod.render_subplan(title, meta.title, branch, needs)
     _sync_subplans(root, umbrella, {path: text})
     typer.echo(f"wrote {path.relative_to(root)}")
+    # A later subplan can be named before it exists, so this is not a refusal,
+    # but `planners subplans` fails until it does.
+    for need in needs:
+        if need not in taken:
+            _warn(f"warning: --needs {need}: no subplan has that letter yet.")
 
     if no_commit:
         return
@@ -857,6 +874,12 @@ def add(
         help="With --nested: the letter to take (default: the next free one, "
         "starting at a).",
     ),
+    needs: list[str] | None = typer.Option(
+        None,
+        "--needs",
+        help="With --nested: a letter this subplan depends on, written to its needs: "
+        "line. Repeatable.",
+    ),
     defer: bool = typer.Option(
         False,
         "--defer",
@@ -886,6 +909,9 @@ def add(
     if letter is not None and not nested:
         _err("--letter applies to --nested subplans only.")
         raise typer.Exit(1)
+    if needs and not nested:
+        _err("--needs applies to --nested subplans only.")
+        raise typer.Exit(1)
     if nested and defer:
         _err(
             "--defer cannot be combined with --nested: a nested subplan takes a "
@@ -900,6 +926,7 @@ def add(
             title=title or "",
             branch=branch or "",
             letter=letter,
+            needs=needs or (),
             allow_branch=allow_branch,
             no_commit=no_commit,
         )
