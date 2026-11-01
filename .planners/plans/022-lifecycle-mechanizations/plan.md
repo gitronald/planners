@@ -1,7 +1,7 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: implemented
+status: active
 branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
 concluded:
@@ -88,3 +88,4 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - `--needs` refuses a malformed letter, the subplan's own letter, and a repeat. It warns, without refusing, on a letter with no subplan yet, since the `add` skill's order allows naming one later.
   - `pr_number` moved to `utils.py`, so `index.py` and `finish` share one parser.
 - **2026-11-01T10:53:54-08:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-11-01T10:59:03-08:00** — Reactivated: back to active after review.
