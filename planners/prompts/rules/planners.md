@@ -82,7 +82,8 @@ in it. It closes nothing: merging, the Retrospective, and `concluded` stay with 
 feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the
 feature branch.
 Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
-they have. It differs from `implemented`, which waits on a person to accept finished work;
+they have. `{cli} block {NNN}`, run on the mainline, sets it. It differs from `implemented`, which
+waits on a person to accept finished work;
 `blocked` waits for something the work itself needs. It is an open state like `active`, so `concluded` stays empty and nothing closes over
 it. It is distinct from `draft` (not started) and `inactive` (set aside). Say what it waits on:
 in the plan's Handoff section, or for a nested subplan in the Note column of the umbrella's table.
@@ -282,16 +283,16 @@ by name, not a way past the check.
 
 The guard covers activating a `draft`, `blocked`, or `inactive` plan. Returning one from
 `implemented` is not guarded, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
-`{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its feature
-branch, and a plan is retired wherever the decision is made. `conclude` checks instead that
+`{cli} block`, `{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its
+feature branch, and a plan is retired wherever the decision is made. `conclude` checks instead that
 HEAD is on the plan's recorded branch, since the date it records is that branch's.
 
 ### Plan commit subjects name the slug
 
 `plan [<verb>]: {NNN} - <slug>` — the slug, not the title. That is what `{cli} add`,
 `{cli} finalize`, `{cli} activate`, `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
-`{cli} conclude` (`plan [close]`), and `{cli} retire` write. A slug is fixed by the directory
-name; a title can be reworded, so a title-derived subject drifts from the plan it names.
+`{cli} block`, `{cli} conclude` (`plan [close]`), and `{cli} retire` write. A slug is fixed by the
+directory name; a title can be reworded, so a title-derived subject drifts from the plan it names.
 (`log` is the exception: `--summary` replaces the slug with a brief summary of the entry.)
 
 ## No Separate Summaries

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `planners block <NNN>` marks a draft or active plan blocked, refreshes the index, and
+  commits, in place of the hand edit the `update` skill described
+- `planners finish <NNN> --print-merge` prints the merge command for the session to run,
+  with the subject already formatted, and changes nothing
+- `planners add ... --parent <N> --nested --needs <letter>` (repeatable) writes the
+  subplan's `needs:` line
+
 ### Fixed
 
 - The `close` skill said a `finish` stop leaves the state as it was. The steps before
