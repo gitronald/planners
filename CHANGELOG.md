@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Requires pkgskills 0.6.0. Upgrading needs no `--force`: a plain `planners install`
+  refreshes files from any earlier release, and `install --check` exits 1 until it
+  has run. That covers the stamp planners wrote before it adopted pkgskills, in either
+  mode, so edits under that stamp are overwritten, a global install removes the repo's
+  local copies, and an install removes a stamped `plan-files.md` from the scope it
+  writes to. A file with any other stamp, or none, is still refused without `--force`
+- `planners install` also writes the skill stub for Codex, at
+  `.agents/skills/planners/SKILL.md` under the home directory or the repo. The stamp
+  moves into the frontmatter `metadata`, so the rule file gains a frontmatter block
 - The implement skill runs `planners start` instead of walking through its steps in
   prose
 - `planners` refuses to run outside a git repository: it exits 1, changes nothing,
