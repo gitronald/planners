@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 021 | [Simplify the package and its skill text](plans/021-package-simplification/plan.md) | implemented | — | [#64](https://github.com/gitronald/planners/pull/64) |
+| 021 | [Simplify the package and its skill text](plans/021-package-simplification/plan.md) | active | — | [#64](https://github.com/gitronald/planners/pull/64) |
 | 018 | [Keep install working across planners upgrades](plans/018-install-upgrade-compat/plan.md) | done | 2026-10-31 18:12 PT | [#62](https://github.com/gitronald/planners/pull/62) |
 | 019 | [Add a resumable planners start command](plans/019-resumable-start/plan.md) | done | 2026-10-31 15:41 PT | [#61](https://github.com/gitronald/planners/pull/61) |
 | 020 | [Refuse to run outside a git repository](plans/020-refuse-outside-a-repository/plan.md) | done | 2026-10-31 15:35 PT | [#60](https://github.com/gitronald/planners/pull/60) |

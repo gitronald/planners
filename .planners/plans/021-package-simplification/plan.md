@@ -1,7 +1,7 @@
 ---
 id: 21
 slug: package-simplification
-status: implemented
+status: active
 branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
 concluded:
@@ -73,3 +73,4 @@ Two kinds of cut are in scope:
   - What the brief got right: numbered findings with file:line evidence and a category each made triage mechanical. What it got wrong: the read-only sandbox blocked uv, so every measurement in the report was derived from source, not run.
 - **2026-10-31T20:03:13-07:00** — PR opened: https://github.com/gitronald/planners/pull/64
 - **2026-10-31T20:03:22-07:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-11-01T09:58:11-08:00** — Reactivated: back to active after review.
