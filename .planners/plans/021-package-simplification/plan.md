@@ -86,6 +86,13 @@ Two kinds of cut are in scope:
   - Review follow-up: 4 candidates. Actioned: the rule's condensed guard paragraph implied `retire` belongs on the feature branch, so the "wherever the decision is made" point is back (a prose fix, no test); `next_letter` had become a pass-through, so `cli.py` calls `next_sub` directly; the duplicate `next_letter` tests are gone, with their two gap cases moved into `test_next_sub`.
   - Conscious no-op: the nested path's exhausted-letters error now has the en dash `next_sub` already printed for lettered plans. Nothing matches on the old text.
   - Checks: 731 tests passed, coverage 94.87%, ruff, ruff format, and pyrefly clean.
+- **2026-11-01T10:38:06-08:00** — Finished the two checks the Retrospective left open, after the v0.15.0 release, against the 0.15.0 package installed from PyPI.
+  - `planners install --check` exits 0 after a plain `planners install`: both global skill stubs and the rule read `ok`.
+  - Read end to end as the package prints them: the rule, all eight skills, the generated stub, and `planners doc orchestrated-run`. No `{cli}` placeholder is left unrendered, and every pointer the cuts introduced lands on text that exists (the add, index, and close skills, *Handoff* in the rule, and step 4 of the nested-subplan steps).
+  - Checked against the CLI: `planners permissions` gives `gh pr comment` and `gh pr ready` at `assist`, `git push` at `confirm`, and `gh pr merge` at `full`; `start`'s step names and its `done`, `ran`, and `skipped` results match the implement skill; `finish` has no merge-printing flag, `add` has no `--needs`, and there is no `block` command, so plan 022's premises hold.
+  - Ran in a throwaway repo: a `Review: still open.` entry through `log --no-commit`, then `review --commit`. It committed as `plan [review]: 1 plan`, and the next `review --json` used that entry as `window_start`.
+  - Found three wording problems, none of which changes an instruction: the `gh pr ready` bullet in the close skill, `--no-worktree` in the rule's *Generated Log entries*, and the orchestrated-run opening, which assumes an umbrella though the implement skill sends any plan there. Carried to plan 022, not fixed here.
+  - Not verified: only the opening of `finish` was compared with the close skill's step list, not every later step.
 
 ## Retrospective
 
