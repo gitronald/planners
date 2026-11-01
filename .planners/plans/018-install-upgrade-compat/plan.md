@@ -119,11 +119,29 @@ Approach 2 is closed. Where this section and the Approach differ, this section h
   - Suite: 712 passed, 5 failed against `v0.6.0`, with no declaration yet. All 5 are the three stamp-text assertions this plan predicted.
   - Old flags: v0.3.1 and v0.6.1 both reject `--global`, so the two releases run here do not fit the Problem's "earlier releases accepted" as a description of the 0.3 line. Releases before v0.3.1 were not run.
   - To repeat: in a scratch `HOME` and git repo, install an old tag with `uv run --no-project --with "planners @ git+file://<repo>@v0.6.1" planners install`, add `--local` for the local form, then run a plain install against `pkgskills==0.6.0` with the pattern from the Handoff declared on `HOST`.
+- **2026-10-31T18:03:46-07:00** — Paused for a new session. No code changed since the entry above. The Handoff is current, and `continue plan 18` is enough to pick this up.
+  - Next: order item 1, `planners activate 18` on `dev`.
+  - The owner has not answered the two open questions. Each has a proposed answer beside it.
+  - This plan file is copied to `dev` at this point, so `dev` no longer shows the Handoff written before the release, and a later merge of `dev` into the branch has no plan text to reconcile.
 
 ## Handoff
 
 **Waiting on the owner:** the go-ahead to finish. pkgskills 0.6.0 is on PyPI, so nothing
-else blocks this plan. The status stays `blocked` until then.
+else blocks this plan. The status stays `blocked` until then. A request to continue this
+plan is the go-ahead: start at *Order on resuming*, and use the proposed answers to the
+open questions unless the owner has said otherwise.
+
+### Where the work is
+
+- Branch `feature/install-upgrade-compat`, in the worktree
+  `.worktrees/018-install-upgrade-compat`. This copy of the plan is on `dev` as well.
+- The worktree's `.venv` still has pkgskills 0.5.1, per the lockfile. Run
+  `uv sync --all-groups` there after order item 2. Its `.claude/` is an ignored copy
+  from the main checkout, so a re-created worktree needs it copied again.
+- The installed `planners` is 0.13.4 and the branch is 0.13.5a0. This plan's lifecycle
+  commands so far ran on the installed one, whose `implement` skill has no `planners
+  start`.
+- The throwaway script from the Log was not kept. The tests in order item 4 replace it.
 
 ### State of each piece
 
