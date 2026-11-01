@@ -2,7 +2,7 @@
 
 Tools for managing plain-text plans with a documented schema, CLI commands, and an installable skillstub. It is designed to automate the mechanical components of generating and updating plain-text plans with standardized frontmatter for a given project. To facilitate tracking and reviewing plans, it also automatically generates and maintains an index table of all existing plans and their statuses.
 
-These tools can be used manually via CLI commands, but they are largely intended to be used in conjunction with a language model. To guide usage by a language model, it ships with built-in [skills](https://agentskills.io/home) and [rules](https://code.claude.com/docs/en/memory#organize-rules-with-claude/rules/) that offer an opinionated approach to managing the full plan-file lifecycle and automating usage of this package. These skills and rules can be installed on your system via the CLI commands listed in the instructions below. Once installed, the rules will enforce conventions around how plan files are named, filled, and updated, and the skills will facilitate the addition, implementation, and closing out of plans, which includes the use of git branches and worktrees as specified by the user. While its core functionality and plan files are model-agnostic, some aspects of its built-in support (e.g., the skill files, rule files, and pre-commit validation hook) are currently only available for use with Claude Code.
+These tools can be used manually via CLI commands, but they are largely intended to be used in conjunction with a language model. To guide usage by a language model, it ships with built-in [skills](https://agentskills.io/home) and [rules](https://code.claude.com/docs/en/memory#organize-rules-with-claude/rules/) that offer an opinionated approach to managing the full plan-file lifecycle and automating usage of this package. These skills and rules can be installed on your system via the CLI commands listed in the instructions below. Once installed, the rules will enforce conventions around how plan files are named, filled, and updated, and the skills will facilitate the addition, implementation, and closing out of plans, which includes the use of git branches and worktrees as specified by the user. While its core functionality and plan files are model-agnostic, its built-in support varies by tool: the skill stub installs for Claude Code and Codex, and the rule file for Claude Code only.
 
 ## Getting Started
 
@@ -19,7 +19,7 @@ These tools can be used manually via CLI commands, but they are largely intended
    uv tool install --force git+https://github.com/gitronald/planners.git
    ```
 
-2. **Install the global rules and skills** — This installs a global Claude Code rule file and a skills stub: the actual skills are included within this package and are accessible via the CLI; the skills stub just tells the model how to access them and allows you to use the skills via slash commands.
+2. **Install the global rules and skills** — This installs a global Claude Code rule file and a skills stub for Claude Code and Codex: the actual skills are included within this package and are accessible via the CLI; the skills stub just tells the model how to access them and allows you to use the skills via slash commands.
 
    Run it from inside a git repository, since it also wires that repository:
 
@@ -28,8 +28,9 @@ These tools can be used manually via CLI commands, but they are largely intended
    ```
 
    This will:
-   - (Re)generate the global `~/.claude/skills/planners/SKILL.md` holder and
-     `~/.claude/rules/planners.md` convention rule, which can change as the package version advances.
+   - (Re)generate the global `~/.claude/skills/planners/SKILL.md` and
+     `~/.agents/skills/planners/SKILL.md` holders and the `~/.claude/rules/planners.md`
+     convention rule, which can change as the package version advances.
    - Wire the `planners-validate` (pre-commit) and `planners-index` (post-merge) hooks into the project folder/repo's `.pre-commit-config.yaml` (registering them when `pre-commit` is available).
    - Give the generated index its merge semantics: a `.planners/README.md merge=union`
      line in the repo's `.gitattributes`, so a **local** merge whose two sides both
@@ -39,7 +40,7 @@ These tools can be used manually via CLI commands, but they are largely intended
      index; merging the base in locally then resolves it without hand-editing a
      generated file.
 
-   `planners install --check` reports each part (the skill stub, the rule, and the
+   `planners install --check` reports each part (the skill stubs, the rule, and the
    `.gitattributes` line) and exits non-zero unless all are `ok`, plus a row per hook
    saying whether it is actually registered **in this clone** — registration is
    per-clone state that a fresh clone silently lacks, so it is reported rather than
@@ -49,6 +50,18 @@ These tools can be used manually via CLI commands, but they are largely intended
    The install, check, and print commands (`install`, `skill`, `rule`, `permissions`)
    come from [pkgskills](https://pypi.org/project/pkgskills/), which planners
    declares itself to as a host.
+
+   **Upgrading.** A plain `planners install` upgrades files from any earlier release, so
+   no `--force` is needed. `install --check` reads `drifted` and exits 1 until you run it,
+   and prints `planners install --force` as the repair, though the plain install is
+   enough. The install treats those files as generated, which has two effects:
+   - It overwrites edits made to them. Their stamp said not to edit them.
+   - A global install removes the repo's local copies, and each install removes an old
+     stamped `plan-files.md` from the scope it writes to. If the repo tracks `.claude/`,
+     the removals show as deletions in `git status`.
+
+   `--force` is still needed for a file it does not recognize as generated: one with no
+   stamp, another package's stamp, or an altered stamp.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 
@@ -134,7 +147,8 @@ planners permissions --level assist      # print an automation-level permission 
 
 > **Per-repo (local) mode.** To pin planners as a project dependency instead of a global tool, add
 > it with `uv add --dev planners` and run everything as `uv run planners …`; then `planners install --local`
-> writes the holder and rule into the repo's own `.claude/` rather than `~/.claude/`.
+> writes the holders and rule into the repo's own `.claude/` and `.agents/` rather than `~/.claude/`
+> and `~/.agents/`.
 
 ## Plans
 
