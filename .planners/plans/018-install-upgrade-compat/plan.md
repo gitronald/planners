@@ -1,7 +1,7 @@
 ---
 id: 18
 slug: install-upgrade-compat
-status: active
+status: implemented
 branch: feature/install-upgrade-compat
 created: 2026-10-27T14:55:54-07:00
 concluded:
@@ -134,6 +134,7 @@ Approach 2 is closed. Where this section and the Approach differ, this section h
   Correction to the 17:50 entry and to *Revised for pkgskills 0.6.0* item 4: an old `plan-files.md` is removed only from the scope being installed. `remove_previous` uses the mode's own base, so a global install removes the one under the home directory and leaves a stamped one in the repo. The local copies of the holder and rule are removed as written. The README and changelog state the narrower behavior. No change here: that behavior belongs to pkgskills.
   Correction to the 18:03 entry: merging `dev` did conflict on the plan, because `activate` added its entry at the same place in the Log. Kept both sides and refreshed the index.
   Open questions 1 and 2 went with their proposed answers, as the Handoff directed.
+- **2026-10-31T18:13:52-07:00** — Implemented: 12 commits ahead of `dev`.
 
 ## Handoff
 
