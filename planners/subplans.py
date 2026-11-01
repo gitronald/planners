@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 
 from planners.body import fenced_lines, insert_after_first_subsection
-from planners.metadata import Status, extract_title
+from planners.metadata import Status, extract_title, next_sub
 from planners.utils import parse_frontmatter, split_frontmatter
 
 __all__ = [
@@ -227,15 +227,10 @@ def next_letter(existing: list[str]) -> str:
 
     Letters follow creation order and no letter is held back for a kind of
     subplan, so an investigation takes the next letter like any other step.
-    Raises ``ValueError`` when ``a``-``z`` is used up.
+    The algorithm is :func:`planners.metadata.next_sub`, which lettered sibling
+    plans use; nested subplans share it rather than carry a copy.
     """
-    taken = [s for s in existing if len(s) == 1 and "a" <= s <= "z"]
-    if not taken:
-        return "a"
-    following = chr(ord(max(taken)) + 1)
-    if following > "z":
-        raise ValueError("subplan letters a-z are exhausted")
-    return following
+    return next_sub(existing)
 
 
 def phases(subplans: list[SubplanMetadata]) -> list[list[str]]:
