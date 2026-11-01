@@ -103,6 +103,12 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - `finish`'s stop message and `--print-merge` share `_pr_merge_command`, which shell-quotes the command, so the review's no-op on the duplicated command no longer stands. The stop message's subject now prints in single quotes, and a fork PR keeps its owner there.
   - Checks at `4edc024`: 784 tests passed, coverage 95.03%, ruff, ruff format, and pyrefly clean. Five of the new or updated tests failed against the previous code.
   - Not pushed, and not released: the fixes are in `[Unreleased]`.
+- **2026-11-01T11:26:41-08:00** — Closed the same gap in `activate` and `set-pr`, directly on `dev` at the user's direction: `108de8c`.
+  - A re-run after an uncommitted edit committed that edit under `plan [activate]` or `plan [pr]`. Reproduced in a scratch repo first.
+  - Both now compare the field they write with HEAD's copy. When HEAD already has it, they do nothing and leave the edit in place, and they still finish a run whose own commit failed.
+  - `start` stops on such an edit as a dirty tree. It used to pass the base check and let `activate` commit the edit.
+  - Checks at `108de8c`: 788 tests passed, ruff, ruff format, and pyrefly clean. The four new test cases failed against the previous code.
+  - Not pushed, and not released: the fixes are in `[Unreleased]`.
 
 ## Retrospective
 
