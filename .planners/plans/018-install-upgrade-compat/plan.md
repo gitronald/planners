@@ -5,7 +5,7 @@ status: blocked
 branch: feature/install-upgrade-compat
 created: 2026-10-27T14:55:54-07:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/62
 ---
 
 # Keep install working across planners upgrades
@@ -63,6 +63,31 @@ host moves from an older release to the current one.
 3. **Docs.** Add an upgrade note to the README: a pre-adoption install
    upgrades with a plain `planners install`.
 
+### Revised for pkgskills 0.6.0
+
+pkgskills 0.6.0 shipped the hook (`Host.legacy_stamps`), so the mechanism question in
+Approach 2 is closed. Where this section and the Approach differ, this section holds.
+
+1. **Status.** An old stamp reads `drifted`, not `stale`. In pkgskills `stale` means a
+   superseded copy to remove, and rewriting one would recreate it.
+2. **Mode mismatch.** An old stamp in the other mode reads `drifted` and a plain install
+   rewrites it. It does not stay `foreign`.
+3. **Remedy text.** `--check` prints `repair: planners install --force` for a `drifted`
+   file, and a plain `planners install` also fixes it. The README says so.
+4. **Removal.** A file with a declared stamp counts as generated everywhere, so a global
+   install also removes a local copy of it, and an old `plan-files.md` rule. In a repo
+   that tracks `.claude/`, that shows as a deletion in `git status`. This is what a
+   current stamp already does. Document it next to the overwrite tradeoff.
+5. **Upgrades beyond the old stamp.** Moving to 0.6.0 changes every host once:
+   - Files with the `via pkgskills` comment read `drifted`, and a plain install
+     refreshes them.
+   - The rule gains a frontmatter block.
+   - The Codex harness is on by default, so `.agents/skills/planners/SKILL.md` reads
+     `missing` until a plain install writes it. `install --check` exits 1 until then.
+6. **Docs grow.** The README says the skills are Claude Code only, and its install step
+   lists only the `.claude` paths, so both need updating. pkgskills asks a host to say
+   in the changelog of its first release on 0.6.0 that no `--force` is needed.
+
 ### Out of scope
 
 - Recognizing older renders by content (hashing past releases' output).
@@ -75,63 +100,114 @@ host moves from an older release to the current one.
   - Base: `dev` at `7bc9ee5`
   - Worktree: `.worktrees/018-install-upgrade-compat`
   - PR: pending
+- **2026-10-31T15:49:06-07:00** — PR opened: https://github.com/gitronald/planners/pull/62
+- **2026-10-31T15:49:07-07:00** — Step 1 done: tests pin `install --global`, `--local`, and no flag (global), with a write and with `--check`.
+  - Mechanism: the planners-side pre-pass is ruled out. pkgskills 0.5.1 has no hook ahead of `guard`, and `--check` prints `classify`'s verdict, so a pre-pass cannot make `--check` report anything but `foreign`.
+  - The pkgskills hook already has a design there: its plan 012 (`Host.legacy_stamps`), still a draft and unbuilt. It needs a stable pkgskills release, because a git-URL dependency cannot go on PyPI.
+  - Status: use `drifted` as pkgskills 012 specifies, not the `stale` this plan names. In pkgskills `stale` means a superseded copy, and its remedy is `remove:`, not a reinstall. `--check` prints `repair: planners install --force` for `drifted`, though a plain install also fixes it.
+  - Measured at pkgskills dev 307c350 (68 commits past v0.5.1): the full planners suite passes (717). That dev adds the Codex harness, so a global install also writes `~/.agents/skills/planners/SKILL.md`.
+- **2026-10-31T16:48:23-07:00** — Update on the entry above: pkgskills plan 012 was a draft at 15:49 but has since merged (PR #27, 16:24), and it differs from that draft.
+  - `Host.legacy_stamps` is on pkgskills `dev` only. Not tagged, not on `main`, and PyPI is still 0.5.1, so declaring it here fails on the locked version.
+  - A mode mismatch reads `drifted`, not `foreign` as this plan's Approach says. A recognized stamp counts as generated everywhere, so it can also be removed as a stale local copy or at a previous name.
+  - pkgskills plan 010 is in progress (draft PR #28). It moves the stamp into `pkgskills-*` keys under `metadata`, which breaks three assertions in `tests/test_host.py` that read the old stamp text. Read from its plan, not run: its code is uncommitted.
+  - Old stamp history checked: planners added one stamp format in `dc6e5a0` and removed it in `9369792` (first in v0.7.0), with no other form between them.
+- **2026-10-31T17:50:31-07:00** — Checked pkgskills 0.6.0 and revised this plan: added *Revised for pkgskills 0.6.0* to the Plan and rewrote the Handoff.
+  - Release: tag `v0.6.0` is on `main`, its publish run succeeded, and PyPI returns 200 for 0.6.0. Plans 010, 012, and 016 are all done there.
+  - Stamp: the declared pattern passes 0.6.0's validation. Real files from v0.3.1 and v0.6.1 read `drifted`, a plain install rewrites them, and `--check` then reads `ok`, in both modes. With nothing declared, the same files are refused.
+  - Refused and left untouched: another dist's stamp, no stamp, an ASCII hyphen for the em dash, prose after the stamp, and a bad mode.
+  - Not expected by the plan: a global install removed tracked local copies with the old stamp and an old `plan-files.md`.
+  - Suite: 712 passed, 5 failed against `v0.6.0`, with no declaration yet. All 5 are the three stamp-text assertions this plan predicted.
+  - Old flags: v0.3.1 and v0.6.1 both reject `--global`, so the two releases run here do not fit the Problem's "earlier releases accepted" as a description of the 0.3 line. Releases before v0.3.1 were not run.
+  - To repeat: in a scratch `HOME` and git repo, install an old tag with `uv run --no-project --with "planners @ git+file://<repo>@v0.6.1" planners install`, add `--local` for the local form, then run a plain install against `pkgskills==0.6.0` with the pattern from the Handoff declared on `HOST`.
+- **2026-10-31T18:03:46-07:00** — Paused for a new session. No code changed since the entry above. The Handoff is current, and `continue plan 18` is enough to pick this up.
+  - Next: order item 1, `planners activate 18` on `dev`.
+  - The owner has not answered the two open questions. Each has a proposed answer beside it.
+  - This plan file is copied to `dev` at this point, so `dev` no longer shows the Handoff written before the release, and a later merge of `dev` into the branch has no plan text to reconcile.
 
 ## Handoff
 
-**Waiting on the owner:** finish pkgskills plans 010 and 016, then cut a pkgskills
-release. The owner then returns here, reviews what changed in pkgskills, and this
-plan finishes. Do not release pkgskills from this plan.
+**Waiting on the owner:** the go-ahead to finish. pkgskills 0.6.0 is on PyPI, so nothing
+else blocks this plan. The status stays `blocked` until then. A request to continue this
+plan is the go-ahead: start at *Order on resuming*, and use the proposed answers to the
+open questions unless the owner has said otherwise.
+
+### Where the work is
+
+- Branch `feature/install-upgrade-compat`, in the worktree
+  `.worktrees/018-install-upgrade-compat`. This copy of the plan is on `dev` as well.
+- The worktree's `.venv` still has pkgskills 0.5.1, per the lockfile. Run
+  `uv sync --all-groups` there after order item 2. Its `.claude/` is an ignored copy
+  from the main checkout, so a re-created worktree needs it copied again.
+- The installed `planners` is 0.13.4 and the branch is 0.13.5a0. This plan's lifecycle
+  commands so far ran on the installed one, whose `implement` skill has no `planners
+  start`.
+- The throwaway script from the Log was not kept. The tests in order item 4 replace it.
 
 ### State of each piece
 
 - Step 1, the scope flag tests: done and pushed on `feature/install-upgrade-compat`.
-- Step 2, the old stamp: not started. `planners/host.py` declares nothing yet.
+  Against 0.6.0 its `(mode={mode})` assertion fails until order item 5 below.
+- Step 2, the old stamp: tried in a throwaway script against 0.6.0 and it works (see the
+  Log). Nothing is written in `planners/host.py` yet.
 - Step 3, the README note: not started.
 - [PR #62](https://github.com/gitronald/planners/pull/62) stays a draft. Nothing is
   uncommitted or unpushed.
 
 ### Order on resuming
 
-1. Confirm the release is on PyPI, and read what shipped. Fetch first: pkgskills was
-   moving while this was written, and plan 010 changed during its implementation.
-2. Run `planners activate 18` on `dev`, push, and merge `dev` into the branch.
-3. Raise the `pkgskills` floor in `pyproject.toml` to the release and update `uv.lock`.
-4. Declare the old stamp on `HOST.legacy_stamps`, as a whole line that captures `mode`.
-   The line is `<!-- generated by planners <version> (mode=<mode>); do not edit — run:
-   <invocation> install --force -->`, where the dash is an em dash and the invocation
-   is `planners` for global and `uv run planners` for local. Match the version as
-   `\S+`, and keep the pattern exact: a loose one hands `install` a hand-written file.
-5. Replace `test_a_pre_adoption_holder_is_foreign_until_forced`. A matching stamp
-   upgrades without `--force`, an edited body under it is overwritten, and another
-   dist's stamp or no stamp stays `foreign`.
-6. Rewrite the assertions in `tests/test_host.py` that read the stamp's text, so they
-   check behaviour: `(mode=local)`, `(mode={mode})` (added by step 1), and
-   `via pkgskills`. The rendered command in the rule body and `install --check` both
-   show the mode without depending on the stamp's form.
-7. Add the README note and the changelog entry. A plain `planners install` upgrades
-   both stamp generations: the pre-adoption comment and the `via pkgskills` comment.
-8. Run the full suite and the three checks, then `planners implemented 18`.
+1. Run `planners activate 18` on `dev`, push, and merge `dev` into the branch.
+2. Raise the floor to `pkgskills>=0.6.0` in `pyproject.toml` and update `uv.lock`.
+3. Declare the old stamp on `HOST.legacy_stamps`. This pattern was accepted by 0.6.0's
+   validation and matched real files from v0.3.1 and v0.6.1:
+
+   ```python
+   re.compile(
+       r"<!-- generated by planners \S+ \(mode=(?P<mode>global|local)\); "
+       r"do not edit — run: (?:uv run )?planners install --force -->"
+   )
+   ```
+
+4. Replace `test_a_pre_adoption_holder_is_foreign_until_forced`, using stamps in the
+   exact form the old releases wrote:
+   - In both modes, `--check` reads `drifted` and exits 1, a plain install exits 0, and
+     `--check` then reads `ok`.
+   - An edited body under the stamp is overwritten.
+   - An old stamp in the other mode reads `drifted`, and a plain install rewrites it.
+   - A global install removes a local copy with the old stamp, and an old `plan-files.md`.
+   - Refused and left untouched: another dist's stamp, no stamp, an ASCII hyphen for the
+     em dash, prose after the stamp, and a mode that is neither `global` nor `local`.
+5. Rewrite the three assertions that read the stamp's text: `tests/test_host.py:64`
+   (`(mode=local)`), `:99` (`(mode={mode})`), and `:190` (`via pkgskills`). Against
+   0.6.0 these fail 5 test cases. The rendered command in the rule body and
+   `install --check` show the mode without depending on the stamp's form.
+6. Update the README: the upgrade note (a plain `planners install` upgrades both comment
+   generations, overwrites edits, and removes old local copies), the Claude Code only
+   sentence, and the install step's paths. Add the changelog entry pkgskills asks for.
+7. Run the full suite and the three checks, then `planners implemented 18`.
 
 ### Open questions
 
-1. A release carrying the Codex harness makes a global install also write
-   `~/.agents/skills/planners/SKILL.md`. Does planners accept that default, or declare
-   its harnesses? For the owner, at the review.
+1. pkgskills 0.6.0 makes a global install also write `~/.agents/skills/planners/SKILL.md`.
+   Does planners accept that default, or declare `harnesses=(CLAUDE_CODE,)`? Proposed
+   2026-10-31, not yet answered by the owner: accept the default, since a Codex session
+   then finds the skill, and update the README to match.
 2. For a `drifted` file, `--check` prints `repair: planners install --force`, while
-   this plan asked for `planners install` as the remedy. Accept it, or change it in
-   pkgskills? For the owner, ideally before the release, since the change is there.
+   this plan asked for `planners install` as the remedy. 0.6.0 shipped it unchanged.
+   Proposed 2026-10-31, not yet answered by the owner: accept it, and have the README
+   say a plain install is enough.
 
 ### Settled
 
 - The planners-side pre-pass is ruled out: `--check` would still print `foreign`.
-- Old stamps read `drifted`, not `stale`, because `stale` in pkgskills means remove
-  the file.
-- A mode mismatch reads `drifted`, not `foreign`, as pkgskills plan 012 decided. This
-  replaces the plan's Approach on that point.
+- The mechanism is `Host.legacy_stamps`, from pkgskills 0.6.0.
+- Old stamps read `drifted`, in either mode. See *Revised for pkgskills 0.6.0*.
+- The stamp is one format across the pre-adoption releases, from git history and from
+  files v0.3.1 and v0.6.1 wrote. Releases between those two were not run.
 
 ### Not verified
 
-- Nothing has run against pkgskills plan 010, whose code was uncommitted.
-- The last full-suite pass against pkgskills `dev` (717 tests) was at `307c350`, before
-  plans 012 and 010.
-- Step 2 has never run.
+- `HOST` with the pattern has only run in the throwaway script, on Python 3.14. Neither
+  the 3.11 to 3.13 cells nor `pyrefly` have seen it.
+- The full suite against 0.6.0 is 712 passed and 5 failed, all 5 expected (order item 5),
+  through a temporary overlay with no declaration and no change to the lockfile.
+- The upgrade has run only in scratch homes, not on a real host's installed files.
