@@ -153,3 +153,24 @@ def test_set_pr_on_a_nested_subplan_writes_its_own_field(
     )
     changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
     assert changed == [".planners/plans/005-my-thing/subplans/d-step.md"]
+
+
+@pytest.mark.parametrize(
+    ("ref", "name"),
+    [("005", "plan.md"), ("005d", "subplans/d-step.md")],
+)
+def test_set_pr_leaves_an_edit_to_a_file_head_has_the_url_in(
+    ref: str, name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path, committed=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["set-pr", ref, _URL]).exit_code == 0
+    head = git_out(tmp_path, "rev-parse", "HEAD")
+    path = plan_dir / name
+    path.write_text(path.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["set-pr", ref, _URL])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" in result.output
+    assert git_out(tmp_path, "rev-parse", "HEAD") == head
+    assert "An edit." in path.read_text(encoding="utf-8")

@@ -121,8 +121,8 @@ gh pr list --head "$(git branch --show-current)" --state open --json number --jq
   for a plan that skipped that step (still `active`); it is harmless on a PR
   that is already ready. It is also a self-authored write, so the classifier can
   block it the same way. If it's denied, don't retry in a loop: report that the
-  PR is still a draft and stop before the merge (a draft can't be merged), or
-  the user can mark it ready by hand.
+  PR is still a draft and stop before the merge (a draft can't be merged). The
+  user can mark it ready by hand.
 
 ### 3. Final log entry
 
@@ -190,12 +190,15 @@ worktree with a subshell, so the session's shell stays on the main checkout:
 Then, from the **main checkout**, merge the PR and finish:
 
 ```bash
-gh pr merge <N> --merge --subject "merge: PR #<N> - <branch>"
+{cli} finish {NNN} --print-merge   # prints the gh pr merge command; run that
 {cli} finish {NNN}
 ```
 
-The subject follows the repo's merge-subject convention, with the branch cut
-with a trailing `...` past 60 characters. Leave out `--delete-branch`. On some
+`--print-merge` fetches nothing and changes nothing, and the command it prints
+carries the repo's merge subject, `merge: PR #<N> - <branch>`, with the branch cut
+with a trailing `...` past 60 characters. It reads the PR from the plan and asks
+GitHub nothing, so for a PR from a fork, put `<owner>/` before the branch in the
+subject. Leave out `--delete-branch`, as the printed command does. On some
 `gh` versions it removes the branch's worktree as well, and `finish` deletes the
 branch itself. Right after a push, GitHub can report a PR as not mergeable while
 it recomputes. Poll `gh pr view <N> --json mergeable,mergeStateStatus` until it
@@ -215,11 +218,13 @@ never a mainline), commits the plan index when the merge left it stale (it does
 not push: run `git push` when it says it committed), and re-installs any
 `.git/hooks/` hook whose `INSTALL_PYTHON` points into `.worktrees/`.
 
-**When `finish` stops**, it exits 1, leaves the state as it was, and names what
-to look at: an unmerged branch, a worktree with uncommitted changes or commits
-the base lacks, an uncommitted edit to the index, or a refused `git` or `gh`
-call. Deal with that, then run `{cli} finish {NNN}` again; each step already
-done is skipped.
+**When `finish` stops**, it exits 1 and names what to look at: an unmerged
+branch, a worktree with uncommitted changes or commits the base lacks, a branch
+that holds such commits, an uncommitted edit to the index, or a refused `git` or
+`gh` call. The steps before the stop stay done, and the one it stopped on is left
+undone: a branch that holds such commits stops it after the worktree is removed
+and the base is pulled. Deal with what it names, then run `{cli} finish {NNN}`
+again; each step already done is skipped.
 
 Report: review run, plan closed, PR merged, and what `finish` printed.
 
@@ -278,12 +283,12 @@ Then, from the **main checkout**, merge the branch, push, and finish:
 
 ```bash
 git checkout "$({cli} base)" && git pull
-git merge --no-ff <branch> -m "merge: <branch>"
+{cli} finish {NNN} --no-pr --print-merge   # prints the git merge command; run that
 git push
 {cli} finish {NNN} --no-pr
 ```
 
-For a merge made without a PR, the subject names the branch, cut with a
+For a merge made without a PR, the printed subject names the branch, cut with a
 trailing `...` past 60 characters. The plan records `pr: null`, which takes the
 no-PR path without the flag; the flag says so out loud. `finish` checks that the
 base's upstream contains the branch, and stops with the merge command if it

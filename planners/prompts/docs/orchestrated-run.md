@@ -2,7 +2,9 @@
 
 Used **only when the user asks for subagents or a workflow**. One `implement` of
 the umbrella works through the subplans in dependency order and fans the
-independent ones out.
+independent ones out. On a plan with no subplans, its independent steps take
+their place: the guidance on phases, briefs, and records applies the same way,
+and the steps that set a subplan's status do not.
 
 ## Order and phases
 

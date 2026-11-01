@@ -17,6 +17,7 @@ import secrets
 import shlex
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
@@ -53,6 +54,7 @@ from planners.utils import (
     is_safe_slug,
     parse_frontmatter,
     parse_instant,
+    pr_number,
     split_frontmatter,
 )
 
@@ -698,6 +700,34 @@ def _is_unmodified(root: Path, path: Path) -> bool:
     return not _git_status_porcelain(root, spec)
 
 
+def _frontmatter_at_head(root: Path, path: Path) -> dict[str, str | None]:
+    """A plan or subplan file's frontmatter as ``HEAD`` has it; empty if unreadable.
+
+    Tells a run that wrote a field and failed to commit, where ``HEAD`` still has
+    the old value, from a later edit to a file ``HEAD`` already has that value in.
+    """
+    text = proc.git_out(root, ["show", f"HEAD:{path.relative_to(root).as_posix()}"])
+    if text is None:
+        return {}
+    frontmatter, _ = split_frontmatter(text)
+    return parse_frontmatter(frontmatter) if frontmatter is not None else {}
+
+
+def _activation_committed(root: Path, plan: Path, branch: str | None) -> bool:
+    """True when ``HEAD`` already has ``plan`` active on ``branch``."""
+    head = _frontmatter_at_head(root, plan)
+    return head.get("status") == Status.active.value and head.get("branch") == branch
+
+
+def _status_at_head(root: Path, path: Path) -> Status | None:
+    """The status of a plan or subplan file as ``HEAD`` has it, if it can be read."""
+    status = _frontmatter_at_head(root, path).get("status")
+    try:
+        return Status(status) if isinstance(status, str) else None
+    except ValueError:
+        return None
+
+
 def _finalize_self_check(
     root: Path,
     finalized: list[tuple[int, str, Path]],
@@ -771,6 +801,7 @@ def _add_nested(
     title: str,
     branch: str,
     letter: str | None,
+    needs: Sequence[str] = (),
     allow_branch: bool,
     no_commit: bool,
 ) -> None:
@@ -813,13 +844,34 @@ def _add_nested(
         _err(f"letter {letter!r} is already taken by {taken[letter]}.")
         raise typer.Exit(1)
 
+    # The letters as given, not as parsed back from the rendered line, where a
+    # value holding a comma would read as two entries and pass.
+    problems = SubplanMetadata(
+        letter=letter, step=slug, status=Status.draft, needs=tuple(needs)
+    ).validate()
+    if problems:
+        for problem in problems:
+            _err(f"--needs: {problem}.")
+        raise typer.Exit(1)
+
     if not no_commit and meta.status != Status.active:
         _guard_base_branch(root, "plan [add]", allow_branch=allow_branch)
 
     path = umbrella.parent / SUBPLANS_DIRNAME / f"{letter}-{slug}.md"
-    text = subplans_mod.render_subplan(title, meta.title, branch)
+    text = subplans_mod.render_subplan(title, meta.title, branch, needs)
+    if needs:
+        try:
+            subplans_mod.phases(_load_subplans(umbrella, {path: text})[0])
+        except ValueError as exc:
+            _err(f"--needs: {exc}.")
+            raise typer.Exit(1) from None
     _sync_subplans(root, umbrella, {path: text})
     typer.echo(f"wrote {path.relative_to(root)}")
+    # A later subplan can be named before it exists, so this is not a refusal,
+    # but `planners subplans` fails until it does.
+    for need in needs:
+        if need not in taken:
+            _warn(f"warning: --needs {need}: no subplan has that letter yet.")
 
     if no_commit:
         return
@@ -856,6 +908,12 @@ def add(
         help="With --nested: the letter to take (default: the next free one, "
         "starting at a).",
     ),
+    needs: list[str] | None = typer.Option(
+        None,
+        "--needs",
+        help="With --nested: a letter this subplan depends on, written to its needs: "
+        "line. Repeatable.",
+    ),
     defer: bool = typer.Option(
         False,
         "--defer",
@@ -885,6 +943,9 @@ def add(
     if letter is not None and not nested:
         _err("--letter applies to --nested subplans only.")
         raise typer.Exit(1)
+    if needs and not nested:
+        _err("--needs applies to --nested subplans only.")
+        raise typer.Exit(1)
     if nested and defer:
         _err(
             "--defer cannot be combined with --nested: a nested subplan takes a "
@@ -899,6 +960,7 @@ def add(
             title=title or "",
             branch=branch or "",
             letter=letter,
+            needs=needs or (),
             allow_branch=allow_branch,
             no_commit=no_commit,
         )
@@ -1197,7 +1259,8 @@ def activate(
 
     A plan in ``implemented`` that review sends back is reactivated the same way,
     on its feature branch: that return is not guarded, and it logs a short
-    ``Reactivated`` entry instead.
+    ``Reactivated`` entry instead. So is a plan blocked after an earlier activation,
+    when this runs on the branch it records.
     """
     _activate(
         Path.cwd(),
@@ -1208,6 +1271,21 @@ def activate(
         allow_branch=allow_branch,
         no_commit=no_commit,
     )
+
+
+def _back_from_block(root: Path, meta: PlanMetadata, plan: Path) -> bool:
+    """True for a blocked plan, activated before, on the feature branch it records.
+
+    Its work is on that branch, so the return belongs there. Coming back on the
+    mainline instead would add an activation entry the branch's Log conflicts with
+    at merge. A plan never activated has no such branch yet, and stays guarded.
+    """
+    if meta.status != Status.blocked or not meta.branch:
+        return False
+    mainline = base_mod.detect(root)
+    if mainline.on_mainline or mainline.current != meta.branch:
+        return False
+    return entries.recorded_base(plan.read_text(encoding="utf-8")) is not None
 
 
 def _activate(
@@ -1255,12 +1333,15 @@ def _activate(
         )
     new_branch = meta.branch or branch or f"feature/{meta.prefix}-{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
+    # A plan going back to work on its feature branch, where review or a block left
+    # it. That return is not guarded, and it writes no second activation entry.
+    from_block = _back_from_block(root, meta, path)
+    returning = meta.status == Status.implemented or from_block
 
     # The worktree is recorded only in the first activation's entry, so the flags
     # mean nothing to a plan that is already active or is coming back from review.
-    if (worktree is not None or no_worktree) and meta.status in (
-        Status.active,
-        Status.implemented,
+    if (worktree is not None or no_worktree) and (
+        meta.status == Status.active or returning
     ):
         _warn(
             f"warning: plan {meta.prefix} is {meta.status}, so no activation entry "
@@ -1273,10 +1354,15 @@ def _activate(
     # as *already committed* — an earlier run can have written and staged the plan and
     # then failed at the commit (a rejecting hook, no commit identity). Deciding from
     # the frontmatter alone would report that failure as success and strand the
-    # activation staged forever, so the file must also be unmodified against HEAD.
+    # activation staged forever, so HEAD must also have the activation. An uncommitted
+    # edit to a plan HEAD already has active is not one, and is left where it is.
     # This runs before the guard: a genuine no-op commits nothing, so there is nothing
     # for a feature branch to strand and nothing for the guard to protect.
-    if unchanged and (no_commit or _is_unmodified(root, path)):
+    if unchanged and (
+        no_commit
+        or _is_unmodified(root, path)
+        or _activation_committed(root, path, new_branch)
+    ):
         typer.echo(
             f"plan {meta.prefix} is already active on {meta.branch}; nothing to do."
         )
@@ -1284,9 +1370,7 @@ def _activate(
 
     # Guard before writing, so a refusal leaves the plan exactly as it was — the
     # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand. A plan coming back
-    # from `implemented` is on its feature branch by design, where review sent it.
-    returning = meta.status == Status.implemented
+    # no commit, so there is nothing for a branch to strand.
     if not no_commit and not returning:
         _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
 
@@ -1303,7 +1387,8 @@ def _activate(
         # so it gets no second entry; that keeps a re-run idempotent.
         entry = None
         if returning:
-            entry = entries.reactivation_entry(_now())
+            after = "a block" if from_block else "review"
+            entry = entries.reactivation_entry(_now(), after)
         elif meta.status != Status.active:
             entry = _activation_entry(
                 root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
@@ -1336,6 +1421,11 @@ def _activate(
         [str(path.relative_to(root)), str(readme.relative_to(root))],
     )
     current = _current_branch(root)
+    if from_block:
+        # The report below sorts what a push of the base carries. On the plan's own
+        # branch every commit is the plan's, so it would flag ordinary work as other.
+        typer.echo(f"committed the return from the block on {current}")
+        return
     typer.echo(f"committed the activation on {current}")
     # The skill pushes next, and that push carries every unpushed commit on the
     # base. Count and sort them here so the skill reads a fact instead of sorting
@@ -1441,7 +1531,13 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
         slug = meta.slug
         staged = [plan]
 
-    if updated == text and (no_commit or _is_unmodified(root, target)):
+    # An uncommitted edit to a file HEAD already has this URL in is not a write an
+    # earlier run failed to commit, and is left where it is.
+    if updated == text and (
+        no_commit
+        or _is_unmodified(root, target)
+        or _frontmatter_at_head(root, target).get("pr") == url
+    ):
         typer.echo(f"plan {label} already records {url}; nothing to do.")
         return
     if updated != text:
@@ -1633,10 +1729,12 @@ def implemented(
     # An earlier run that wrote the status and then failed to commit (a rejecting
     # hook, say) left the plan reading `implemented` with its change uncommitted.
     # That run is finished here rather than refused, as `activate` and `set-pr` do.
+    # A file HEAD already has as implemented is not that run.
     resuming = (
         status == Status.implemented
         and not no_commit
         and not _is_unmodified(root, target)
+        and _status_at_head(root, target) != Status.implemented
     )
     if status != Status.active and not resuming:
         _err(
@@ -1810,6 +1908,14 @@ def _merge_command(branch: str) -> str:
     return shlex.join(["git", "merge", "--no-ff", branch, "-m", subject])
 
 
+def _pr_merge_command(number: int, label: str) -> str:
+    """The ``gh pr merge`` line for a PR, quoted the way :func:`_merge_command` is."""
+    subject = finish_mod.merge_subject(label, number)
+    return shlex.join(
+        ["gh", "pr", "merge", str(number), "--merge", "--subject", subject]
+    )
+
+
 def _check_merged(
     root: Path,
     branch: str,
@@ -1832,10 +1938,9 @@ def _check_merged(
             return pr
         if pr.state == "CLOSED":
             raise finish_mod.Stop(f"PR #{pr.number} is closed without being merged")
-        subject = finish_mod.merge_subject(pr.label, pr.number)
         raise finish_mod.Stop(
             f"PR #{pr.number} is not merged yet. Merge it, then run finish again:\n"
-            f'  gh pr merge {pr.number} --merge --subject "{subject}"'
+            f"  {_pr_merge_command(pr.number, pr.label)}"
         )
     source = next(
         (
@@ -1860,8 +1965,11 @@ def _check_merged(
     return None
 
 
-def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
-    """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
+def _finish_target(root: Path, ref: str) -> tuple[Path, str, str, base_mod.Mainline]:
+    """The plan ``ref`` names, its label, its branch, and the repo's mainline.
+
+    A plan with no branch, or one that records a mainline branch, is a stop.
+    """
     plan = _resolve_plan(root / PLANS_DIR, ref)
     parts = DIRNAME_RE.match(plan.parent.name)
     label = f"{parts.group(1)}{parts.group(2)}" if parts else ref
@@ -1878,6 +1986,40 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
             f"plan {label} records the mainline branch {branch}; finish never "
             "deletes a mainline branch"
         )
+    return plan, label, branch, mainline
+
+
+def _no_recorded_pr(label: str) -> finish_mod.Stop:
+    """The stop for a plan with an empty ``pr:`` and no ``--no-pr``."""
+    return finish_mod.Stop(
+        f"plan {label} records no PR; record it with `planners set-pr {label} "
+        "<url>`, or pass --no-pr for a branch merged locally"
+    )
+
+
+def _print_merge(root: Path, ref: str, *, no_pr: bool) -> str:
+    """The merge command for ``finish --print-merge``, read from local state.
+
+    It fetches nothing and asks GitHub nothing, so the PR's state goes unchecked
+    and a PR from a fork is named by its branch alone, without the ``<owner>/``
+    that ``finish``'s own stop message reads from ``gh``.
+    """
+    plan, label, branch, mainline = _finish_target(root, ref)
+    base = _plan_base(plan.read_text(encoding="utf-8"), mainline)
+    pr = _closed_plan(root, plan, branch, base or "").pr
+    if no_pr or pr is None:
+        return _merge_command(branch)
+    if not pr:
+        raise _no_recorded_pr(label)
+    number = pr_number(pr)
+    if number is None:
+        raise finish_mod.Stop(f"plan {label} records {pr}, which names no PR number")
+    return _pr_merge_command(number, branch)
+
+
+def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
+    """The steps of ``finish``, each raising :class:`finish.Stop` on a real issue."""
+    plan, label, branch, mainline = _finish_target(root, ref)
 
     if not _is_unmodified(root, root / INDEX_PATH):
         # finish commits the index it regenerates; a change it did not make
@@ -1897,10 +2039,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         )
     no_pr = no_pr or meta.pr is None
     if not no_pr and not meta.pr:
-        raise finish_mod.Stop(
-            f"plan {label} records no PR; record it with `planners set-pr {label} "
-            "<url>`, or pass --no-pr for a branch merged locally"
-        )
+        raise _no_recorded_pr(label)
     if no_pr and not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
     # A single-branch remote's base is the live document: the local merge is
@@ -1985,6 +2124,13 @@ def finish(
         help="The branch was merged locally, not through a PR. Implied when the "
         "plan records `pr: null`.",
     ),
+    print_merge: bool = typer.Option(
+        False,
+        "--print-merge",
+        help="Print the merge command for this plan (`gh pr merge`, or the local "
+        "`git merge` with --no-pr or `pr: null`) and exit, fetching nothing and "
+        "changing nothing. The session runs the merge.",
+    ),
 ) -> None:
     """Clean up after a closed plan's merge, from the main checkout.
 
@@ -2001,10 +2147,15 @@ def finish(
     lacks, a branch holding such commits, uncommitted changes to the plan index,
     or a refused git or gh call. A step already done is skipped, so
     a re-run after a stop picks up where the last one ended.
+
+    `--print-merge` runs none of that: it prints the merge command and exits.
     """
     toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
     root = Path(toplevel.strip()) if toplevel else Path.cwd()
     try:
+        if print_merge:
+            typer.echo(_print_merge(root, ref, no_pr=no_pr))
+            return
         _finish(root, ref, no_pr=no_pr, say=typer.echo)
     except finish_mod.Stop as exc:
         _err(f"stopped: {exc}")
@@ -2115,7 +2266,10 @@ def _start(
     else:
         pending: tuple[Path, ...] = ()
         if meta.status == Status.active:
-            pending = (plan, root / INDEX_PATH)
+            pending = (root / INDEX_PATH,)
+            # An edit to a plan HEAD already has active is the tree's to answer for.
+            if not _activation_committed(root, plan, meta.branch):
+                pending += (plan,)
             if start_mod.ignore_rule_pending(root):
                 pending += (root / ".gitignore",)
         show("base", start_mod.check_base(root, mainline, ignore=pending))
@@ -2336,6 +2490,62 @@ def retire(
     )
 
 
+@app.command()
+def block(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Mark a draft or active plan blocked: its work is waiting on a person.
+
+    Sets ``status: blocked``, refreshes the index, and commits the plan file as it
+    stands, so a reason already written in its Handoff goes in with the status.
+    The reason is authored, so the command writes no Log entry.
+
+    Commits on the current branch: the plan's feature branch once its work is there,
+    where ``planners activate`` returns it unguarded, and otherwise the mainline. A
+    nested subplan is set with ``planners subplans <NNN> --set <letter>=blocked``.
+    """
+    root = Path.cwd()
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    meta = _read_plan(root, plan)
+
+    # An earlier run that wrote the status and then failed to commit (a rejecting
+    # hook, say) is finished here rather than refused. A plan HEAD already has as
+    # blocked is not that run, and an edit to it is not a block to commit.
+    resuming = (
+        meta.status == Status.blocked
+        and not no_commit
+        and not _is_unmodified(root, plan)
+        and _status_at_head(root, plan) != Status.blocked
+    )
+    if meta.status not in (Status.draft, Status.active) and not resuming:
+        _err(
+            f"plan {meta.prefix} is {meta.status.value}; only a draft or active plan "
+            "can be blocked."
+        )
+        raise typer.Exit(1)
+
+    if resuming:
+        typer.echo(f"committing the earlier change to {_shown(plan, root)}")
+    else:
+        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        meta.status = Status.blocked
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"blocked {_shown(plan, root)}")
+
+    if no_commit:
+        return
+
+    readme = _refresh_index(root, cols="curated")
+    _commit(
+        root,
+        f"plan [block]: {meta.prefix} - {meta.slug}",
+        [str(plan.relative_to(root)), str(readme.relative_to(root))],
+    )
+
+
 @app.command(name="log")
 def log_(
     ref: str = typer.Argument(
@@ -2499,9 +2709,13 @@ def conclude(
 
     # An earlier run that wrote the frontmatter and then failed to commit (a
     # rejecting hook, say) left the plan reading `done` with its change
-    # uncommitted. That run is finished here rather than refused.
+    # uncommitted. That run is finished here rather than refused. A plan HEAD
+    # already has as done is not that run.
     resuming = (
-        meta.status == Status.done and not no_commit and not _is_unmodified(root, plan)
+        meta.status == Status.done
+        and not no_commit
+        and not _is_unmodified(root, plan)
+        and _status_at_head(root, plan) != Status.done
     )
     if meta.status not in (Status.active, Status.implemented) and not resuming:
         closed = meta.status in CLOSED_STATUSES

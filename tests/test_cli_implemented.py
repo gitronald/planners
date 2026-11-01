@@ -474,3 +474,53 @@ def test_implemented_refuses_a_branch_the_plan_does_not_record(
         in result.output
     )
     assert "status: active" in path.read_text(encoding="utf-8")
+
+
+def test_implemented_refuses_an_edit_to_a_plan_already_implemented_at_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, status="implemented")
+    head = git_out(root, "rev-parse", "HEAD")
+    monkeypatch.chdir(root)
+    path.write_text(path.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 1
+    assert "plan 005 is implemented; only an active plan" in result.output
+    assert git_out(root, "rev-parse", "HEAD") == head
+    assert "An edit." in path.read_text(encoding="utf-8")
+
+
+def test_implemented_refuses_an_edit_to_a_subplan_already_implemented_at_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, work=0)
+    step = path.parent / "subplans" / "b-build.md"
+    step.parent.mkdir()
+    step.write_text("---\nstatus: implemented\nbranch:\n---\n\n# Build\n\n## Log\n")
+    commit_all(root, "split")
+    head = git_out(root, "rev-parse", "HEAD")
+    monkeypatch.chdir(root)
+    step.write_text(step.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+    result = runner.invoke(app, ["implemented", "005b"])
+    assert result.exit_code == 1
+    assert "subplan 005b is implemented; only an active subplan" in result.output
+    assert git_out(root, "rev-parse", "HEAD") == head
+
+
+def test_implemented_finishes_a_subplan_run_whose_commit_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    path = _repo(root, work=0)
+    step = path.parent / "subplans" / "b-build.md"
+    step.parent.mkdir()
+    step.write_text("---\nstatus: active\nbranch:\n---\n\n# Build\n\n## Log\n")
+    commit_all(root, "split")
+    monkeypatch.chdir(root)
+    assert runner.invoke(app, ["implemented", "005b", "--no-commit"]).exit_code == 0
+    result = runner.invoke(app, ["implemented", "005b"])
+    assert result.exit_code == 0, result.output
+    assert "committing the earlier change" in result.output
+    assert git_out(root, "status", "--porcelain") == ""

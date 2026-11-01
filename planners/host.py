@@ -111,6 +111,12 @@ def _after_install(report: InstallReport) -> None:
             "wired; fix the file, then re-run install.",
             err=True,
         )
+    if done.unsupported:
+        typer.echo(
+            f"note: install cannot safely add hooks to {done.config.name}, so it was "
+            "left alone; add the entries `install --check` reports missing by hand.",
+            err=True,
+        )
     for hook_id in (*done.added, *done.resynced):
         typer.echo(f"wrote {hook_id} to {done.config.name}")
     for stage, activation in done.activation.items():

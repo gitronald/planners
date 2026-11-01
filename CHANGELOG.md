@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-01
+
+### Added
+
+- `planners block <NNN>` marks a draft or active plan blocked, refreshes the index, and
+  commits, in place of the hand edit the `update` skill described
+- `planners finish <NNN> --print-merge` prints the merge command for the session to run,
+  with the subject already formatted, and changes nothing
+- `planners add ... --parent <N> --nested --needs <letter>` (repeatable) writes the
+  subplan's `needs:` line
+
+### Changed
+
+- `planners activate` returns a blocked plan on the branch it records, after an earlier
+  activation, without the mainline guard, and logs `Reactivated`. The only route before
+  was the mainline, where the new activation entry conflicted with the branch's Log at
+  merge. Elsewhere a blocked plan is guarded as before
+- Requires pkgskills 0.6.3. A `planners-validate` entry that `planners install` adds now
+  says `stages: [pre-commit]`, so it no longer takes the config's `default_stages`.
+  Entries already in a config stay as they are
+
+### Fixed
+
+- `planners install` no longer breaks a valid `.pre-commit-config.yaml` (`repos: []`, a
+  key after `repos`, an unindented list), finds a hook entry however it is written instead
+  of adding a duplicate, and keeps each line's own ending. A config it cannot safely add
+  to is left alone with a note, and `install --check` says to add the entry by hand
+- The `close` skill said a `finish` stop leaves the state as it was. The steps before
+  the stop stay done, and it now says so. A branch that holds commits the base lacks,
+  the stop that comes after the worktree is removed and the base is pulled, is back in
+  its list of causes
+- The planners rule said `--no-worktree` records a worktree; it records the main checkout
+- `planners implemented` and `planners conclude`, re-run on a plan already `implemented`
+  or `done` at HEAD, committed any uncommitted edit to its file under their own subject.
+  They now refuse, and still finish a run whose own commit failed
+- `planners activate` and `planners set-pr` did the same on a plan HEAD already has active
+  on that branch, or with that URL. They now do nothing and leave the edit in place, and
+  `planners start` stops on it as a dirty tree
+- The merge command in `finish`'s stop message is now shell-quoted, so a branch name
+  holding `$(...)` is safe to paste. The subject prints in single quotes
+- `planners doc orchestrated-run` now covers a plan with no subplans, since the
+  `implement` skill sends any plan there
+
 ## [0.15.0] - 2026-11-01
 
 ### Added

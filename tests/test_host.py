@@ -83,6 +83,7 @@ def test_install_local_writes_stub_rule_hooks_and_merge_attribute(
     assert "entry: uv run planners validate" in validate
     assert "files: '^\\.planners/plans/[^/]+/plan\\.md$'" in validate
     assert "pass_filenames" not in validate
+    assert "stages: [pre-commit]" in validate
     assert "entry: uv run planners index ." in index
     assert "stages: [post-merge]" in index
     assert "always_run: true" in index
@@ -161,6 +162,22 @@ def test_reinstall_keeps_an_existing_hook_entry(box: Sandbox) -> None:
     assert text.count("planners-validate") == 1
     assert "name: custom" in text
     assert "planners-index" in text
+
+
+def test_install_leaves_a_config_it_cannot_safely_edit(box: Sandbox) -> None:
+    config = box.repo / ".pre-commit-config.yaml"
+    flow_list = "repos: [{repo: local, hooks: []}]\n"
+    config.write_text(flow_list, encoding="utf-8")
+
+    result = runner.invoke(app, ["install", "--local"])
+    assert result.exit_code == 0, result.output
+    assert config.read_text(encoding="utf-8") == flow_list
+    assert "left alone" in result.output
+    assert "wrote planners-validate" not in result.output
+
+    checked = runner.invoke(app, ["install", "--local", "--check"])
+    assert checked.exit_code == 0, checked.output
+    assert "add the entry by hand" in checked.output
 
 
 def test_check_passes_and_reports_hooks_without_gating(box: Sandbox) -> None:

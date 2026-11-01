@@ -1,11 +1,11 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: draft
-branch:
+status: done
+branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
-concluded:
-pr:
+concluded: 2026-11-01T11:05:28-08:00
+pr: https://github.com/gitronald/planners/pull/66
 ---
 
 # Mechanize the remaining by-hand lifecycle steps
@@ -34,8 +34,88 @@ them. Implement each with a test and a skill-text update that points at it.
    passes the letters through to the rendered subplan frontmatter, after `branch:`, and
    is absent when unspecified so existing scaffolds stay byte-identical.
 
+### Wording carried from 021
+
+**Done on `dev` ahead of this plan (see the Log), so nothing in this section remains.**
+
+021's end-to-end read of the rendered text found these wording problems. They did not
+justify a change of their own; they land here because this plan edits the same text. The
+last one is a wrong statement about `finish`, and the others change no instruction.
+
+- **`close` skill, the `gh pr ready` bullet.** It ends "stop before the merge (a draft
+  can't be merged), or the user can mark it ready by hand", which reads as if stopping
+  and the user's fix were alternatives. Make it say the session stops and the user can
+  mark the PR ready.
+- **Rule, *Generated Log entries*.** "`--worktree <path>` (repo-relative) or
+  `--no-worktree` records a worktree other than" the default, but `--no-worktree` records
+  the main checkout. Say so.
+- **`orchestrated-run` doc, the opening.** It describes a run over an umbrella's subplans,
+  while the `implement` skill sends any plan there. Add a line for a plan with no
+  subplans.
+- **`close` skill, *When `finish` stops*.** It says `finish` "leaves the state as it was",
+  and its list of causes no longer names a branch that holds commits the base lacks. That
+  stop comes after the worktree is removed and the base is checked out and pulled, so
+  those steps stay done. Say that the steps before the stop stay done and the one it
+  stopped on is left undone, and restore the missing cause, which `finish --help` still
+  lists.
+
 ### Out of scope
 
 - Any change to what the existing commands do without the new flag or command.
-- The upstream items 021 recorded: shared agent-orchestration guidance, and the
-  permission-profile explanation that belongs to pkgskills.
+- Anything upstream. The two items 021 first recorded as upstream stayed in this package,
+  and 021's Log settles both: the orchestration guidance became `planners doc
+  orchestrated-run`, and the permission-profile explanation became a trim that points at
+  `planners permissions --help`.
+
+## Log
+
+- **2026-11-01T10:43:54-08:00** — Fixed the four items under *Wording carried from 021* directly on `dev`, at the user's direction, ahead of this plan (`d05f48b`), so none remains for it. Items 1 to 3 are unchanged and still open.
+  - The same wrong claim about a stop was also in the docstrings of `planners/finish.py`; those are corrected too.
+  - Added tests in `2a4dd77`: a stop on an origin branch ahead of the base keeps the worktree removal and the pull, and a re-run stops at the same place; the `pre-worktree-remove` hook runs inside the worktree before removal, and a failing hook stops `finish` with everything untouched. That hook had no test before.
+  - Checks: 734 tests passed, coverage 94.94%, ruff, ruff format, and pyrefly clean, run before these commits on the same tree.
+  - Not released: the fixes are in `[Unreleased]`, so the published 0.15.0 still carries the old text.
+- **2026-11-01T10:46:44-08:00** — Activated.
+  - Branch: `feature/022-lifecycle-mechanizations`
+  - Base: `dev` at `726fb65`
+  - Worktree: `.worktrees/022-lifecycle-mechanizations`
+  - PR: pending
+- **2026-11-01T10:53:46-08:00** — PR opened: https://github.com/gitronald/planners/pull/66
+- **2026-11-01T10:53:48-08:00** — Implemented the three items, one commit each plus a docs commit: `2997b33` (`block`), `9885496` (`finish --print-merge`), `728a090` (`add --needs`), `c123f58` (rule, README, changelog).
+  - Checks at `c123f58`: 769 tests passed, coverage 95.03%, ruff, ruff format, and pyrefly clean. `dev` had not moved, so no merge was needed.
+  - `block` has no mainline guard, as the spec names none. It commits where it runs, like `log` and `retire`. `activate` returns a blocked plan only on the mainline, so a plan blocked on its feature branch reads `active` on the mainline and cannot return without `--allow-branch`. The by-hand flow had the same trap. The skill and the rule say to block on the mainline, and a test records the behavior.
+  - `--print-merge` reads the PR number from the plan's URL and makes no network call, taking "without fetching" literally. So it does not check the PR's state, and a fork PR's subject lacks the `<owner>/` that `finish`'s stop message gets from `gh`. The `close` skill says to add it.
+  - `finish`'s stop message still double-quotes its subject while `--print-merge` uses `shlex.join`. Changing the stop message is out of scope here, so a branch name holding `$(...)` stays unsafe to paste from that message.
+  - `--needs` refuses a malformed letter, the subplan's own letter, and a repeat. It warns, without refusing, on a letter with no subplan yet, since the `add` skill's order allows naming one later.
+  - `pr_number` moved to `utils.py`, so `index.py` and `finish` share one parser.
+- **2026-11-01T10:53:54-08:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-11-01T10:59:03-08:00** — Reactivated: back to active after review.
+- **2026-11-01T11:05:43-08:00** — Scope widened at the user's direction at the review gate: `activate` changed, which the plan's Out of scope excluded, because the review showed `block` could not be used cleanly without it. Commits since the last entry: `ef88873`, `0a441a0`, `6710ed4`.
+  - `activate` returns a blocked plan without the mainline guard on the branch it records, after an earlier activation, and logs `Reactivated: back to active after a block.` Other blocked plans stay guarded, and the skill and rule now say to block on the feature branch. This revises the earlier entry's advice to block on the mainline.
+  - Review follow-up, first pass at medium effort on the PR. Raised: a re-run of `block` committed an unrelated edit to a plan already blocked at HEAD; `add --needs` could complete a cycle; blocking on the mainline conflicted at merge (found with a scratch-repo probe). All three actioned, each with tests.
+  - Review follow-up, second pass on the `activate` commit. Raised: the return printed the base-push report, listing branch commits as "other". Actioned, with a test.
+  - Conscious no-ops: `_print_merge` and the stop message each spell out the `gh pr merge` argv, since sharing one changes the stop message's quoting; `block` and `implemented` each carry a resume check, and `implemented` keeps the weaker one, so an uncommitted edit to an `implemented` plan can still commit under its subject.
+  - Rejected on review: the fork subject in `--print-merge` and its lack of a done check are both intended.
+  - Checks at `6710ed4`: 778 tests passed, coverage 95.07%, ruff, ruff format, and pyrefly clean.
+  - Not verified: `--print-merge` against a real fork PR.
+- **2026-11-01T11:05:45-08:00** — Implemented: 12 commits ahead of `dev`.
+- **2026-11-01T11:24:00-08:00** — Closed two gaps the retrospective and the review left, directly on `dev` at the user's direction: `3168b8c` and `4edc024`.
+  - `implemented` and `conclude` now resume only when HEAD's copy lacks the status, as `block` does, and otherwise refuse. `_status_at_head` reads the frontmatter directly, so it covers nested subplans too. `conclude` was found while looking at `implemented`; the retrospective did not name it.
+  - `finish`'s stop message and `--print-merge` share `_pr_merge_command`, which shell-quotes the command, so the review's no-op on the duplicated command no longer stands. The stop message's subject now prints in single quotes, and a fork PR keeps its owner there.
+  - Checks at `4edc024`: 784 tests passed, coverage 95.03%, ruff, ruff format, and pyrefly clean. Five of the new or updated tests failed against the previous code.
+  - Not pushed, and not released: the fixes are in `[Unreleased]`.
+- **2026-11-01T11:26:41-08:00** — Closed the same gap in `activate` and `set-pr`, directly on `dev` at the user's direction: `108de8c`.
+  - A re-run after an uncommitted edit committed that edit under `plan [activate]` or `plan [pr]`. Reproduced in a scratch repo first.
+  - Both now compare the field they write with HEAD's copy. When HEAD already has it, they do nothing and leave the edit in place, and they still finish a run whose own commit failed.
+  - `start` stops on such an edit as a dirty tree. It used to pass the base check and let `activate` commit the edit.
+  - Checks at `108de8c`: 788 tests passed, ruff, ruff format, and pyrefly clean. The four new test cases failed against the previous code.
+  - Not pushed, and not released: the fixes are in `[Unreleased]`.
+
+## Retrospective
+
+- The three items went as specified, and most of the work was in what `block` exposed. Mechanizing a by-hand step showed that its return path did not work for a plan with a live branch, a gap the prose had hidden.
+- The Out of scope line held until the review showed the new command could not be used cleanly, and the user widened it at the gate. The spec above stays as written, and the Log records the change.
+- A scratch-repo probe of the whole round trip found the merge conflict. The finders and the unit tests did not, since each step passed on its own. Probe a lifecycle command across a merge, not only at its own exit.
+- Advice in a skill is a claim to test. The first text told sessions to block on the mainline, the one place that led to the conflict.
+- `implemented` keeps the weaker resume check that the review fixed in `block`. It commits an unrelated edit to an `implemented` plan under its own subject when re-run, which is worth changing when that command is next touched.
+- Applying scripted edits twice duplicated a sentence in the rule, and reading the full diff before the first commit caught it.
+

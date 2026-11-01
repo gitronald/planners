@@ -761,3 +761,21 @@ def test_activate_retries_a_commit_that_failed(
         tmp_path, ["log", "--oneline"]
     )
     assert _unredirected(tmp_path, ["status", "--porcelain"]).strip() == ""
+
+
+def test_activate_leaves_an_edit_to_a_plan_already_active_at_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_git(tmp_path, branch="main")
+    _commit(tmp_path)
+    plan = _seed_plan(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["activate", "005"]).exit_code == 0
+    head = _unredirected(tmp_path, ["rev-parse", "HEAD"])
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nAn edit.\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" in result.output
+    assert _unredirected(tmp_path, ["rev-parse", "HEAD"]) == head
+    assert "An edit." in plan.read_text(encoding="utf-8")

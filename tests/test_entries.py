@@ -71,6 +71,8 @@ def test_one_line_entries() -> None:
         f"- **{_WHEN}** — PR opened: https://x/pull/2"
     )
     assert entries.reactivation_entry(_WHEN).startswith(f"- **{_WHEN}** — Reactivated")
+    assert entries.reactivation_entry(_WHEN).endswith("after review.")
+    assert entries.reactivation_entry(_WHEN, "a block").endswith("after a block.")
     assert entries.implemented_entry(_WHEN, 3, "dev") == (
         f"- **{_WHEN}** — Implemented: 3 commits ahead of `dev`."
     )
