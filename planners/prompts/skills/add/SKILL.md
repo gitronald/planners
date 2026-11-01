@@ -141,10 +141,12 @@ the command fills them in.
 
 - **The execution order is a one-line dependency chain** in the umbrella, e.g.
   `a -> (b, c, d) -> e`. To make it data, give each subplan an optional `needs:`
-  list of the letters it depends on. It is added by hand, as a line in the
-  subplan's frontmatter after `branch:` (`needs: [a]`); `add` has no flag for
-  it. `{cli} subplans <N>` prints the chain those lists describe and fails on a
-  cycle. A retired subplan is left out of the chain, since it is not run.
+  list of the letters it depends on. `{cli} add ... --parent <N> --nested
+  --needs <letter>` (repeatable) writes it as a line in the subplan's frontmatter
+  after `branch:` (`needs: [a]`). For a subplan that already exists, edit that
+  line by hand. `{cli} subplans <N>` prints the chain those lists describe and
+  fails on a cycle or on a letter with no subplan. `add` refuses a `--needs` that
+  closes a cycle and warns on a letter with no subplan yet. A retired subplan is left out of the chain, since it is not run.
 - **A subplan is one node in the order.** An order that needs part of one
   subplan before another and the rest after it, e.g. `c (1-2) -> b -> c (3)`,
   is a sign that `c` is two subplans. Splitting by workstream reads well and

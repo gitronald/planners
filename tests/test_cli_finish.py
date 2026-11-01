@@ -637,3 +637,108 @@ def test_merge_command_quotes_a_hostile_branch_name() -> None:
         "-m",
         f"merge: {branch}",
     ]
+
+
+def _state(scene: Scene) -> tuple[str, ...]:
+    """Everything ``--print-merge`` promises not to touch."""
+    return (
+        git_out(scene.root, "for-each-ref"),
+        git_out(scene.root, "status", "--porcelain"),
+        git_out(scene.root, "worktree", "list"),
+        git_out(scene.root, "ls-remote", "origin"),
+    )
+
+
+def test_print_merge_prints_the_gh_command_and_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    before = _state(scene)
+    # The main checkout's copy has no `pr:`, so this reads the branch's copy.
+    result = scene.finish("--print-merge")
+    assert result.exit_code == 0, result.output
+    assert shlex.split(result.stdout) == [
+        "gh",
+        "pr",
+        "merge",
+        "7",
+        "--merge",
+        "--subject",
+        f"merge: PR #7 - {_BRANCH}",
+    ]
+    assert scene.calls() == []
+    assert _state(scene) == before
+    _assert_untouched(scene)
+
+
+def test_print_merge_fetches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    # A remote that cannot be reached fails any fetch.
+    git(scene.root, "remote", "set-url", "origin", str(tmp_path / "gone.git"))
+    result = scene.finish("--print-merge")
+    assert result.exit_code == 0, result.output
+    assert "gh pr merge 7" in result.stdout
+
+
+def test_print_merge_from_the_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    monkeypatch.chdir(scene.worktree)
+    result = scene.finish("--print-merge")
+    assert result.exit_code == 0, result.output
+    assert "gh pr merge 7" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("pr", "flags"), [(_URL, ("--no-pr",)), (None, ()), ("", ("--no-pr",))]
+)
+def test_print_merge_without_a_pr_prints_the_local_merge(
+    pr: str | None,
+    flags: tuple[str, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scene = Scene(tmp_path, monkeypatch, pr=pr)
+    before = _state(scene)
+    result = scene.finish("--print-merge", *flags)
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == _merge_command(_BRANCH)
+    assert _state(scene) == before
+
+
+def test_print_merge_cuts_a_long_subject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch)
+    long_branch = "feature/" + "x" * 80
+    git(scene.root, "branch", "-m", _BRANCH, long_branch)
+    plan = scene.root / ".planners" / "plans" / "005-my-thing" / "plan.md"
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace(_BRANCH, long_branch),
+        encoding="utf-8",
+    )
+    result = scene.finish("--print-merge")
+    assert result.exit_code == 0, result.output
+    subject = shlex.split(result.stdout)[-1]
+    assert subject == merge_subject(long_branch, 7)
+    assert len(subject) == 60
+    assert subject.endswith("...")
+
+
+@pytest.mark.parametrize(
+    ("pr", "message"),
+    [
+        ("", "records no PR"),
+        ("https://example.com/owner/repo/merge_requests/7", "names no PR number"),
+    ],
+)
+def test_print_merge_stops_without_a_usable_pr(
+    pr: str, message: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch, pr=pr)
+    result = scene.finish("--print-merge")
+    assert result.exit_code == 1
+    assert message in result.output

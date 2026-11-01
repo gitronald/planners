@@ -88,10 +88,12 @@ planners activate <NNN>                  # flip a plan to active, fill branch:, 
 planners set-pr <NNN> <url>              # record a plan's PR, log it, refresh the index, and commit
 planners implemented <NNN>               # mark pushed work implemented, log it, and take the PR out of draft
 planners log <NNN> "<note>"              # append a Log entry stamped from the clock, and commit (- reads stdin)
+planners block <NNN>                     # mark a draft or active plan blocked, refresh the index, and commit
 planners conclude <NNN>                  # close a plan as done: concluded from git, null fields, index, commit
 planners finish <NNN>                    # after the merge: remove the worktree, pull, delete the branch, re-point hooks
+planners finish <NNN> --print-merge      # print the merge command for the session to run; changes nothing
 planners retire <NNN>                    # close a plan as retired (--into <NNN>: where the work went)
-planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under an umbrella
+planners add <slug> --parent <NNN> --nested   # scaffold a nested subplan under an umbrella (--needs <letter>: what it depends on)
 planners subplans <NNN>                  # list nested subplans; fail if the umbrella's table disagrees
 planners review                          # report what changed around each open plan (-s all, --json); reads only
 planners base                            # print the repo's mainline branch (--all: every one)

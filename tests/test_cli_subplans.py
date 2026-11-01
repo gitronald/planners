@@ -605,3 +605,112 @@ def test_subplans_prints_no_order_when_only_a_retired_subplan_has_needs(
     result = runner.invoke(app, ["subplans", "012", "--write"])
     assert result.exit_code == 0, result.output
     assert "order:" not in result.output
+
+
+def test_add_nested_needs_renders_after_branch_in_the_order_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(
+        tmp_path, subplans={"a-one.md": _subplan(), "b-two.md": _subplan()}
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "add",
+            "three",
+            "--parent",
+            "12",
+            "--nested",
+            "--needs",
+            "b",
+            "--needs",
+            "a",
+            "--no-commit",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "warning" not in result.output
+    text = (plan_dir / "subplans" / "c-three.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nstatus: draft\nbranch:\nneeds: [b, a]\n---\n")
+    listed = runner.invoke(app, ["subplans", "012", "--write"])
+    assert listed.exit_code == 0, listed.output
+    assert "needs: b, a" in listed.output
+
+
+def test_add_nested_without_needs_writes_no_needs_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    args = ["add", "one", "--parent", "12", "--nested", "--no-commit"]
+    assert runner.invoke(app, args).exit_code == 0
+    text = (plan_dir / "subplans" / "a-one.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nstatus: draft\nbranch:\n---\n")
+
+
+def test_add_nested_warns_about_a_needed_letter_with_no_subplan_yet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app, ["add", "one", "--parent", "12", "--nested", "--needs", "b", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "--needs b: no subplan has that letter yet" in result.output
+    assert "needs: [b]" in (plan_dir / "subplans" / "a-one.md").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    ("needs", "message"),
+    [
+        (["B"], "must be a single letter"),
+        (["a,b"], "must be a single letter"),
+        (["]\nstatus: done"], "must be a single letter"),
+        (["c"], "names the subplan itself"),
+        (["a", "a"], "lists a letter twice"),
+    ],
+)
+def test_add_nested_refuses_bad_needs_and_writes_nothing(
+    needs: list[str],
+    message: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan_dir = _repo(
+        tmp_path, subplans={"a-one.md": _subplan(), "b-two.md": _subplan()}
+    )
+    monkeypatch.chdir(tmp_path)
+    before = _snapshot(plan_dir)
+    flags = [part for need in needs for part in ("--needs", need)]
+    result = runner.invoke(app, ["add", "three", "--parent", "12", "--nested", *flags])
+    assert result.exit_code == 1
+    assert message in result.output
+    assert _snapshot(plan_dir) == before
+
+
+def test_needs_applies_to_nested_subplans_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["add", "x", "--needs", "a", "--no-commit"])
+    assert result.exit_code == 1
+    assert "--needs applies to --nested subplans only" in result.output
+
+
+def test_add_nested_refuses_needs_that_close_a_cycle_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_dir = _repo(tmp_path, subplans={"a-one.md": _subplan("draft", "needs: [b]\n")})
+    monkeypatch.chdir(tmp_path)
+    before = _snapshot(plan_dir)
+    result = runner.invoke(
+        app, ["add", "two", "--parent", "12", "--nested", "--needs", "a", "--no-commit"]
+    )
+    assert result.exit_code == 1
+    assert "needs form a cycle among: a, b" in result.output
+    assert _snapshot(plan_dir) == before

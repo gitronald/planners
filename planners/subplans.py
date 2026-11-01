@@ -21,6 +21,7 @@ Everything here is a pure transform. The CLI does the reading and writing.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from planners.body import fenced_lines, insert_after_first_subsection
@@ -201,14 +202,21 @@ class SubplanMetadata:
         return errors
 
 
-def render_subplan(title: str, umbrella_title: str, branch: str = "") -> str:
-    """A new subplan's text: minimal frontmatter, a back-link, and empty sections."""
+def render_subplan(
+    title: str, umbrella_title: str, branch: str = "", needs: Sequence[str] = ()
+) -> str:
+    """A new subplan's text: minimal frontmatter, a back-link, and empty sections.
+
+    The ``needs:`` line is written only when there are letters to put in it.
+    """
     branch_line = f"branch: {branch}" if branch else "branch:"
+    needs_line = f"needs: [{', '.join(needs)}]\n" if needs else ""
     back = umbrella_title or "the umbrella plan"
     return (
         "---\n"
         "status: draft\n"
         f"{branch_line}\n"
+        f"{needs_line}"
         "---\n"
         "\n"
         f"# {title}\n"
