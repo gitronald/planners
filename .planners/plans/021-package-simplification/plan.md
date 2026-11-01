@@ -1,7 +1,7 @@
 ---
 id: 21
 slug: package-simplification
-status: implemented
+status: active
 branch: feature/021-package-simplification
 created: 2026-10-31T19:48:11-07:00
 concluded:
@@ -79,3 +79,4 @@ Two kinds of cut are in scope:
     - Scope: an exception to this plan's 'no new subcommands' line, made at the user's direction. `doc` comes from pkgskills and adds no command code here beyond the declaration and the repository-guard exemption. The text moved unchanged apart from heading levels and one cross-reference; the implement skill gained a pointer that applies to any plan, not only an umbrella.
     - Checks: 731 tests passed, coverage 94.88%, ruff and pyrefly clean, and a built wheel carries the doc.
 - **2026-11-01T10:04:01-08:00** — Implemented: 12 commits ahead of `dev`.
+- **2026-11-01T10:12:52-08:00** — Reactivated: back to active after review.
