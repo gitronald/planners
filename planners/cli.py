@@ -1388,6 +1388,11 @@ def _activate(
         [str(path.relative_to(root)), str(readme.relative_to(root))],
     )
     current = _current_branch(root)
+    if from_block:
+        # The report below sorts what a push of the base carries. On the plan's own
+        # branch every commit is the plan's, so it would flag ordinary work as other.
+        typer.echo(f"committed the return from the block on {current}")
+        return
     typer.echo(f"committed the activation on {current}")
     # The skill pushes next, and that push carries every unpushed commit on the
     # base. Count and sort them here so the skill reads a fact instead of sorting

@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from planners.cli import app
-from tests.helpers import commit_all, git, git_out, init_git
+from tests.helpers import bare_remote, commit_all, git, git_out, init_git
 
 runner = CliRunner()
 
@@ -179,6 +179,7 @@ def test_block_and_activate_on_the_plans_branch_merge_without_a_conflict(
     assert "status: active\n" in text
     assert "Reactivated: back to active after a block." in text
     assert text.count("Activated.") == 1
+    assert "committed the return from the block on feature/005" in result.output
     git(tmp_path, "checkout", "-q", "main")
     git(tmp_path, "merge", "-q", "--no-ff", "feature/005-my-thing", "-m", "merge")
     assert git_out(tmp_path, "status", "--porcelain") == ""
@@ -262,3 +263,20 @@ def test_block_resumes_over_a_head_copy_that_does_not_parse(
     result = runner.invoke(app, ["block", "005"])
     assert result.exit_code == 0, result.output
     assert "committing the earlier change" in result.output
+
+
+def test_activate_from_a_block_does_not_report_branch_work_as_other_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _activated_on_its_branch(tmp_path, monkeypatch)
+    remote = tmp_path.parent / "remote.git"
+    bare_remote(tmp_path, remote)
+    git(tmp_path, "push", "-qu", "origin", "feature/005-my-thing")
+    (tmp_path / "work.txt").write_text("work\n", encoding="utf-8")
+    commit_all(tmp_path, "add code")
+    assert runner.invoke(app, ["block", "005"]).exit_code == 0
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "other" not in result.output
+    assert "add code" not in result.output
+    assert "status: active\n" in path.read_text(encoding="utf-8")
