@@ -800,7 +800,7 @@ def _add_nested(
     taken = {path.name[0]: path.name for path in _subplan_files(umbrella.parent)}
     if letter is None:
         try:
-            letter = subplans_mod.next_letter(list(taken))
+            letter = next_sub(list(taken))
         except ValueError as exc:
             _err(str(exc))
             raise typer.Exit(1) from None

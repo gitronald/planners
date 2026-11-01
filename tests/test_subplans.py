@@ -10,7 +10,6 @@ from planners.subplans import (
     SubplanMetadata,
     check_set,
     is_subplan_filename,
-    next_letter,
     phases,
     render_order,
     render_subplan,
@@ -164,21 +163,6 @@ def test_render_subplan_without_a_branch_or_umbrella_title() -> None:
     text = render_subplan("Step", "")
     assert "\nbranch:\n" in text
     assert "Part of [the umbrella plan](../plan.md)." in text
-
-
-def test_next_letter_starts_at_a_and_follows_the_highest() -> None:
-    assert next_letter([]) == "a"
-    assert next_letter(["a"]) == "b"
-    # A gap is not filled: letters follow creation order.
-    assert next_letter(["b", "c"]) == "d"
-    assert next_letter(["a", "b", "d"]) == "e"
-    # Malformed entries do not count toward the maximum.
-    assert next_letter(["", "zz", "c"]) == "d"
-
-
-def test_next_letter_raises_when_exhausted() -> None:
-    with pytest.raises(ValueError, match="exhausted"):
-        next_letter(["z"])
 
 
 def test_phases_group_independent_subplans() -> None:

@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 
 from planners.body import fenced_lines, insert_after_first_subsection
-from planners.metadata import Status, extract_title, next_sub
+from planners.metadata import Status, extract_title
 from planners.utils import parse_frontmatter, split_frontmatter
 
 __all__ = [
@@ -36,7 +36,6 @@ __all__ = [
     "SubplanMetadata",
     "check_set",
     "is_subplan_filename",
-    "next_letter",
     "phases",
     "render_order",
     "render_subplan",
@@ -220,17 +219,6 @@ def render_subplan(title: str, umbrella_title: str, branch: str = "") -> str:
         "\n"
         "## Log\n"
     )
-
-
-def next_letter(existing: list[str]) -> str:
-    """The next free letter: one past the highest taken, or ``a`` when none is.
-
-    Letters follow creation order and no letter is held back for a kind of
-    subplan, so an investigation takes the next letter like any other step.
-    The algorithm is :func:`planners.metadata.next_sub`, which lettered sibling
-    plans use; nested subplans share it rather than carry a copy.
-    """
-    return next_sub(existing)
 
 
 def phases(subplans: list[SubplanMetadata]) -> list[list[str]]:
