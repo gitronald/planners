@@ -34,11 +34,8 @@ layout until it is migrated to `.planners/`.
 
 The report holds:
 
-- `now`: the command's own timestamp. **Stamp every review entry with it**, or
-  write the entry with `{cli} log <NNN> "<entry>" --no-commit`, which stamps it
-  from the clock and leaves the commit to `review --commit`. Never type a
-  timestamp from memory. For any entry written outside a review, prefer
-  `{cli} log`.
+- `now`: the command's own timestamp, for the report. Entries are written
+  with `{cli} log`, which stamps them itself (step 4); never type a timestamp.
 - `summary`: one row per status (plans, commits that touched those plans,
   earliest `created`, latest `concluded`, newest commit date) and a `total`.
   It covers every status whatever was selected, so show it to the user first:
@@ -105,19 +102,23 @@ review never reopens a closed plan.
 
 ### 4. Write the Log entries
 
-Every reviewed plan that is not active, implemented, or blocked gets one entry, appended to
-its `## Log` (create the section before `## Handoff` or `## Retrospective` if
-absent). It opens with the fixed marker, which the next review reads as the
-start of its window:
+Every reviewed plan that is not active, implemented, or blocked gets one entry,
+written with `{cli} log`, which stamps it from the clock, places it under
+`## Log` (creating the section when absent), and leaves the commit to
+`review --commit`:
 
-```markdown
-- **<now>** — Review: <verdict>. <what changed since created or the last
-  review, and the evidence: commit SHAs, function names, test counts>
+```bash
+{cli} log <NNN> - --no-commit <<'EOF'
+Review: <verdict>. <what changed since created or the last review, and the
+evidence: commit SHAs, function names, test counts>
+EOF
 ```
 
-The verdict is one of the five above, lowercase, followed by a period. For a
-narrowed plan, the entry states the remaining scope. Never edit the plan's
-`## Plan` section or its frontmatter: the scope change lives in the Log.
+The note opens with the fixed marker `Review: <verdict>.`, which the next review
+reads as the start of its window; the verdict is one of the five above,
+lowercase, followed by a period. For a narrowed plan, the entry states the
+remaining scope. Never edit the plan's `## Plan` section or its frontmatter: the
+scope change lives in the Log.
 
 ### 5. Present, then commit
 

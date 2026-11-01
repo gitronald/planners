@@ -21,7 +21,7 @@ activate on the mainline and no branch to create, so skip the steps below and
 follow *Implementing one nested subplan*.
 
 `start` shells out to git. If commands prompt for permission every time,
-`{cli} permissions` writes an allow-rule profile (default `assist`) that
+`{cli} permissions --apply` writes an allow-rule profile (default `assist`) that
 pre-authorizes the reversible ones — see *Automation levels* in the planners rule.
 
 ## Steps
@@ -48,20 +48,11 @@ second time (git refuses a branch that is already checked out).
 already records one keeps it). `--worktree <path>` (repo-relative) or `--no-worktree`
 puts the work somewhere other than `.worktrees/<NNN>-<slug>`.
 
-Each step reads its result first and prints one line, `done`, `ran`, or `skipped`,
-with the reason:
-
-| Step | What it settles |
-|---|---|
-| `base` | HEAD on the mainline, tree clean, not behind its upstream |
-| `activate` | `status: active`, `branch:`, the Log entry, the index, the commit |
-| `ignore` | the worktree path is ignored (`.worktrees/` committed when missing) |
-| `push-base` | nothing on the base waits for a push |
-| `branch` | the branch exists, from the base's tip or its copy on `origin` |
-| `worktree` | the branch is checked out at the recorded path |
-| `setup` | `.planners/hooks/post-worktree` ran, or else `.claude/` copied and `uv sync` run |
-| `push` | the branch is on `origin` with tracking set |
-| `pr` | a draft PR is open and recorded with `set-pr` |
+Each step (`base`, `activate`, `ignore`, `push-base`, `branch`, `worktree`,
+`setup`, `push`, `pr`) reads its result first and prints one line, `done`,
+`ran`, or `skipped`, with what it settled. `setup` runs
+`.planners/hooks/post-worktree` when the repo has one, else copies `.claude/`
+and runs `uv sync`.
 
 **After any interruption, run it again.** The output is the resume record, so a lost
 VM, a refused command, or a context reset costs one re-run. Do not edit the
@@ -197,13 +188,9 @@ asks for more work returns the plan with `{cli} activate {NNN}`, run on the
 feature branch, which logs `Reactivated`; mark it implemented again when the
 follow-up is pushed.
 
-When the plan is closed (`/planners close`) and its branch is merged, remove the
-worktree: `git worktree remove .worktrees/<NNN>-<slug>`. Worktrees share the
-main repo's `.git/hooks/` — a pre-commit hook installed from inside the worktree
-(`uv run pre-commit install`) embeds the worktree's `.venv` python as its
-`INSTALL_PYTHON`, so once the worktree is removed the hook fails on every later
-commit. `/planners close` re-installs it from the main checkout
-(`uv sync && uv run pre-commit install`) as part of cleanup.
+The worktree stays until the plan closes: `{cli} finish`, run by `/planners
+close`, removes it, deletes the branch, and re-points any hook installed from
+inside it.
 
 ## Implementing one nested subplan
 

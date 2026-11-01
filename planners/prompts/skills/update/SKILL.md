@@ -148,12 +148,9 @@ so from a feature branch it is not there yet. The order is:
    finish each, or retire it first (`{cli} retire {NNN}<letter>`).
 
 **Handoff** — for an effort that spans sessions, keep a `## Handoff` section
-between Log and Retrospective. It is **rewritten in place**, the one exception
-to append-only, because it describes the present and the Log keeps the history.
-It holds the state of each piece (including what is uncommitted or unpushed),
-the open questions (numbered once, never renumbered, each answer and its date
-beside its question), the questions settled or handed to another plan, what is
-not verified, and the order of the remaining work with who each item waits on.
+between Log and Retrospective, **rewritten in place**: the one exception to
+append-only, because it describes the present and the Log keeps the history.
+*Handoff* in the planners rule lists what it holds.
 
 **Close** — defer to `/planners close`, which runs the review gate and merge.
 

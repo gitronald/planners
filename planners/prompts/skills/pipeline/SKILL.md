@@ -105,9 +105,6 @@ pause in an otherwise unattended run.
 4. Mark it implemented: `{cli} implemented {NNN}`, then `git push`. That takes
    the PR out of draft for the review gate.
 5. Run **close** (`{cli} skill close`); pause at the review gate for approval.
-6. On approval, finish `close` through its step 6: commit and push the closing
-   edit, then, from the main checkout, run `gh pr merge` and `{cli} finish {NNN}`.
-   The session runs these itself. A step goes to the user only after a call to
-   it was refused, quoting the refusal, and never on the assumption that it
-   would be.
+6. On approval, finish `close` through its step 6: the closing commit, the
+   merge, and `{cli} finish {NNN}`, which the session runs itself.
 7. Confirm the plan's `status` is `done` (or `retired`) and report what shipped.
