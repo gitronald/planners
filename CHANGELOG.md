@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-31
+
 ### Added
 
 - `planners start <NNN>` runs a plan's mechanical start-up steps in order: check the
