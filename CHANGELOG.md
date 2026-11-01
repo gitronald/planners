@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-31
+
+### Added
+
+- `planners start <NNN>` runs a plan's mechanical start-up steps in order: check the
+  base, activate, ignore the worktree directory, create the branch and worktree, set
+  the worktree up, and open the draft PR. Each prints `done`, `ran`, or `skipped` with
+  the reason, and a re-run resumes where the last one stopped. It publishes no code:
+  at each push it stops and prints the command to run, so the permission profile
+  still governs it
+
+### Changed
+
+- Requires pkgskills 0.6.0. Upgrading needs no `--force`: a plain `planners install`
+  refreshes files from any earlier release, and `install --check` exits 1 until it
+  has run. That covers the stamp planners wrote before it adopted pkgskills, in either
+  mode, so edits under that stamp are overwritten, a global install removes the repo's
+  local copies, and an install removes a stamped `plan-files.md` from the scope it
+  writes to. A file with any other stamp, or none, is still refused without `--force`
+- `planners install` also writes the skill stub for Codex, at
+  `.agents/skills/planners/SKILL.md` under the home directory or the repo. The stamp
+  moves into the frontmatter `metadata`, so the rule file gains a frontmatter block
+- The implement skill runs `planners start` instead of walking through its steps in
+  prose
+- `planners` refuses to run outside a git repository: it exits 1, changes nothing,
+  and says so. A stray empty `.git` does not count. `install` is refused in every
+  form, so a first install has to run inside a repository, and `install --check`
+  no longer sends a session outside one to a repair that left `.gitattributes` and
+  `.pre-commit-config.yaml` behind. `skill`, `rule`, `schema`, `validate`,
+  `permissions`, and `--help` run anywhere, and `index`, `base`, and `remote` check
+  the path they are given
+- `planners activate` defaults the branch to `feature/<NNN>-<slug>`, so its
+  suffix matches the plan's worktree, `.worktrees/<NNN>-<slug>`. It warns when
+  `--branch` is ignored because the plan already records a branch
+- `planners log` refuses a note that names an absolute or home-directory path
+  (`/tmp/probe.py`, `~/scratch`, `C:\...`), so the append-only Log never needs a
+  rewrite to remove one; `--allow-local-paths` overrides
+- The implement skill says when to merge the base: once, before the final
+  checks, with the commit they ran at named in the Log
+- `planners validate` fails a plan whose `concluded` is earlier than its
+  `created`, comparing instants across UTC offsets. `planners conclude` and
+  `planners retire` write `created` when the date they read from git is older
+  than the plan, so a plan written after its work can still close
+
+### Fixed
+
+- `planners log` refreshes a stale tracked index and commits it with the entry.
+  A local merge's union-duplicated row, or an uncommitted `post-merge` repair,
+  previously made the validate hook reject the Log commit
+
 ## [0.13.4] - 2026-10-20
 
 ### Changed

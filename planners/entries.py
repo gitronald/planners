@@ -19,21 +19,40 @@ from planners.body import fenced_lines, section_span
 
 __all__ = [
     "NO_WORKTREE",
+    "WORKTREES_DIR",
     "activation_entry",
     "default_worktree",
     "implemented_entry",
+    "local_paths",
     "log_entry",
     "pr_entry",
     "reactivation_entry",
     "recorded_base",
+    "recorded_worktree",
     "worktree_error",
 ]
 
 # What the Worktree field says when the work happens in the main checkout.
 NO_WORKTREE = "none (main checkout)"
 
+# The directory a default worktree lives under.
+WORKTREES_DIR = ".worktrees"
+
 # The base branch as the activation entry records it: "- Base: `dev` at `abc1234`".
 _BASE_RE = re.compile(r"^\s*-\s+Base:\s+`([^`]+)`")
+
+# The worktree as the same entry records it: a path in backticks, or NO_WORKTREE.
+_WORKTREE_RE = re.compile(r"^\s*-\s+Worktree:\s+(.+?)\s*$")
+
+# A path that names one machine: absolute POSIX with at least two segments
+# (`/tmp/x`, not a bare `/planners`), home-relative (`~/x`), or a Windows drive
+# (`C:\x`). The lookbehinds keep a URL's path (`host/a/b`, `https://`) and a
+# word with a slash (`and/or`, `feature/x`) out.
+_LOCAL_PATH_RE = re.compile(
+    r"(?<![\w.~:/\\-])/[\w.@+-]+/[^\s`'\"()<>\[\]]*"
+    r"|(?<![\w/])~/[^\s`'\"()<>\[\]]+"
+    r"|(?<![\w])[A-Za-z]:[\\/][^\s`'\"()<>\[\]]*"
+)
 
 
 def _stamp(when: str, sentence: str) -> str:
@@ -47,7 +66,7 @@ def default_worktree(prefix: str, slug: str) -> str:
     ``dependency-apply`` works in ``.worktrees/026-dependency-apply`` whatever
     its branch is called, and the worktree names the plan it belongs to.
     """
-    return f".worktrees/{prefix}-{slug}"
+    return f"{WORKTREES_DIR}/{prefix}-{slug}"
 
 
 def worktree_error(path: str) -> str | None:
@@ -147,13 +166,23 @@ def log_entry(when: str, note: str) -> str:
     )
 
 
-def recorded_base(text: str) -> str | None:
-    """The base branch the last activation entry in ``text``'s Log recorded.
+def local_paths(note: str) -> list[str]:
+    """The machine-specific paths ``note`` names, in order, each once.
+
+    The same rule :func:`worktree_error` applies to one path, run over free text:
+    a plan is a shared record, so an absolute or home-directory path in it names
+    a single machine.
+    """
+    return list(dict.fromkeys(_LOCAL_PATH_RE.findall(note)))
+
+
+def _recorded(text: str, pattern: re.Pattern[str]) -> str | None:
+    """The first group of ``pattern``'s last match in ``text``'s Log.
 
     Only the ``## Log`` section is read, and nothing inside a code fence, so a
     spec that shows an example entry is not taken for the record. The last entry
     wins, so a plan activated twice (a draft reopened after it was set aside)
-    reports the base its current work came from. ``None`` when there is no entry.
+    reports what its current work came from. ``None`` when there is no entry.
     """
     span = section_span(text, "Log")
     if span is None:
@@ -161,7 +190,21 @@ def recorded_base(text: str) -> str | None:
     lines = text.splitlines()[span[0] : span[1]]
     found: str | None = None
     for line, fenced in zip(lines, fenced_lines(lines), strict=True):
-        match = None if fenced else _BASE_RE.match(line)
+        match = None if fenced else pattern.match(line)
         if match:
             found = match.group(1)
     return found
+
+
+def recorded_base(text: str) -> str | None:
+    """The base branch the last activation entry in ``text``'s Log recorded."""
+    return _recorded(text, _BASE_RE)
+
+
+def recorded_worktree(text: str) -> str | None:
+    """The worktree the last activation entry in ``text``'s Log recorded.
+
+    A repo-relative path, or :data:`NO_WORKTREE` for the main checkout.
+    """
+    value = _recorded(text, _WORKTREE_RE)
+    return None if value is None else value.strip("`")

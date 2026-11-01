@@ -171,8 +171,8 @@ opens, so it is usually filled already; when it is not, run `{cli} set-pr {NNN}
 
 It sets `status: done` and fills `concluded` from git: the authored date of the
 last work commit on the branch (one that touches more than the plan's own files
-and the index), else of `HEAD`. A `branch` or `pr` that was never filled becomes
-`null`. It refreshes the index and commits `plan [close]: {NNN} - <slug>`,
+and the index), else of `HEAD`, or `created` when that date is older than the plan.
+A `branch` or `pr` that was never filled becomes `null`. It refreshes the index and commits `plan [close]: {NNN} - <slug>`,
 carrying the plan file as it stands, so the Handoff and Retrospective from
 step 4 go in with it. Do not edit the frontmatter or write `concluded` by
 hand; the CLI owns it. On the no-PR path pass `--no-pr`, which writes `pr: null`

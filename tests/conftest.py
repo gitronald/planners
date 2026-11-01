@@ -15,9 +15,12 @@ environment on two axes:
   under a repo), a test that uses a synthetic or absent ``.git`` would resolve to
   the *enclosing* repo's hooks and mis-detect the validate hook as already
   active. Capping discovery at the temp-dir boundary keeps each test anchored to
-  the repo it actually created.
+  the repo it actually created. Each temp dir is itself a repository unless the
+  test is marked ``no_repo``, so without the mark a subdirectory with a synthetic
+  or absent ``.git`` resolves to the temp dir.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -46,3 +49,16 @@ def _isolate_git_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     gh_config.mkdir()
     monkeypatch.setenv("GH_CONFIG_DIR", str(gh_config))
     monkeypatch.delenv("GH_HOST", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _in_a_repository(
+    request: pytest.FixtureRequest, _isolate_git_env: None, tmp_path: Path
+) -> None:
+    """Make each test's temp dir a repository, since the CLI refuses to run outside one.
+
+    A test about that refusal, or about a directory git does not count, opts out
+    with ``@pytest.mark.no_repo``.
+    """
+    if request.node.get_closest_marker("no_repo") is None:
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)

@@ -91,6 +91,22 @@ def test_validate_fails_on_violations(
     assert result.exit_code == 1
 
 
+def test_validate_names_the_plan_and_both_timestamps_when_out_of_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created, concluded = "2026-06-07T12:00:00-07:00", "2026-06-07T11:59:00-07:00"
+    body = (
+        f"---\nid: 3\nslug: bad-order\nstatus: done\nbranch: null\n"
+        f"created: {created}\nconcluded: {concluded}\npr: null\n---\n\n# Bad order\n"
+    )
+    _write_plan(tmp_path / ".planners" / "plans", "003-bad-order", body)
+    monkeypatch.chdir(tmp_path)
+    path = ".planners/plans/003-bad-order/plan.md"
+    result = runner.invoke(app, ["validate", path])
+    assert result.exit_code == 1
+    assert f"{path}: concluded {concluded} is before created {created}" in result.output
+
+
 def test_validate_named_plan_dir_checks_its_plan_md(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -378,11 +394,14 @@ def test_index_ignores_stray_content(
     assert "[# Notes]" not in readme
 
 
-def test_add_commit_failure_outside_git_exits_cleanly(
+def test_add_commit_failure_exits_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No git repo here: the commit-by-default path must surface a clean Exit,
-    # not a raw CalledProcessError traceback.
+    # No commit identity here, and git may not invent one: the commit-by-default
+    # path must surface a clean Exit, not a raw CalledProcessError traceback.
+    subprocess.run(
+        ["git", "config", "user.useConfigOnly", "true"], cwd=tmp_path, check=True
+    )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
     assert result.exit_code == 1
@@ -762,7 +781,7 @@ def test_activate_no_commit_flips_status_and_derives_branch(
         encoding="utf-8"
     )
     assert "status: active" in text
-    assert "branch: feature/my-thing" in text
+    assert "branch: feature/005-my-thing" in text
     # The body is preserved verbatim — only the frontmatter is re-rendered.
     assert "Body text that must survive verbatim." in text
     assert "# My thing" in text
@@ -914,6 +933,29 @@ def test_activate_on_already_active_plan_is_a_noop(
     assert "plan [activate]" not in _git_log(tmp_path)
 
 
+def test_activate_warns_when_branch_is_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A filled branch: is never overwritten; silence left a session believing the
+    # flag had taken, then hand-editing the field into a second activate commit.
+    original = _DRAFT_PLAN.replace("branch:\n", "branch: feature/my-thing\n")
+    path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["activate", "005", "--branch", "spike/other", "--no-commit"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "--branch spike/other is ignored" in result.output
+    assert "branch: feature/my-thing\n" in path.read_text(encoding="utf-8")
+
+    # The same name as the recorded one is no conflict, and says nothing.
+    again = runner.invoke(
+        app, ["activate", "005", "--branch", "feature/my-thing", "--no-commit"]
+    )
+    assert "is ignored" not in again.output
+
+
 def test_activate_commits_by_default_with_slug_subject(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -959,7 +1001,7 @@ def test_activate_fills_an_empty_branch_on_an_already_active_plan(
     result = runner.invoke(app, ["activate", "005", "--no-commit"])
     assert result.exit_code == 0, result.output
     assert "nothing to do" not in result.output
-    assert "branch: feature/my-thing" in path.read_text(encoding="utf-8")
+    assert "branch: feature/005-my-thing" in path.read_text(encoding="utf-8")
 
 
 def test_activate_commits_an_explicit_branch(
@@ -973,9 +1015,9 @@ def test_activate_commits_an_explicit_branch(
 
     result = runner.invoke(app, ["activate", "005", "--branch", "spike/other"])
     assert result.exit_code == 0, result.output
-    # The chosen branch is what lands in the file — not the derived feature/<slug>.
+    # The chosen branch lands in the file, not the derived feature/<NNN>-<slug>.
     assert "branch: spike/other" in path.read_text(encoding="utf-8")
-    assert "feature/my-thing" not in path.read_text(encoding="utf-8")
+    assert "feature/005-my-thing" not in path.read_text(encoding="utf-8")
     # The subject still names the slug, and the index was refreshed alongside it.
     assert "plan [activate]: 005 - my-thing" in _git_log(tmp_path)
     assert "active" in (tmp_path / ".planners" / "README.md").read_text(
@@ -1021,7 +1063,7 @@ def test_activate_appends_the_activation_entry(
     # The Log is created ahead of the Handoff, and holds one generated entry.
     assert text.index("## Log") < text.index("## Handoff")
     assert text.count("— Activated.") == 1
-    assert "  - Branch: `feature/my-thing`\n" in text
+    assert "  - Branch: `feature/005-my-thing`\n" in text
     # The base is the commit the activation sits on: HEAD before it was made.
     assert f"  - Base: `{branch}` at `{before}`\n" in text
     assert "  - Worktree: `.worktrees/005-my-thing`\n" in text
@@ -1047,8 +1089,8 @@ def test_activate_records_a_chosen_worktree_or_the_main_checkout(
     assert result.exit_code == 0, result.output
     text = _plan_text(tmp_path)
     assert "  - Worktree: none (main checkout)\n" in text
-    # Outside a repo there is no base to name, and the entry says so.
-    assert "  - Base: a detached HEAD (no commits yet)\n" in text
+    # A repository with no commits has a branch but no commit to name.
+    assert "  - Base: `main` (no commits yet)\n" in text
 
 
 @pytest.mark.parametrize(
@@ -1433,9 +1475,9 @@ def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
 
     result = runner.invoke(app, ["activate", "005"])
     assert result.exit_code == 0, result.output
-    assert "recorded branch feature/my-thing" in result.output
+    assert "recorded branch feature/005-my-thing" in result.output
     assert "committed the activation on main" in result.output
-    assert " on feature/my-thing" not in result.output
+    assert " on feature/005-my-thing" not in result.output
 
 
 def test_activate_no_commit_claims_no_commit(
@@ -1445,7 +1487,7 @@ def test_activate_no_commit_claims_no_commit(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["activate", "005", "--no-commit"])
     assert result.exit_code == 0, result.output
-    assert "recorded branch feature/my-thing" in result.output
+    assert "recorded branch feature/005-my-thing" in result.output
     assert "committed" not in result.output
 
 

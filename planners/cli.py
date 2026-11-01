@@ -1,7 +1,7 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
-Commands: ``add``, ``finalize``, ``activate``, ``set-pr``, ``implemented``,
-``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
+Commands: ``add``, ``finalize``, ``start``, ``activate``, ``set-pr``,
+``implemented``, ``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
 ``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
@@ -20,10 +20,11 @@ import sys
 from dataclasses import asdict
 from importlib import metadata
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import typer
 from pkgskills import register
+from typer.core import TyperGroup
 
 from planners import ahead as ahead_mod
 from planners import base as base_mod
@@ -31,6 +32,7 @@ from planners import entries, proc
 from planners import finish as finish_mod
 from planners import remote as remote_mod
 from planners import review as review_mod
+from planners import start as start_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
 from planners.host import HOST
@@ -54,7 +56,78 @@ from planners.utils import (
     split_frontmatter,
 )
 
+# Commands the group lets through. `skill`, `rule`, and `schema` only print, `validate`
+# only reads the paths it is given, and `permissions` manages Claude Code settings
+# rather than a repository. `index`, `base`, and `remote` name their repository with an
+# argument, and check that path themselves.
+_NOT_GUARDED = frozenset(
+    {"skill", "rule", "schema", "validate", "permissions", "index", "base", "remote"}
+)
+
+
+def _require_repository(path: Path) -> None:
+    """Exit 1 unless git counts ``path`` as inside a repository's working tree.
+
+    Asks git rather than looking for ``.git``: a stray empty ``.git`` directory
+    passes a look at the filesystem, and every commit a command goes on to make
+    then fails. Through :mod:`planners.proc`, so an ambient ``GIT_DIR`` cannot
+    answer for a repository the user is not in. Git's own words go in the message,
+    because it refuses a real repository too, for one it does not trust.
+    """
+    if not path.is_dir():
+        reason = "it is not a directory"
+    else:
+        try:
+            done = proc.run(
+                path, ["git", "rev-parse", "--show-toplevel"], capture_output=True
+            )
+        except OSError:
+            _err("planners needs git, which could not be run, so it changed nothing.")
+            raise typer.Exit(1) from None
+        if done.returncode == 0:
+            return
+        reason = f"git says: {done.stderr.strip()}"
+    _err(
+        f"planners needs a git repository and cannot use {path.resolve()}, so it "
+        f"changed nothing ({reason}). There is nothing to repair here: run this from "
+        "a repository, or run `git init` first."
+    )
+    raise typer.Exit(1)
+
+
+class _RepositoryGroup(TyperGroup):
+    """Refuses a command outside a git repository, once its arguments are parsed.
+
+    By then a request for help has exited, so ``add --help`` works anywhere and a
+    title that happens to read ``--help`` does not count as one. The app callback
+    runs too early for that, before the subcommand's arguments are read. It is not
+    in each command because ``install`` is mounted by :func:`pkgskills.register`, and
+    so that a new command is covered by default.
+    """
+
+    # `typing.override` needs Python 3.12, and this package supports 3.11.
+    def resolve_command(  # pyrefly: ignore[missing-override-decorator]
+        self, ctx: Any, args: list[str]
+    ) -> tuple[str | None, Any, list[str]]:
+        name, command, rest = super().resolve_command(ctx, args)
+        if command is not None and name not in _NOT_GUARDED:
+            _guard(command)
+        return name, command, rest
+
+
+def _guard(command: Any) -> None:
+    """Make ``command`` check for a repository just before it runs."""
+    run = command.invoke
+
+    def invoke(ctx: Any) -> Any:
+        _require_repository(Path.cwd())
+        return run(ctx)
+
+    command.invoke = invoke
+
+
 app = typer.Typer(
+    cls=_RepositoryGroup,
     help="Own a repo's plan-file lifecycle: schema, CLI, and skillstub.",
     no_args_is_help=True,
 )
@@ -1078,8 +1151,8 @@ def activate(
     branch: str | None = typer.Option(
         None,
         "--branch",
-        help="Branch name to record; defaults to feature/<slug>. An already-filled "
-        "branch: field is left alone.",
+        help="Branch name to record; defaults to feature/<NNN>-<slug>. An "
+        "already-filled branch: field is left alone, with a warning.",
     ),
     worktree: str | None = typer.Option(
         None,
@@ -1119,7 +1192,28 @@ def activate(
     on its feature branch: that return is not guarded, and it logs a short
     ``Reactivated`` entry instead.
     """
-    root = Path.cwd()
+    _activate(
+        Path.cwd(),
+        ref,
+        branch=branch,
+        worktree=worktree,
+        no_worktree=no_worktree,
+        allow_branch=allow_branch,
+        no_commit=no_commit,
+    )
+
+
+def _activate(
+    root: Path,
+    ref: str,
+    *,
+    branch: str | None = None,
+    worktree: str | None = None,
+    no_worktree: bool = False,
+    allow_branch: bool = False,
+    no_commit: bool = False,
+) -> None:
+    """The work of ``activate``, on the plan under ``root``; ``start`` calls it too."""
     if worktree is not None and no_worktree:
         _err("--worktree and --no-worktree cannot be combined.")
         raise typer.Exit(1)
@@ -1143,8 +1237,16 @@ def activate(
         raise typer.Exit(1)
 
     # An empty branch: is pending, so fill it; a populated one is the user's answer
-    # and is never overwritten (--branch on an already-filled plan is a no-op).
-    new_branch = meta.branch or branch or f"feature/{meta.slug}"
+    # and is never overwritten (--branch on an already-filled plan is a no-op, said
+    # aloud so it is not taken for a change). The default carries the plan number,
+    # so the branch's suffix is the worktree's name, .worktrees/<NNN>-<slug>.
+    if branch is not None and meta.branch and branch != meta.branch:
+        _warn(
+            f"warning: plan {meta.prefix} already records branch {meta.branch}; "
+            f"--branch {branch} is ignored. To change it, edit the branch: field and "
+            "run the index before committing."
+        )
+    new_branch = meta.branch or branch or f"feature/{meta.prefix}-{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
 
     # The worktree is recorded only in the first activation's entry, so the flags
@@ -1313,7 +1415,11 @@ def set_pr(
     For a nested subplan the URL goes in the subplan's own ``pr:``, which is how a
     step that lands through another repo's PR is recorded.
     """
-    root = Path.cwd()
+    _set_pr(Path.cwd(), ref, url, no_commit=no_commit)
+
+
+def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
+    """The work of ``set-pr``, on the plan under ``root``; ``start`` calls it too."""
     if not re.fullmatch(r"https?://\S+", url):
         _err(f"not a PR URL: {url!r}; pass the full URL, not the number.")
         raise typer.Exit(1)
@@ -1399,9 +1505,7 @@ def _unpublished_work(
         problems.append(f"{changed} uncommitted change(s); commit them first")
     if origin is remote_mod.RemoteKind.single_branch:
         return problems
-    upstream = proc.git_out(
-        root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
-    )
+    upstream = proc.upstream(root)
     if upstream is None:
         if (
             origin is remote_mod.RemoteKind.github
@@ -1416,9 +1520,7 @@ def _unpublished_work(
         proc.git_out(root, ["rev-list", "--count", "@{upstream}..HEAD"]) or 0
     )
     if unpushed > 0:
-        problems.append(
-            f"{unpushed} commit(s) not pushed to {upstream.strip()}; push first"
-        )
+        problems.append(f"{unpushed} commit(s) not pushed to {upstream}; push first")
     return problems
 
 
@@ -1909,6 +2011,212 @@ def finish(
         raise typer.Exit(1) from None
 
 
+def _start_pr(
+    work_dir: Path,
+    ref: str,
+    plan_rel: Path,
+    branch: str,
+    origin: remote_mod.RemoteKind,
+) -> start_mod.Step:
+    """The draft PR for ``branch``: found, opened, or not yet possible.
+
+    The plan is read from ``work_dir``, since ``set-pr`` commits on the branch and
+    the base's copy never records the URL. An open PR the plan does not record is
+    a run that stopped between the two, so it is adopted rather than opened twice.
+    """
+    if origin is not remote_mod.RemoteKind.github:
+        return start_mod.Step(
+            start_mod.SKIPPED,
+            f"origin is {origin.value}: no PR, and close takes the no-PR path",
+        )
+    path = work_dir / plan_rel
+    try:
+        text = path.read_text(encoding="utf-8")
+        meta = PlanMetadata.from_text(text, path.parent.name)
+    except (PlanError, OSError, UnicodeDecodeError) as exc:
+        raise finish_mod.Stop(f"cannot read {plan_rel} on {branch}: {exc}") from None
+    if meta.pr:
+        return start_mod.Step(start_mod.DONE, f"the plan records {meta.pr}")
+    url = start_mod.open_pr(work_dir, branch)
+    if url is None:
+        base = _plan_base(text, base_mod.detect(work_dir))
+        if base is None:
+            raise finish_mod.Stop("cannot tell which branch the PR should target")
+        if _ahead_of(work_dir, base) == 0:
+            return start_mod.Step(
+                start_mod.SKIPPED,
+                f"{branch} is level with {base}, and GitHub opens no PR without a "
+                "commit; commit and push the first work, then run start again",
+            )
+        url = start_mod.create_draft_pr(
+            work_dir,
+            base=base,
+            branch=branch,
+            title=meta.title,
+            plan_path=plan_rel.as_posix(),
+        )
+    _set_pr(work_dir, ref, url)
+    return start_mod.Step(
+        start_mod.RAN,
+        f"recorded {url}; publish the record with `{start_mod.push_command(branch)}`",
+    )
+
+
+def _start(
+    root: Path,
+    ref: str,
+    *,
+    branch: str | None,
+    worktree: str | None,
+    no_worktree: bool,
+    say: finish_mod.Say,
+) -> None:
+    """The steps of ``start``, each raising :class:`finish.Stop` on a real issue."""
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    try:
+        meta = PlanMetadata.from_file(plan)
+    except PlanError as exc:
+        raise finish_mod.Stop(f"cannot read {_shown(plan, root)}: {exc}") from None
+    if meta.status in CLOSED_STATUSES or meta.status == Status.implemented:
+        raise finish_mod.Stop(
+            f"plan {meta.prefix} is {meta.status.value}; there is nothing to start"
+        )
+    mainline = base_mod.detect(root)
+    if meta.branch and meta.branch in mainline.branches:
+        raise finish_mod.Stop(
+            f"plan {meta.prefix} records the mainline branch {meta.branch}; start "
+            "needs a feature branch"
+        )
+    trees = proc.worktrees(root)
+    if not trees:
+        raise finish_mod.Stop(f"cannot list the worktrees of {root}")
+    main = trees[0][0]
+    origin = remote_mod.classify(root).kind
+
+    def show(name: str, step: start_mod.Step) -> None:
+        say(f"{step.outcome} {name}: {step.detail}")
+        for note in step.notes:
+            say(f"  note: {note}")
+
+    # A re-run from the plan's own branch, once there is work on it. The steps
+    # that belong on the mainline ran before that branch could exist.
+    on_branch = (
+        meta.status == Status.active
+        and bool(meta.branch)
+        and mainline.current == meta.branch
+    )
+    plan_rel = plan.relative_to(root)
+    if on_branch:
+        show("base", start_mod.Step(start_mod.SKIPPED, f"on {meta.branch}"))
+        show(
+            "activate",
+            start_mod.Step(start_mod.DONE, f"plan {meta.prefix} is active"),
+        )
+    else:
+        pending: tuple[Path, ...] = ()
+        if meta.status == Status.active:
+            pending = (plan, root / INDEX_PATH)
+            if start_mod.ignore_rule_pending(root):
+                pending += (root / ".gitignore",)
+        show("base", start_mod.check_base(root, mainline, ignore=pending))
+        active = (
+            meta.status == Status.active
+            and bool(meta.branch)
+            and _is_unmodified(root, plan)
+        )
+        _activate(root, ref, branch=branch, worktree=worktree, no_worktree=no_worktree)
+        show(
+            "activate",
+            start_mod.Step(
+                start_mod.DONE if active else start_mod.RAN,
+                f"plan {meta.prefix} is active",
+            ),
+        )
+        meta = PlanMetadata.from_file(plan)
+
+    target = meta.branch
+    if not target:
+        raise finish_mod.Stop(f"plan {meta.prefix} records no branch")
+    text = plan.read_text(encoding="utf-8")
+    recorded = entries.recorded_worktree(text) or entries.default_worktree(
+        meta.prefix, meta.slug
+    )
+    base = mainline.current or ""
+    if not on_branch:
+        show("ignore", start_mod.ensure_ignored(root, recorded))
+        show(
+            "push-base",
+            start_mod.check_base_pushed(
+                root,
+                base,
+                plan.parent.relative_to(root).as_posix(),
+                meta.prefix,
+                origin,
+            ),
+        )
+    show("branch", start_mod.ensure_branch(root, target, base))
+    step, work_dir = start_mod.ensure_worktree(root, main, target, recorded)
+    show("worktree", step)
+    show("setup", start_mod.set_up_worktree(work_dir, main))
+    show("push", start_mod.check_branch_pushed(work_dir, target, origin))
+    show("pr", _start_pr(work_dir, ref, plan_rel, target, origin))
+    say(f"plan {meta.prefix} is started; work in {_shown(work_dir, main)}")
+
+
+@app.command()
+def start(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        help="Branch name to record at activation; defaults to feature/<NNN>-<slug>.",
+    ),
+    worktree: str | None = typer.Option(
+        None,
+        "--worktree",
+        help="Repo-relative worktree path to record at activation; defaults to "
+        ".worktrees/<NNN>-<slug>.",
+    ),
+    no_worktree: bool = typer.Option(
+        False,
+        "--no-worktree",
+        help="Record that the work happens in the main checkout, not a worktree.",
+    ),
+) -> None:
+    """Run a plan's mechanical start-up steps, resuming where the last run stopped.
+
+    Run from the mainline. In order: check the base (on the mainline, clean, not
+    behind), activate, ignore the worktree directory, check the base is pushed,
+    create the branch, create the worktree, set it up, check the branch is pushed,
+    and open the draft PR. Each step reads its result first and prints `done`,
+    `ran`, or `skipped` with the reason, so a re-run picks up where the last one
+    ended and the output is the resume record.
+
+    `start` publishes no code. A push stays the session's own command, so the
+    permission profile still governs it: at each one `start` stops with exit 1 and
+    prints the command to run before the re-run. The draft PR waits for a commit
+    on the branch, since GitHub opens none without one. Run `start` again from the
+    worktree once that commit is pushed.
+
+    Also stops with exit 1 on a dirty tree, a base behind its upstream, a worktree
+    path held by something else, a failing setup, or a refused git or gh call.
+    """
+    toplevel = proc.git_out(Path.cwd(), ["rev-parse", "--show-toplevel"])
+    root = Path(toplevel.strip()) if toplevel else Path.cwd()
+    try:
+        _start(
+            root,
+            ref,
+            branch=branch,
+            worktree=worktree,
+            no_worktree=no_worktree,
+            say=typer.echo,
+        )
+    except finish_mod.Stop as exc:
+        _err(f"stopped: {exc}")
+        raise typer.Exit(1) from None
+
+
 def _refuse_open_subplans(plan: Path, prefix: str, doing: str) -> None:
     """Exit when the umbrella ``plan`` has a subplan that is not closed.
 
@@ -1959,9 +2267,9 @@ def retire(
 
     What ``activate`` does for ``active``, for the other end of a plan that was
     superseded or is no longer needed. ``concluded`` is the authored date of
-    ``HEAD``, the commit the decision was made against. A ``branch`` or ``pr``
-    that was never filled becomes ``null``, since the plan is closed and they are
-    confirmed absent.
+    ``HEAD``, the commit the decision was made against, or ``created`` when that
+    commit is older than the plan. A ``branch`` or ``pr`` that was never filled
+    becomes ``null``, since the plan is closed and they are confirmed absent.
 
     A nested subplan closes the same way in its own file, with ``moved_to``
     recording ``--into``, and the umbrella's table follows.
@@ -2006,7 +2314,7 @@ def retire(
         _refuse_open_subplans(plan, meta.prefix, "retiring")
         _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
         meta.status = Status.retired
-        meta.concluded = _authored(root) or _now()
+        meta.conclude_at(_authored(root) or _now())
         meta.branch = meta.branch or None
         meta.pr = meta.pr or None
         body = append_to_section(
@@ -2041,8 +2349,14 @@ def log_(
     summary: str | None = typer.Option(
         None, "--summary", help="The commit subject's summary; the slug if omitted."
     ),
+    allow_local_paths: bool = typer.Option(
+        False,
+        "--allow-local-paths",
+        help="Write the entry even though it names an absolute or home-directory "
+        "path, which normally refuses.",
+    ),
     no_commit: bool = typer.Option(
-        False, "--no-commit", help="Write only — no commit."
+        False, "--no-commit", help="Write only — no index refresh, no commit."
     ),
 ) -> None:
     """Append a dated entry to a plan's Log, and commit it.
@@ -2053,8 +2367,20 @@ def log_(
     ``## Retrospective`` when the plan has none.
 
     A nested subplan's entry goes in the subplan's own Log. There is no mainline
-    guard, since a Log entry belongs with the work, on the feature branch, and the
-    index is left alone, since it shows nothing a Log entry changes.
+    guard, since a Log entry belongs with the work, on the feature branch.
+
+    A note naming a local path (``/tmp/probe.py``, ``~/notes``, ``C:\\x``) is
+    refused before anything is written. A plan is a shared record, and the Log is
+    append-only, so the path would otherwise stay in it or be rewritten later,
+    which is the edit the Log forbids.
+
+    The entry itself changes nothing the index shows, but the working tree around
+    it can: a local merge resolves the index with ``merge=union`` and can leave a
+    row duplicated, and the ``post-merge`` hook's repair lands uncommitted. A
+    commit of the plan alone then trips the validate hook, since pre-commit
+    stashes the unstaged repair and checks the stale index. So a tracked index
+    that has gone stale is refreshed and committed with the entry, as every other
+    lifecycle command does. A repo with no index is left without one.
     """
     root = Path.cwd()
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
@@ -2070,6 +2396,15 @@ def log_(
     except ValueError:
         _err("the note is empty; nothing to log.")
         raise typer.Exit(1) from None
+    local = entries.local_paths(note)
+    if local and not allow_local_paths:
+        named = ", ".join(local)
+        _err(
+            f"error: the note names a local path ({named}). A plan is a shared "
+            "record: describe it repo-relatively, or copy a file worth keeping into "
+            "the plan's directory as a sidecar. --allow-local-paths writes it anyway."
+        )
+        raise typer.Exit(1)
 
     slug = nested.stem[2:] if nested is not None else _read_plan(root, plan).slug
     try:
@@ -2085,10 +2420,15 @@ def log_(
 
     if no_commit:
         return
+    paths = [str(target.relative_to(root))]
+    if (root / INDEX_PATH).is_file() and _index_is_stale(root):
+        readme = _refresh_index(root, cols="curated")
+        paths.append(str(readme.relative_to(root)))
+        typer.echo(f"refreshed the stale index {_shown(readme, root)}")
     _commit(
         root,
         f"plan [log]: {label} - {summary.strip() if summary else slug}",
-        [str(target.relative_to(root))],
+        paths,
     )
 
 
@@ -2141,9 +2481,10 @@ def conclude(
     The ``done`` counterpart of ``retire``, run by ``close`` on the feature branch
     after the final Log entry and the Retrospective, before the merge.
     ``concluded`` is the authored date of the last work commit on the branch,
-    else of ``HEAD``, so it is read from git rather than typed. A ``branch`` or
-    ``pr`` that was never filled becomes ``null``, since the plan is closed and
-    they are confirmed absent. The commit is ``plan [close]`` and carries the plan
+    else of ``HEAD``, so it is read from git rather than typed; ``created`` stands
+    in when that date is older than the plan. A ``branch`` or ``pr`` that was never
+    filled becomes ``null``, since the plan is closed and they are confirmed
+    absent. The commit is ``plan [close]`` and carries the plan
     file as it stands, so a Retrospective written by hand goes in with it.
     ``--no-pr`` is the close that merges locally: ``pr`` is ``null`` even when a
     PR was opened and then closed unmerged.
@@ -2192,7 +2533,7 @@ def conclude(
         text = plan.read_text(encoding="utf-8")
         _, body = split_frontmatter(text)
         meta.status = Status.done
-        meta.concluded = _work_authored(root, plan, text) or _authored(root) or _now()
+        meta.conclude_at(_work_authored(root, plan, text) or _authored(root) or _now())
         meta.branch = meta.branch or None
         meta.pr = None if no_pr else meta.pr or None
         plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
@@ -2539,6 +2880,7 @@ def base(
     This reports what git's refs say *now*; it is not a record of where a repo's
     existing plans were actually committed. See :func:`planners.base.detect`.
     """
+    _require_repository(repo_path)
     mainline = base_mod.detect(repo_path)
 
     if mainline.unborn:
@@ -2580,6 +2922,7 @@ def remote(
     The lifecycle skills branch on this: a non-github kind skips the draft PR and
     closes through the no-PR path.
     """
+    _require_repository(repo_path)
     origin = remote_mod.classify(repo_path)
     if origin.note:
         _warn(f"warning: {origin.note}")
@@ -2614,6 +2957,7 @@ def index(
     if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
+    _require_repository(repo_path)
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
 

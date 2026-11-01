@@ -49,7 +49,8 @@ rather than given one. The subplan's log entries go in its own `## Log`.
 ### 2. Apply the action
 
 **Activate** — run `{cli} activate {NNN}` (`--branch <name>` to override the
-derived `feature/<slug>`). It sets `status: active`, fills `branch` if empty,
+derived `feature/<NNN>-<slug>`; a branch the plan already records is kept, and
+`--branch` then only warns). It sets `status: active`, fills `branch` if empty,
 appends the activation entry to the Log (branch, base and commit, worktree, PR;
 `--worktree <path>` or `--no-worktree` when the work is not in
 `.worktrees/<NNN>-<slug>`), refreshes the index, and commits
@@ -102,7 +103,11 @@ EOF
 ```
 
 `--no-commit` writes only. There is no mainline guard: a Log entry belongs on
-the feature branch, with the work.
+the feature branch, with the work. When the tracked index is stale (a local
+merge left a duplicated row, or the `post-merge` repair is still uncommitted),
+the command refreshes it and commits it with the entry. It refuses a note that
+names an absolute or home-directory path; describe the file, or copy it into the
+plan's directory as a sidecar (`--allow-local-paths` overrides).
 
 **Block** — set `status: blocked` for work that is waiting on a person: a
 decision, a manual check, access only they have. It is an open state, so
@@ -123,7 +128,8 @@ decision, a manual check, access only they have. It is an open state, so
 
 **Retire** — run `{cli} retire {NNN}`, with `--into <NNN>` when the work moved
 to another plan and `--note "<sentence>"` for why. It sets `status: retired`,
-fills `concluded` from the authored date of `HEAD`, writes `null` for a
+fills `concluded` from the authored date of `HEAD` (or `created`, when that date
+is older than the plan), writes `null` for a
 `branch`/`pr` that was never filled, appends the Log entry, refreshes the index,
 and commits `plan [retire]: {NNN} - <slug>`. Do not hand-edit the frontmatter
 for this; the CLI owns it. The Log entry already says "Retired. The work moved

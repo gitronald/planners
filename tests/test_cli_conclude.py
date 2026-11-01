@@ -31,13 +31,13 @@ def _plan(status: str = "implemented", branch: str = " feature/parser") -> str:
     )
 
 
-def _repo(root: Path, *, git_repo: bool = False, text: str | None = None) -> Path:
-    if git_repo:
+def _repo(root: Path, *, committed: bool = False, text: str | None = None) -> Path:
+    if committed:
         init_git(root)
     plan = root / ".planners" / "plans" / "005-parser" / "plan.md"
     plan.parent.mkdir(parents=True)
     plan.write_text(text or _plan(), encoding="utf-8")
-    if git_repo:
+    if committed:
         commit_all(root, "initial commit", date=_START)
     return plan
 
@@ -67,7 +67,7 @@ def test_conclude_no_commit_closes_the_plan(
 
     meta = PlanMetadata.from_file(plan)
     assert meta.status == Status.done
-    # No repo here, so there is no commit to date it by.
+    # No commits here, so there is none to date it by.
     assert meta.concluded == _NOW
     assert meta.branch == "feature/parser"
     assert meta.pr is None
@@ -81,7 +81,7 @@ def test_conclude_no_commit_closes_the_plan(
 def test_conclude_dates_the_last_work_commit_not_the_paperwork(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan = _repo(tmp_path, git_repo=True)
+    plan = _repo(tmp_path, committed=True)
     _branch_with_work(tmp_path, plan)
     # A Retrospective written by hand and not yet committed rides along.
     with plan.open("a", encoding="utf-8") as handle:
@@ -114,7 +114,7 @@ def test_conclude_falls_back_to_head_without_a_work_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Worked on the mainline: nothing lies past the base, so HEAD dates it.
-    plan = _repo(tmp_path, git_repo=True, text=_plan(branch=""))
+    plan = _repo(tmp_path, committed=True, text=_plan(branch=""))
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["conclude", "5"])
     assert result.exit_code == 0, result.output
@@ -124,13 +124,30 @@ def test_conclude_falls_back_to_head_without_a_work_commit(
     assert "branch: null\n" in plan.read_text(encoding="utf-8")
 
 
+def test_conclude_dates_a_plan_written_after_its_work_at_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The last work commit predates the plan: its date would fail `validate`, and
+    # so the hook on this very commit, with no sanctioned way to change it.
+    created = "2026-06-25T12:00:00-07:00"
+    text = _plan().replace("2026-06-07T12:00:00-07:00", created)
+    plan = _repo(tmp_path, committed=True, text=text)
+    _branch_with_work(tmp_path, plan)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["conclude", "5"])
+    assert result.exit_code == 0, result.output
+    meta = PlanMetadata.from_file(plan)
+    assert meta.concluded == created
+    assert meta.validate() == []
+
+
 def test_conclude_leaves_out_base_commits_a_stale_remote_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # origin/main stops at the first commit; the local main moves on, and the
     # branch merges it in. That later main commit is the base's work, not the
     # plan's, though it lies past the stale remote ref.
-    plan = _repo(tmp_path, git_repo=True)
+    plan = _repo(tmp_path, committed=True)
     git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
     _branch_with_work(tmp_path, plan)
     git(tmp_path, "checkout", "-q", "main")
@@ -150,7 +167,7 @@ def test_conclude_leaves_out_base_commits_a_stale_remote_lacks(
 def test_conclude_resumes_a_run_whose_commit_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan = _repo(tmp_path, git_repo=True)
+    plan = _repo(tmp_path, committed=True)
     _branch_with_work(tmp_path, plan)
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["conclude", "5", "--no-commit"]).exit_code == 0
@@ -166,7 +183,7 @@ def test_conclude_resumes_a_run_whose_commit_failed(
 def test_conclude_refuses_a_head_off_the_plans_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan = _repo(tmp_path, git_repo=True)
+    plan = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["conclude", "5"])
     assert result.exit_code == 1

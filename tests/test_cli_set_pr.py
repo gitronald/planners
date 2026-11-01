@@ -21,14 +21,14 @@ _PLAN = (
 _SUBPLAN = "---\nstatus: active\nbranch: other-repo-branch\n---\n\n# Step\n"
 
 
-def _repo(root: Path, *, git: bool = False) -> Path:
-    if git:
+def _repo(root: Path, *, committed: bool = False) -> Path:
+    if committed:
         init_git(root)
     plan_dir = root / ".planners" / "plans" / "005-my-thing"
     (plan_dir / "subplans").mkdir(parents=True)
     (plan_dir / "plan.md").write_text(_PLAN, encoding="utf-8")
     (plan_dir / "subplans" / "d-step.md").write_text(_SUBPLAN, encoding="utf-8")
-    if git:
+    if committed:
         commit_all(root, "initial commit")
     return plan_dir
 
@@ -94,7 +94,7 @@ def test_set_pr_reports_a_missing_or_unreadable_plan(
 def test_set_pr_commits_the_plan_with_a_refreshed_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _repo(tmp_path, git=True)
+    _repo(tmp_path, committed=True)
     subprocess.run(
         ["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path, check=True
     )
@@ -122,7 +122,7 @@ def test_set_pr_commits_the_plan_with_a_refreshed_index(
 def test_set_pr_finishes_a_write_that_was_never_committed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _repo(tmp_path, git=True)
+    _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["set-pr", "005", _URL, "--no-commit"]).exit_code == 0
     result = runner.invoke(app, ["set-pr", "005", _URL])
@@ -135,7 +135,7 @@ def test_set_pr_finishes_a_write_that_was_never_committed(
 def test_set_pr_on_a_nested_subplan_writes_its_own_field(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    plan_dir = _repo(tmp_path, git=True)
+    plan_dir = _repo(tmp_path, committed=True)
     monkeypatch.chdir(tmp_path)
     url = "https://github.com/owner/other/pull/3"
     result = runner.invoke(app, ["set-pr", "005d", url])
