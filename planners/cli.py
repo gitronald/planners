@@ -1231,7 +1231,8 @@ def activate(
 
     A plan in ``implemented`` that review sends back is reactivated the same way,
     on its feature branch: that return is not guarded, and it logs a short
-    ``Reactivated`` entry instead.
+    ``Reactivated`` entry instead. So is a plan blocked after an earlier activation,
+    when this runs on the branch it records.
     """
     _activate(
         Path.cwd(),
@@ -1242,6 +1243,21 @@ def activate(
         allow_branch=allow_branch,
         no_commit=no_commit,
     )
+
+
+def _back_from_block(root: Path, meta: PlanMetadata, plan: Path) -> bool:
+    """True for a blocked plan, activated before, on the feature branch it records.
+
+    Its work is on that branch, so the return belongs there. Coming back on the
+    mainline instead would add an activation entry the branch's Log conflicts with
+    at merge. A plan never activated has no such branch yet, and stays guarded.
+    """
+    if meta.status != Status.blocked or not meta.branch:
+        return False
+    mainline = base_mod.detect(root)
+    if mainline.on_mainline or mainline.current != meta.branch:
+        return False
+    return entries.recorded_base(plan.read_text(encoding="utf-8")) is not None
 
 
 def _activate(
@@ -1289,12 +1305,15 @@ def _activate(
         )
     new_branch = meta.branch or branch or f"feature/{meta.prefix}-{meta.slug}"
     unchanged = meta.status == Status.active and new_branch == meta.branch
+    # A plan going back to work on its feature branch, where review or a block left
+    # it. That return is not guarded, and it writes no second activation entry.
+    from_block = _back_from_block(root, meta, path)
+    returning = meta.status == Status.implemented or from_block
 
     # The worktree is recorded only in the first activation's entry, so the flags
     # mean nothing to a plan that is already active or is coming back from review.
-    if (worktree is not None or no_worktree) and meta.status in (
-        Status.active,
-        Status.implemented,
+    if (worktree is not None or no_worktree) and (
+        meta.status == Status.active or returning
     ):
         _warn(
             f"warning: plan {meta.prefix} is {meta.status}, so no activation entry "
@@ -1318,9 +1337,7 @@ def _activate(
 
     # Guard before writing, so a refusal leaves the plan exactly as it was — the
     # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand. A plan coming back
-    # from `implemented` is on its feature branch by design, where review sent it.
-    returning = meta.status == Status.implemented
+    # no commit, so there is nothing for a branch to strand.
     if not no_commit and not returning:
         _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
 
@@ -1337,7 +1354,8 @@ def _activate(
         # so it gets no second entry; that keeps a re-run idempotent.
         entry = None
         if returning:
-            entry = entries.reactivation_entry(_now())
+            after = "a block" if from_block else "review"
+            entry = entries.reactivation_entry(_now(), after)
         elif meta.status != Status.active:
             entry = _activation_entry(
                 root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
@@ -2443,9 +2461,9 @@ def block(
     stands, so a reason already written in its Handoff goes in with the status.
     The reason is authored, so the command writes no Log entry.
 
-    Commits on the current branch. ``planners activate`` returns the plan and runs
-    on the mainline, so that is where to block it. A nested subplan is set with
-    ``planners subplans <NNN> --set <letter>=blocked``.
+    Commits on the current branch: the plan's feature branch once its work is there,
+    where ``planners activate`` returns it unguarded, and otherwise the mainline. A
+    nested subplan is set with ``planners subplans <NNN> --set <letter>=blocked``.
     """
     root = Path.cwd()
     plan = _resolve_plan(root / PLANS_DIR, ref)

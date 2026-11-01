@@ -82,7 +82,7 @@ in it. It closes nothing: merging, the Retrospective, and `concluded` stay with 
 feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the
 feature branch.
 Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
-they have. `{cli} block {NNN}`, run on the mainline, sets it. It differs from `implemented`, which
+they have. `{cli} block {NNN}` sets it, on the plan's feature branch once it has one. It differs from `implemented`, which
 waits on a person to accept finished work;
 `blocked` waits for something the work itself needs. It is an open state like `active`, so `concluded` stays empty and nothing closes over
 it. It is distinct from `draft` (not started) and `inactive` (set aside). Say what it waits on:
@@ -116,8 +116,8 @@ branch and commit, worktree, PR) to the plan's `## Log`, creating the section ah
 Handoff and Retrospective when it is missing, so every plan records where its work lives.
 `--worktree <path>` (repo-relative) records a worktree other than
 `.worktrees/<NNN>-<slug>`, and `--no-worktree` records the main checkout. `set-pr` adds `PR opened: <url>`, `implemented` adds
-`Implemented: <n> commits ahead of <base>`, and a return from `implemented` writes
-`Reactivated`, so the Log reads as a timeline.
+`Implemented: <n> commits ahead of <base>`, and a return from `implemented`, or from a block on
+the plan's own branch, writes `Reactivated`, so the Log reads as a timeline.
 
 **Empty vs `null`.** An empty value (`pr:`) means "pending / not yet determined" — use it for
 a field that may still be filled (an open plan's `concluded`/`pr`, or a branch not yet
@@ -282,7 +282,8 @@ re-derives it. `--allow-branch` is for a repo whose mainline is genuinely not de
 by name, not a way past the check.
 
 The guard covers activating a `draft`, `blocked`, or `inactive` plan. Returning one from
-`implemented` is not guarded, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
+`implemented` is not guarded, nor is returning a blocked plan on the branch it records after
+an earlier activation, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
 `{cli} block`, `{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its
 feature branch, and a plan is retired wherever the decision is made. `conclude` checks instead that
 HEAD is on the plan's recorded branch, since the date it records is that branch's.

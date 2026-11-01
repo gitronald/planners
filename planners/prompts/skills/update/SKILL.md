@@ -114,15 +114,17 @@ decision, a manual check, access only they have. It is an open state, so
 `concluded` stays empty.
 
 - **A plan:** write what it waits on, and who, in the plan's `## Handoff`
-  section, then run `{cli} block {NNN}` on the mainline. It sets `status: blocked`
+  section, then run `{cli} block {NNN}` on the plan's feature branch, or on the
+  mainline for a plan with no branch yet. It sets `status: blocked`
   from `draft` or `active`, refreshes the index, and commits
   `plan [block]: {NNN} - <slug>` with the plan file as it stands, so the Handoff
-  goes in with it. When the wait is over, `{cli} activate {NNN}` sets it back to
-  `active`. It carries the mainline guard, as any activation of a blocked plan
-  does, which is why the block belongs on the mainline too: `block` itself has no
-  guard and commits on whatever branch it runs on. For a plan whose feature branch
-  already has Log entries, that activation's new entry conflicts with them when
-  the branch merges. Keep both sides of the Log.
+  goes in with it. `block` has no guard and commits on whatever branch it runs on.
+  When the wait is over, run `{cli} activate {NNN}` in the same place to set it
+  back to `active`. On the branch the plan records, after an earlier activation,
+  that is not guarded and logs `Reactivated`. Anywhere else it carries the mainline
+  guard and writes a new activation entry, so do not block and reactivate on the
+  mainline a plan whose feature branch has Log entries: the new entry conflicts
+  with them when the branch merges.
 - **A nested subplan:** `{cli} subplans {NNN} --set <letter>=blocked`. Write
   what it waits on in the Note column of its row in the umbrella's table, by
   hand: the command writes the Status column and no other. When the wait is a

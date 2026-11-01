@@ -121,9 +121,12 @@ def activation_entry(
     )
 
 
-def reactivation_entry(when: str) -> str:
-    """The entry ``activate`` writes when review sends a plan back to work."""
-    return _stamp(when, "Reactivated: back to active after review.")
+def reactivation_entry(when: str, after: str = "review") -> str:
+    """The entry ``activate`` writes when a plan goes back to work on its branch.
+
+    ``after`` names what it is coming back from: ``review``, or ``a block``.
+    """
+    return _stamp(when, f"Reactivated: back to active after {after}.")
 
 
 def pr_entry(when: str, url: str) -> str:

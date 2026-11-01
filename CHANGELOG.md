@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners add ... --parent <N> --nested --needs <letter>` (repeatable) writes the
   subplan's `needs:` line
 
+### Changed
+
+- `planners activate` returns a blocked plan on the branch it records, after an earlier
+  activation, without the mainline guard, and logs `Reactivated`. The only route before
+  was the mainline, where the new activation entry conflicted with the branch's Log at
+  merge. Elsewhere a blocked plan is guarded as before
+
 ### Fixed
 
 - The `close` skill said a `finish` stop leaves the state as it was. The steps before
