@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners finish <NNN> --print-merge` prints the merge command for the session to run,
   with the subject already formatted, and changes nothing
 - `planners add ... --parent <N> --nested --needs <letter>` (repeatable) writes the
-  subplan's `needs:` line
+  subplan's `needs:` line, and refuses a letter that closes a cycle
 
 ### Changed
 
