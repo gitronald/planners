@@ -2336,6 +2336,60 @@ def retire(
     )
 
 
+@app.command()
+def block(
+    ref: str = typer.Argument(..., help="Plan number, e.g. 005."),
+    no_commit: bool = typer.Option(
+        False, "--no-commit", help="Write only — no index refresh, no commit."
+    ),
+) -> None:
+    """Mark a draft or active plan blocked: its work is waiting on a person.
+
+    Sets ``status: blocked``, refreshes the index, and commits the plan file as it
+    stands, so a reason already written in its Handoff goes in with the status.
+    The reason is authored, so the command writes no Log entry.
+
+    Commits on the current branch. ``planners activate`` returns the plan and runs
+    on the mainline, so that is where to block it. A nested subplan is set with
+    ``planners subplans <NNN> --set <letter>=blocked``.
+    """
+    root = Path.cwd()
+    plan = _resolve_plan(root / PLANS_DIR, ref)
+    meta = _read_plan(root, plan)
+
+    # An earlier run that wrote the status and then failed to commit (a rejecting
+    # hook, say) is finished here rather than refused, as `implemented` does.
+    resuming = (
+        meta.status == Status.blocked
+        and not no_commit
+        and not _is_unmodified(root, plan)
+    )
+    if meta.status not in (Status.draft, Status.active) and not resuming:
+        _err(
+            f"plan {meta.prefix} is {meta.status.value}; only a draft or active plan "
+            "can be blocked."
+        )
+        raise typer.Exit(1)
+
+    if resuming:
+        typer.echo(f"committing the earlier change to {_shown(plan, root)}")
+    else:
+        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        meta.status = Status.blocked
+        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+        typer.echo(f"blocked {_shown(plan, root)}")
+
+    if no_commit:
+        return
+
+    readme = _refresh_index(root, cols="curated")
+    _commit(
+        root,
+        f"plan [block]: {meta.prefix} - {meta.slug}",
+        [str(plan.relative_to(root)), str(readme.relative_to(root))],
+    )
+
+
 @app.command(name="log")
 def log_(
     ref: str = typer.Argument(

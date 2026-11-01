@@ -18,7 +18,7 @@ infer the action from the user's words or the plan's current state.
 | **reactivate** | "back to work", "more changes", "review asked for" | `{cli} activate {NNN}` on an `implemented` plan — on the feature branch |
 | **log** | "log", "note", "update" | Append a dated entry to the `## Log` section |
 | **close** | "close", "finish", "done", "complete" | Hand off to `/planners close` (review gate, merge, cleanup) |
-| **block** | "block", "waiting on", "stuck on" | `status: blocked`; say what it waits on |
+| **block** | "block", "waiting on", "stuck on" | `{cli} block {NNN}`; say what it waits on |
 | **retire** | "abandon", "drop", "cancel", "retire", "supersede" | `{cli} retire {NNN}` |
 
 An abandon, drop, or cancel request maps to `status: retired` (neutral terminal
@@ -113,11 +113,14 @@ plan's directory as a sidecar (`--allow-local-paths` overrides).
 decision, a manual check, access only they have. It is an open state, so
 `concluded` stays empty.
 
-- **A plan:** edit `status:` and run `{cli} index .`. Write what it waits on,
-  and who, in the plan's `## Handoff` section. Commit
-  `plan [block]: {NNN} - <slug>`. When the wait is over, `{cli} activate {NNN}`
-  sets it back to `active`. It carries the mainline guard, as any activation of
-  a blocked plan does, so run it on the mainline.
+- **A plan:** write what it waits on, and who, in the plan's `## Handoff`
+  section, then run `{cli} block {NNN}` on the mainline. It sets `status: blocked`
+  from `draft` or `active`, refreshes the index, and commits
+  `plan [block]: {NNN} - <slug>` with the plan file as it stands, so the Handoff
+  goes in with it. When the wait is over, `{cli} activate {NNN}` sets it back to
+  `active`. It carries the mainline guard, as any activation of a blocked plan
+  does, which is why the block belongs on the mainline too: `block` itself has no
+  guard and commits on whatever branch it runs on.
 - **A nested subplan:** `{cli} subplans {NNN} --set <letter>=blocked`. Write
   what it waits on in the Note column of its row in the umbrella's table, by
   hand: the command writes the Status column and no other. When the wait is a
@@ -161,5 +164,5 @@ append-only, because it describes the present and the Log keeps the history.
 ```
 
 Commit the regenerated `.planners/README.md` if the status change moved the row.
-`activate`, `implemented`, `retire`, and `set-pr` refresh and commit the index themselves, so
+`activate`, `implemented`, `block`, `retire`, and `set-pr` refresh and commit the index themselves, so
 this step is for the hand-written actions.

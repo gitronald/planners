@@ -20,6 +20,7 @@ URL = "https://github.com/owner/repo/pull/1"
 GUARDED = {
     "activate": ["activate", "001"],
     "add": ["add", "probe"],
+    "block": ["block", "001"],
     "conclude": ["conclude", "001"],
     "finalize": ["finalize"],
     "finish": ["finish", "001"],
