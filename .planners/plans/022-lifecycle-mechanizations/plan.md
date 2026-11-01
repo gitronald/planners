@@ -1,7 +1,7 @@
 ---
 id: 22
 slug: lifecycle-mechanizations
-status: active
+status: implemented
 branch: feature/022-lifecycle-mechanizations
 created: 2026-10-31T20:03:40-07:00
 concluded:
@@ -87,3 +87,4 @@ last one is a wrong statement about `finish`, and the others change no instructi
   - `finish`'s stop message still double-quotes its subject while `--print-merge` uses `shlex.join`. Changing the stop message is out of scope here, so a branch name holding `$(...)` stays unsafe to paste from that message.
   - `--needs` refuses a malformed letter, the subplan's own letter, and a repeat. It warns, without refusing, on a letter with no subplan yet, since the `add` skill's order allows naming one later.
   - `pr_number` moved to `utils.py`, so `index.py` and `finish` share one parser.
+- **2026-11-01T10:53:54-08:00** — Implemented: 6 commits ahead of `dev`.
