@@ -1,0 +1,233 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 35dad4f..efbd7f7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
+ 
+ ## [Unreleased]
+ 
++### Added
++
++- `planners activate` adds a `WorktreePlan` line to the activation entry: a
++  Markdown link to the plan's copy inside the worktree, relative to the plan file
++
+ ## [0.13.1] - 2026-10-09
+ 
+ ### Security
+diff --git a/planners/cli.py b/planners/cli.py
+index deb11f3..2f037f7 100644
+--- a/planners/cli.py
++++ b/planners/cli.py
+@@ -1197,7 +1197,12 @@ def activate(
+             entry = entries.reactivation_entry(_now())
+         elif meta.status != Status.active:
+             entry = _activation_entry(
+-                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
++                root,
++                meta,
++                new_branch,
++                plan=path.relative_to(root).as_posix(),
++                worktree=worktree,
++                no_worktree=no_worktree,
+             )
+         meta.status = Status.active
+         meta.branch = new_branch
+@@ -1249,6 +1254,7 @@ def _activation_entry(
+     meta: PlanMetadata,
+     branch: str,
+     *,
++    plan: str,
+     worktree: str | None,
+     no_worktree: bool,
+ ) -> str:
+@@ -1269,6 +1275,7 @@ def _activation_entry(
+         base=mainline.current,
+         sha=sha.strip() if sha else None,
+         worktree=recorded,
++        plan=plan,
+         pr=meta.pr or None,
+     )
+ 
+diff --git a/planners/entries.py b/planners/entries.py
+index 5ff4e18..d9579c7 100644
+--- a/planners/entries.py
++++ b/planners/entries.py
+@@ -25,6 +25,7 @@ __all__ = [
+     "reactivation_entry",
+     "recorded_base",
+     "worktree_error",
++    "worktree_plan_link",
+ ]
+ 
+ # What the Worktree field says when the work happens in the main checkout.
+@@ -75,28 +76,46 @@ def activation_entry(
+     base: str | None,
+     sha: str | None,
+     worktree: str,
++    plan: str,
+     pr: str | None,
+ ) -> str:
+     """The entry ``activate`` writes: where the work will happen.
+ 
+     ``base`` is the branch the activation is committed on and ``sha`` the commit
+     it sits on, HEAD before the activation commit. Either can be unknown: a
+-    detached HEAD has no branch, and an unborn one has no commit.
++    detached HEAD has no branch, and an unborn one has no commit. ``plan`` is the
++    plan file's repo-relative path; with a worktree, the entry links that plan's
++    copy inside it.
+     """
+     if base is None:
+         where = "a detached HEAD"
+     else:
+         where = f"`{base}`"
+     where += f" at `{sha}`" if sha else " (no commits yet)"
+-    return "\n".join(
+-        [
+-            _stamp(when, "Activated."),
+-            f"  - Branch: `{branch}`",
+-            f"  - Base: {where}",
+-            f"  - Worktree: {worktree if worktree == NO_WORKTREE else f'`{worktree}`'}",
+-            f"  - PR: {pr or 'pending'}",
+-        ]
+-    )
++    lines = [
++        _stamp(when, "Activated."),
++        f"  - Branch: `{branch}`",
++        f"  - Base: {where}",
++    ]
++    if worktree == NO_WORKTREE:
++        lines.append(f"  - Worktree: {NO_WORKTREE}")
++    else:
++        lines.append(f"  - Worktree: `{worktree}`")
++        lines.append(f"  - WorktreePlan: {worktree_plan_link(worktree, plan)}")
++    lines.append(f"  - PR: {pr or 'pending'}")
++    return "\n".join(lines)
++
++
++def worktree_plan_link(worktree: str, plan: str) -> str:
++    """A Markdown link to ``plan``'s copy inside ``worktree``.
++
++    The text is the path from the repo root. The target is relative to the plan
++    file the entry is written in, which is how editors and GitHub resolve a
++    link, so it opens from the main checkout's copy of the plan.
++    """
++    target = f"{worktree.strip().rstrip('/')}/{plan}"
++    ups = "../" * (len(PurePosixPath(plan).parts) - 1)
++    return f"[`{target}`]({ups}{target})"
+ 
+ 
+ def reactivation_entry(when: str) -> str:
+diff --git a/planners/prompts/rules/planners.md b/planners/prompts/rules/planners.md
+index 1a39301..224967e 100644
+--- a/planners/prompts/rules/planners.md
++++ b/planners/prompts/rules/planners.md
+@@ -131,11 +131,13 @@ records where its work lives:
+       - Branch: `feature/<slug>`
+       - Base: `dev` at `abc1234`
+       - Worktree: `.worktrees/<slug>`
++      - WorktreePlan: [`.worktrees/<slug>/.planners/plans/NNN-<slug>/plan.md`](../../../.worktrees/<slug>/.planners/plans/NNN-<slug>/plan.md)
+       - PR: pending
+ 
+ `Base` is the branch and commit the activation sits on. `Worktree` defaults to
+ `.worktrees/<branch-suffix>`; `--worktree <path>` records another repo-relative path, and
+-`--no-worktree` records the main checkout. An absolute path is refused. `set-pr` adds `PR opened:
++`--no-worktree` records the main checkout. `WorktreePlan` links the plan's copy inside the
++worktree, relative to the plan file, and is left out for the main checkout. An absolute path is refused. `set-pr` adds `PR opened:
+ <url>` and `implemented` adds `Implemented: <n> commits ahead of <base>`, each a one-line entry,
+ so the Log reads as a timeline: activated, PR opened, implemented. A re-run of `activate` on an
+ active plan writes no second entry; a return from `implemented` writes `Reactivated`.
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index bb3e7bd..5df3069 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -1025,6 +1025,10 @@ def test_activate_appends_the_activation_entry(
+     # The base is the commit the activation sits on: HEAD before it was made.
+     assert f"  - Base: `{branch}` at `{before}`\n" in text
+     assert "  - Worktree: `.worktrees/my-thing`\n" in text
++    assert (
++        "  - WorktreePlan: [`.worktrees/my-thing/.planners/plans/005-my-thing/plan.md`]"
++        "(../../../.worktrees/my-thing/.planners/plans/005-my-thing/plan.md)\n"
++    ) in text
+     assert "  - PR: pending\n" in text
+     assert "Body text that must survive verbatim." in text
+ 
+@@ -1040,13 +1044,16 @@ def test_activate_records_a_chosen_worktree_or_the_main_checkout(
+         app, ["activate", "005", "--worktree", "trees/mine", "--no-commit"]
+     )
+     assert result.exit_code == 0, result.output
+-    assert "  - Worktree: `trees/mine`\n" in _plan_text(tmp_path)
++    text = _plan_text(tmp_path)
++    assert "  - Worktree: `trees/mine`\n" in text
++    assert "(../../../trees/mine/.planners/plans/005-my-thing/plan.md)\n" in text
+ 
+     _write_plan(plans, "005-my-thing", _DRAFT_PLAN)
+     result = runner.invoke(app, ["activate", "005", "--no-worktree", "--no-commit"])
+     assert result.exit_code == 0, result.output
+     text = _plan_text(tmp_path)
+     assert "  - Worktree: none (main checkout)\n" in text
++    assert "WorktreePlan" not in text
+     # Outside a repo there is no base to name, and the entry says so.
+     assert "  - Base: a detached HEAD (no commits yet)\n" in text
+ 
+diff --git a/tests/test_entries.py b/tests/test_entries.py
+index 140c9c9..313507f 100644
+--- a/tests/test_entries.py
++++ b/tests/test_entries.py
+@@ -14,6 +14,7 @@ def test_activation_entry_has_every_field() -> None:
+         base="dev",
+         sha="abc1234",
+         worktree=".worktrees/thing",
++        plan=".planners/plans/005-thing/plan.md",
+         pr=None,
+     )
+     assert entry == (
+@@ -21,6 +22,8 @@ def test_activation_entry_has_every_field() -> None:
+         "  - Branch: `feature/thing`\n"
+         "  - Base: `dev` at `abc1234`\n"
+         "  - Worktree: `.worktrees/thing`\n"
++        "  - WorktreePlan: [`.worktrees/thing/.planners/plans/005-thing/plan.md`]"
++        "(../../../.worktrees/thing/.planners/plans/005-thing/plan.md)\n"
+         "  - PR: pending"
+     )
+ 
+@@ -32,14 +35,40 @@ def test_activation_entry_unknown_base_and_main_checkout() -> None:
+         base=None,
+         sha=None,
+         worktree=entries.NO_WORKTREE,
++        plan=".planners/plans/005-thing/plan.md",
+         pr="https://github.com/owner/repo/pull/1",
+     )
+     assert "  - Base: a detached HEAD (no commits yet)" in entry
+     # The sentinel is prose, not a path, so it is not set in code.
+     assert "  - Worktree: none (main checkout)" in entry
++    # The main checkout's plan is the plan itself, so there is nothing to link.
++    assert "WorktreePlan" not in entry
+     assert "  - PR: https://github.com/owner/repo/pull/1" in entry
+ 
+ 
++@pytest.mark.parametrize(
++    ("worktree", "plan", "expected"),
++    [
++        (
++            ".worktrees/thing",
++            ".planners/plans/005-thing/plan.md",
++            "[`.worktrees/thing/.planners/plans/005-thing/plan.md`]"
++            "(../../../.worktrees/thing/.planners/plans/005-thing/plan.md)",
++        ),
++        (
++            "trees/mine/",
++            "docs/plans/005-thing.md",
++            "[`trees/mine/docs/plans/005-thing.md`]"
++            "(../../trees/mine/docs/plans/005-thing.md)",
++        ),
++    ],
++)
++def test_worktree_plan_link_is_relative_to_the_plan(
++    worktree: str, plan: str, expected: str
++) -> None:
++    assert entries.worktree_plan_link(worktree, plan) == expected
++
++
+ @pytest.mark.parametrize(
+     ("branch", "expected"),
+     [

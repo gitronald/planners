@@ -31,7 +31,10 @@ click.
   copy of the file sits two levels deeper. `.worktrees/` is gitignored, so the
   link was dead on GitHub from the start and dead locally once `finish`
   removed the worktree, and it stayed in the plan's Log for good. This plan
-  replaces that attempt.
+  replaces that attempt. Its diff is kept beside this plan as
+  `worktree-plan-link.patch` (against `92d5fe3`, 0.13.2a0; it no longer
+  applies to `dev`), for its tests of relative-link depth and its rule-doc
+  wording.
 - A link to the index instead of the Log entry fixes the permanence: the
   index is regenerated on every lifecycle change, so the link goes away when the
   plan closes. A GitHub URL instead of a relative path fixes the resolution:
