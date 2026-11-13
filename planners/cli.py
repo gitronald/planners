@@ -1,9 +1,9 @@
 """planners CLI — the documented entry point for the plan-file lifecycle.
 
 Commands: ``add``, ``finalize``, ``start``, ``activate``, ``set-pr``,
-``implemented``, ``finish``, ``retire``, ``subplans``, ``review``, ``base``, ``remote``,
-``index``, ``schema``, and ``validate``, plus
-``skill``, ``rule``, ``install``, and ``permissions``, which
+``implemented``, ``finish``, ``retire``, ``block``, ``log``, ``conclude``, ``subplans``,
+``review``, ``base``, ``remote``, ``index``, ``schema``, and ``validate``, plus
+``skill``, ``rule``, ``doc``, ``install``, and ``permissions``, which
 :func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
 subprocess (git) work is confined to this module and the ``add`` helpers; the
 schema/index transforms stay pure. Every shell-out goes through

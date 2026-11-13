@@ -82,8 +82,8 @@ in it. It closes nothing: merging, the Retrospective, and `concluded` stay with 
 feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the
 feature branch.
 Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
-they have. `{cli} block {NNN}` sets it, on the plan's feature branch once it has one. It differs from `implemented`, which
-waits on a person to accept finished work;
+they have. `{cli} block {NNN}` sets it, on the plan's feature branch once it has one. It differs
+from `implemented`, which waits on a person to accept finished work;
 `blocked` waits for something the work itself needs. It is an open state like `active`, so `concluded` stays empty and nothing closes over
 it. It is distinct from `draft` (not started) and `inactive` (set aside). Say what it waits on:
 in the plan's Handoff section, or for a nested subplan in the Note column of the umbrella's table.
@@ -115,9 +115,10 @@ number. `{cli} set-pr {NNN} <url>` writes it, refreshes the index, and commits.
 branch and commit, worktree, PR) to the plan's `## Log`, creating the section ahead of
 Handoff and Retrospective when it is missing, so every plan records where its work lives.
 `--worktree <path>` (repo-relative) records a worktree other than
-`.worktrees/<NNN>-<slug>`, and `--no-worktree` records the main checkout. `set-pr` adds `PR opened: <url>`, `implemented` adds
-`Implemented: <n> commits ahead of <base>`, and a return from `implemented`, or from a block on
-the plan's own branch, writes `Reactivated`, so the Log reads as a timeline.
+`.worktrees/<NNN>-<slug>`, and `--no-worktree` records the main checkout. `set-pr` adds
+`PR opened: <url>`, `implemented` adds `Implemented: <n> commits ahead of <base>`, and a return
+from `implemented`, or from a block on the plan's own branch, writes `Reactivated`, so the Log
+reads as a timeline.
 
 **Empty vs `null`.** An empty value (`pr:`) means "pending / not yet determined" — use it for
 a field that may still be filled (an open plan's `concluded`/`pr`, or a branch not yet

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-13
+
+### Changed
+
+- Template maintenance: the repotemplates stamp moves to 0.15.0 (the `pyproject.toml`
+  table is now `[tool.repotemplates]`), and the ruff pre-commit rev, the lock, the
+  `setup-uv` pin, and the Dependabot guide link are bumped
+- The command list in the CLI module docstring now names `block`, `log`, `conclude`, and
+  `doc`. A paragraph of the planners rule is rewrapped, with its wording unchanged
+
 ## [0.16.0] - 2026-11-01
 
 ### Added
@@ -16,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners finish <NNN> --print-merge` prints the merge command for the session to run,
   with the subject already formatted, and changes nothing
 - `planners add ... --parent <N> --nested --needs <letter>` (repeatable) writes the
-  subplan's `needs:` line
+  subplan's `needs:` line, and refuses a letter that closes a cycle
 
 ### Changed
 
