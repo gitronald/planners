@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Template maintenance: the repotemplates stamp moves to 0.15.0 (the `pyproject.toml`
+  table is now `[tool.repotemplates]`), and the ruff pre-commit rev, the lock, the
+  `setup-uv` pin, and the Dependabot guide link are bumped
+- The command list in the CLI module docstring now names `block`, `log`, `conclude`, and
+  `doc`. A paragraph of the planners rule is rewrapped, with its wording unchanged
+
 ## [0.16.0] - 2026-11-01
 
 ### Added
