@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-13
+
 ### Changed
 
 - Template maintenance: the repotemplates stamp moves to 0.15.0 (the `pyproject.toml`
