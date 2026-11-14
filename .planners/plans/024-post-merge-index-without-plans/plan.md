@@ -1,7 +1,7 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: active
+status: implemented
 branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
 concluded:
@@ -91,3 +91,4 @@ lifecycle is rerun here with `planners start`, `log`, and `implemented`.
   - `git diff 5cfa986 HEAD -- planners tests CHANGELOG.md README.md` is empty: the code, tests, and docs match the mobile tree at that commit.
   - Gate at `acc8b1a`: pytest 795 passed (coverage 95%), ruff check and format, pyrefly 0 errors, planners validate ok. The root-only test failure the cloud session saw is fixed by `1cdde87`.
 - **2026-11-14T10:37:34-08:00** — PR opened: https://github.com/gitronald/planners/pull/71
+- **2026-11-14T11:57:51-08:00** — Implemented: 4 commits ahead of `dev`.
