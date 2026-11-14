@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-11-14
+
 ### Changed
 
 - `planners index` with no `--cols` keeps the column set the index is already in, and
