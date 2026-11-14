@@ -3167,11 +3167,23 @@ def index(
     ),
     cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
 ) -> None:
-    """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter."""
+    """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
+
+    A repo with no ``.planners/plans/`` directory has nothing to index, and the
+    command writes nothing there: the post-merge hook runs it after every clean
+    merge, and a repo that carries the hooks before its first plan would
+    otherwise be left with an untracked ``.planners/README.md`` each time. The
+    check is on the directory, not the plan count, so a repo whose plans were
+    all removed still gets its index regenerated. The commands that create a
+    plan write the index themselves, so the first plan still lands with one.
+    """
     if cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
     _require_repository(repo_path)
+    if not (repo_path / PLANS_DIR).is_dir():
+        typer.echo(f"no {PLANS_DIR.as_posix()}/; nothing to index")
+        return
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
 
