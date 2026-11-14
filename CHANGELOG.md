@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   below the repository root, and left the review's entries uncommitted
 - In the same layout, `activate` and `start` counted the plan's own unpushed commits as
   other work, and `conclude` dated a plan from its last paperwork commit rather than its
-  last work commit
+  last work commit. `planners review` reported a symbol in a tracked file as missing
 
 ## [0.16.1] - 2026-11-13
 
