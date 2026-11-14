@@ -379,6 +379,27 @@ def test_code_refs_are_checked_against_the_tree(repo: Path) -> None:
     assert refs["src/old/"].state == "missing"
 
 
+def test_code_refs_resolve_from_a_directory_below_the_repository_root(
+    tmp_path: Path,
+) -> None:
+    # The plans and the code live in a project folder inside the repository.
+    # `ls-tree` lists the tree from the folder, so `show` has to read it there.
+    init_git(tmp_path)
+    project = tmp_path / "project"
+    _write(project, "src/app.py", "def run():\n    return 1\n")
+    body = "Builds on `app.run` and calls `app.missing`."
+    _write(
+        project,
+        ".planners/plans/000-idea/plan.md",
+        _plan(0, "idea", "draft", "2026-03-01T09:00:00-08:00", body),
+    )
+    _commit(tmp_path, "initial commit", "2026-03-01T09:00:00-08:00")
+    refs = {r.ref: r for r in _by_prefix(_gather(project))["000"].code_refs}
+    assert refs["app.run"].state == "present"
+    assert refs["app.run"].path == "src/app.py"
+    assert refs["app.missing"].state == "missing"
+
+
 def test_an_untracked_path_on_disk_is_present(repo: Path) -> None:
     (repo / "src" / "gone.py").write_text("untracked\n")
     refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
@@ -676,3 +697,87 @@ def test_last_review_skips_a_fenced_example_marker() -> None:
         "```\n- **2099-01-01T00:00:00-07:00** — Review: moot.\n```\n"
     )
     assert last_review(body) == "2026-06-01T12:00:00-07:00"
+
+
+def test_cli_commit_accepts_a_log_added_ahead_of_the_handoff(cli_repo: Path) -> None:
+    # `log` puts a plan's first Log ahead of `## Handoff`, which splits the rest
+    # of the body in two. That is still a change to the Log and nothing else.
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(
+        text[: text.index("## Log")].rstrip("\n") + "\n\n## Handoff\n\nNothing.\n"
+    )
+    _commit(cli_repo, "swap the log for a handoff", "2026-03-19T10:00:00-08:00")
+    assert runner.invoke(app, ["log", "0", "Reviewed.", "--no-commit"]).exit_code == 0
+    assert path.read_text().index("## Log") < path.read_text().index("## Handoff")
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    assert git_out(cli_repo, "log", "-1", "--format=%s").strip() == (
+        "plan [review]: 1 plan"
+    )
+
+
+def test_cli_commit_from_a_directory_below_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plans live in a project folder inside the repository. git lists a
+    # diff's paths and reads `HEAD:<path>` from the top of the repository, so
+    # both have to be anchored at the folder the command runs from.
+    init_git(tmp_path)
+    project = tmp_path / "project"
+    rel = ".planners/plans/000-draft-idea/plan.md"
+    _write(project, rel, _plan(0, "draft-idea", "draft", "2026-03-01T09:00:00-08:00"))
+    _commit(tmp_path, "add the plan", "2026-03-01T09:00:00-08:00")
+    _append_log(project, rel, ENTRY)
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(review_mod, "_gh_available", lambda: False)
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+        "plan [review]: 1 plan"
+    )
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(changed) == ["project/.planners/README.md", f"project/{rel}"]
+
+
+def test_cli_commit_still_refuses_a_change_beside_the_new_log(cli_repo: Path) -> None:
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(
+        text[: text.index("## Log")].rstrip("\n") + "\n\n## Handoff\n\nNothing.\n"
+    )
+    _commit(cli_repo, "swap the log for a handoff", "2026-03-19T10:00:00-08:00")
+    assert runner.invoke(app, ["log", "0", "Reviewed.", "--no-commit"]).exit_code == 0
+    path.write_text(path.read_text().replace("Nothing.", "Something."))
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "changed outside its Log" in result.output
+
+
+def test_cli_commit_refuses_a_removed_log(cli_repo: Path) -> None:
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(text[: text.index("## Log")].rstrip("\n") + "\n")
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "its Log was removed" in result.output
+
+
+def test_cli_commit_refuses_a_log_moved_past_another_section(cli_repo: Path) -> None:
+    # Ahead of the Handoff at HEAD, so moving it after the Handoff, with an entry
+    # added, moves a section the review did not write.
+    path = cli_repo / DONE
+    text = path.read_text()
+    head, log = text[: text.index("## Log")], text[text.index("## Log") :]
+    path.write_text(head + log.rstrip("\n") + "\n\n## Handoff\n\nNothing.\n")
+    _commit(cli_repo, "add a handoff after the log", "2026-03-19T10:00:00-08:00")
+    moved = head + "## Handoff\n\nNothing.\n\n" + log.rstrip("\n") + "\n- Reviewed.\n"
+    path.write_text(moved)
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "changed outside its Log" in result.output

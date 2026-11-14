@@ -1,11 +1,11 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: draft
-branch:
+status: done
+branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
-concluded:
-pr:
+concluded: 2026-11-14T10:36:44-08:00
+pr: https://github.com/gitronald/planners/pull/71
 ---
 
 # Keep the post-merge index hook from creating .planners/ in a repo with no plans
@@ -54,3 +54,49 @@ next health check, with nothing to commit.
 
 - The `validate` hook, which already matches only plan files.
 - Changing what the template ships: the hook entry stays `planners index .`.
+
+### Landing from a cloud session
+
+The implementation was written in a sandboxed cloud session and is reauthored
+here, batch by batch, under the gate. Its commits are a proposal and are not
+merged or cherry-picked.
+
+- Reauthored from `origin/ccr-08cc166f-iubhf8` @ `3522aab8` (8 commits, forked
+  from `dev` @ `a5d1742`, no PR). The rest of that branch, a lifecycle bug sweep,
+  lands through plan 025, stacked on this plan's branch.
+- Gate: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`,
+  `uv run pyrefly check`, `uv run planners validate .`
+- Per-commit review: `../025-lifecycle-bug-sweep/review.md`
+
+| # | Batch | Desktop subject | Mobile shas | Fixes / regenerations | Approval |
+|---|---|---|---|---|---|
+| 1 | `tests-init-git` | `update cli tests to share init_git and run as root` | 5cfa986c | Adds the `from tests.helpers import init_git` import itself, since on mobile that line came in with 53b56a7, which lands later here; Drops the module's own _init_git and the inline git init in test_add_commits_by_default_in_git_repo in favor of tests.helpers.init_git; Replaces the chmod 000 unreadable-root test with a regular-file root (NotADirectoryError), renamed test_git_turns_an_unusable_root_into_a_cli_error; No Co-Authored-By or Claude-Session trailers |  |
+| 2 | `index-no-plans-dir` | `update index to write nothing without a plans directory` | 53b56a74 ff1b40a4 3522aab8 | Early return plus docstring in index() as on mobile. cols still defaults to "curated" at this point; Tests: the parametrized no-plans-dir test, the leaves-other-.planners-files test, the empty-plans-dir and removed-plans tests, the first-add test, and the post-merge hook test. Adds the HOOKS, commit_all, git, and git_out imports (init_git is already imported); CHANGELOG bullet under Unreleased/Fixed from ff1b40a, without the 'refused add or finalize' sentence that 3522aab appended, which goes in the add-letters batch; README command-reference line and the SKILL.md paragraph from ff1b40a; No trailers |  |
+
+Dropped: `e7b7840c` (`plan [activate]`), `6afbdb69` (`plan [log]`), and
+`7c8edf3a` (`plan [implemented]`). These are the lifecycle records the cloud
+session wrote by hand on its own branch, with its own hashes and checks. The
+lifecycle is rerun here with `planners start`, `log`, and `implemented`.
+
+## Log
+
+- **2026-11-14T10:32:17-08:00** — Activated.
+  - Branch: `feature/024-post-merge-index-without-plans`
+  - Base: `dev` at `fb82004`
+  - Worktree: `.worktrees/024-post-merge-index-without-plans`
+  - PR: pending
+- **2026-11-14T10:37:29-08:00** — Reauthored from `origin/ccr-08cc166f-iubhf8` @ `3522aab8`, both batches retyped by hand and gated.
+  - `1cdde87` update cli tests to share init_git and run as root <- `5cfa986c`
+  - `acc8b1a` update index to write nothing without a plans directory <- `53b56a74`, `ff1b40a4` (the `3522aab8` edits to these files go to plan 025)
+  - `git diff 5cfa986 HEAD -- planners tests CHANGELOG.md README.md` is empty: the code, tests, and docs match the mobile tree at that commit.
+  - Gate at `acc8b1a`: pytest 795 passed (coverage 95%), ruff check and format, pyrefly 0 errors, planners validate ok. The root-only test failure the cloud session saw is fixed by `1cdde87`.
+- **2026-11-14T10:37:34-08:00** — PR opened: https://github.com/gitronald/planners/pull/71
+- **2026-11-14T11:57:51-08:00** — Implemented: 4 commits ahead of `dev`.
+- **2026-11-14T11:58:04-08:00** — Review gate: `/code-review` (low) on #71 found nothing: the correctness finder returned no candidates and the gap sweep added none. No follow-up commits.
+
+## Retrospective
+
+- The fix landed exactly as specified: one early return in `index`, with `_refresh_index` left alone so the plan-creating commands still write the first index.
+- The work came from a cloud session that could not push to `dev` or run as a non-root user. Its one test failure (`chmod 000` does not stop root) was a test problem, not a code problem, and the reauthored branch fixes it in its first commit.
+- The plan lifecycle records the session wrote by hand on its own branch (activate, log, implemented, all with `--allow-branch`) had to be dropped and rerun here. A cloud session should leave the lifecycle to the desktop and record only what it ran.
+- Stacking plan 025 on this branch kept the two changes to `index()` and its changelog bullet in order. The union merge of the index duplicated rows, and the post-merge hook's regeneration repaired them, as designed.

@@ -110,6 +110,23 @@ def test_conclude_dates_the_last_work_commit_not_the_paperwork(
     assert "plan 005 is done; it is closed" in again.output
 
 
+def test_conclude_dates_the_work_from_a_directory_below_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plans live in a project folder inside the repository, and the work
+    # lands outside it. git lists a commit's paths from the top of the
+    # repository, so the plan-only commit reads as the plan's only once the
+    # paths are taken from the folder.
+    init_git(tmp_path)
+    plan = _repo(tmp_path / "project")
+    commit_all(tmp_path, "initial commit", date=_START)
+    _branch_with_work(tmp_path, plan)
+    monkeypatch.chdir(tmp_path / "project")
+    result = runner.invoke(app, ["conclude", "005"])
+    assert result.exit_code == 0, result.output
+    assert PlanMetadata.from_file(plan).concluded == _WORK
+
+
 def test_conclude_falls_back_to_head_without_a_work_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

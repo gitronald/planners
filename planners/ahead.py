@@ -17,7 +17,7 @@ mainline guard.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from planners import proc
@@ -110,6 +110,11 @@ def commits(root: Path, *revs: str, merges: bool = True) -> list[Commit] | None:
     ``^ref`` exclusions to leave out. ``None`` when git cannot list them: an
     unknown ref, no repo, or no git.
     ``merges=False`` leaves merge commits out.
+
+    Paths are relative to ``root``, as the plan directories compared with them
+    are. A path outside ``root``, when it is a directory below the top of the
+    repository, keeps git's ``:/`` top-level marker, so it is never read as one
+    of the plan's.
     """
     # ``core.quotepath=off`` so a path with a non-ASCII byte prints as itself
     # rather than C-quoted with octal escapes, which no prefix would match; and
@@ -126,7 +131,24 @@ def commits(root: Path, *revs: str, merges: bool = True) -> list[Commit] | None:
     if not merges:
         args.append("--no-merges")
     log = proc.git_out(root, [*args, *revs])
-    return None if log is None else parse_log(log)
+    if log is None:
+        return None
+    # `--name-only` lists paths from the top of the repository. `--relative`
+    # would list them from `root` but drop the ones outside it, which are
+    # exactly the work that is not the plan's.
+    prefix = (proc.git_out(root, ["rev-parse", "--show-prefix"]) or "").strip()
+    found = parse_log(log)
+    if not prefix:
+        return found
+    return [
+        replace(commit, paths=tuple(_from(prefix, path) for path in commit.paths))
+        for commit in found
+    ]
+
+
+def _from(prefix: str, path: str) -> str:
+    """``path``, listed from the top of the repository, as seen from ``prefix``."""
+    return path.removeprefix(prefix) if path.startswith(prefix) else f":/{path}"
 
 
 def count(root: Path, branch: str, plan_dir: str) -> Ahead | None:

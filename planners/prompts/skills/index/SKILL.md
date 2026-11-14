@@ -19,18 +19,30 @@ aggregate.
 ### 1. Run the generator
 
 ```bash
-# default: curated 5-column set (#, Plan, Status, Concluded, PR)
+# the column set the index is already in; curated for a new one
+# (#, Plan, Status, Concluded, PR)
 {cli} index .
 
 # wide column set (adds Branch + Created)
 {cli} index . --cols all
+
+# back to the curated set
+{cli} index . --cols curated
 ```
+
+The lifecycle commands and the `post-merge` hook refresh the index in the set
+it is in, so an index made wide stays wide until `--cols curated` narrows it.
 
 Pass a different path in place of `.` to target another repo root. Rows sort by
 status (`active, implemented, blocked, draft, done, inactive, retired`), then by
 concluded datetime, PR number, and plan number, each descending. A plan with no
 concluded datetime or no PR sorts after one that has it. Empty cells render as
 an em-dash.
+
+In a repo with no `.planners/plans/` directory the generator writes nothing and
+prints `no .planners/plans/; nothing to index`, so the `post-merge` hook leaves
+a repo that has no plans yet clean. `{cli} add` writes the index along with the
+first plan.
 
 ### 2. Verify
 
