@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reading HEAD as detached, and `activate` logged its base as `a detached HEAD`
 - `planners add --parent <N>` could hand out a sibling letter already held by a plan
   whose frontmatter does not parse
+- `planners set-pr`, `activate`, `block`, `implemented`, `conclude`, and `retire` read
+  `HEAD` to tell a run that failed to commit from a later edit. In a repo whose plans sit
+  in a folder below the repository root that read found nothing, so a re-run took work that
+  was already committed for a run that had failed to commit, and repeated or refused it
 
 ## [0.16.1] - 2026-11-13
 

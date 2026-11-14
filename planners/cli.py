@@ -738,7 +738,9 @@ def _frontmatter_at_head(root: Path, path: Path) -> dict[str, str | None]:
     Tells a run that wrote a field and failed to commit, where ``HEAD`` still has
     the old value, from a later edit to a file ``HEAD`` already has that value in.
     """
-    text = proc.git_out(root, ["show", f"HEAD:{path.relative_to(root).as_posix()}"])
+    # `./` reads the path from `root`. Bare, git reads it from the top of the
+    # repository, and finds nothing when `root` is a directory below that.
+    text = proc.git_out(root, ["show", f"HEAD:./{path.relative_to(root).as_posix()}"])
     if text is None:
         return {}
     frontmatter, _ = split_frontmatter(text)

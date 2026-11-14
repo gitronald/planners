@@ -197,3 +197,26 @@ def test_set_pr_logs_nothing_for_a_url_the_plan_already_records(
     assert "nothing to do" in result.output
     assert plan.read_text(encoding="utf-8").count("PR opened:") == 1
     assert git_out(tmp_path, "rev-parse", "HEAD") == head
+
+
+def test_set_pr_reads_head_from_a_directory_below_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plans live in a project folder inside the repository. `git show
+    # HEAD:<path>` reads a bare path from the top of the repository, so the
+    # check for an already-committed URL has to anchor it at the folder.
+    init_git(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    plan_dir = _repo(project)
+    commit_all(tmp_path, "initial commit")
+    monkeypatch.chdir(project)
+    assert runner.invoke(app, ["set-pr", "005", _URL]).exit_code == 0
+    plan = plan_dir / "plan.md"
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nA note.\n", encoding="utf-8")
+    head = git_out(tmp_path, "rev-parse", "HEAD")
+
+    result = runner.invoke(app, ["set-pr", "005", _URL])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" in result.output
+    assert git_out(tmp_path, "rev-parse", "HEAD") == head
