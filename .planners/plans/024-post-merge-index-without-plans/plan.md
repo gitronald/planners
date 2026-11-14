@@ -1,8 +1,8 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: draft
-branch:
+status: active
+branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
 concluded:
 pr:
@@ -77,3 +77,11 @@ Dropped: `e7b7840c` (`plan [activate]`), `6afbdb69` (`plan [log]`), and
 `7c8edf3a` (`plan [implemented]`). These are the lifecycle records the cloud
 session wrote by hand on its own branch, with its own hashes and checks. The
 lifecycle is rerun here with `planners start`, `log`, and `implemented`.
+
+## Log
+
+- **2026-11-14T10:32:17-08:00** — Activated.
+  - Branch: `feature/024-post-merge-index-without-plans`
+  - Base: `dev` at `fb82004`
+  - Worktree: `.worktrees/024-post-merge-index-without-plans`
+  - PR: pending
