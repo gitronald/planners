@@ -101,9 +101,11 @@ def _predates(value: str | None, start: str | None) -> bool:
 class PlanMetadata(Serializable):
     """A plan file's frontmatter plus its title.
 
-    The nullable fields (``branch``, ``concluded``, ``pr``) carry a meaningful
+    The nullable fields (``branch`` and ``pr``) carry a meaningful
     empty-vs-``None`` distinction: ``""`` is *pending* (an open plan), ``None``
     is *closed and genuinely N/A*. ``render`` and ``validate`` both respect it.
+    ``concluded`` is never ``null``: it is empty while the plan is open and a
+    timestamp once it is done or retired.
     """
 
     id: int = field(
@@ -128,7 +130,7 @@ class PlanMetadata(Serializable):
     concluded: str | None = field(
         default="",
         metadata={
-            "description": 'ISO-8601 from concluding commit; "" if open, null if N/A'
+            "description": 'ISO-8601 from concluding commit; "" if open, never null'
         },
     )
     pr: str | None = field(

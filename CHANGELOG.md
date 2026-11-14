@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The `concluded` field's schema description said it could be `null` when not
+  applicable. It is never `null`: empty while the plan is open and a timestamp once
+  the plan is closed, which is what `validate` enforces
 - A subplan row added to an umbrella's table landed after a blank line left ahead of
   the end marker, outside the table
 - The `planners subplans` listing lost its column alignment on `implemented`
