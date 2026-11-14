@@ -11,7 +11,9 @@ from typer.testing import CliRunner
 
 from planners import cli as cli_mod
 from planners.cli import app
+from planners.host import HOOKS
 from planners.metadata import PlanMetadata
+from tests.helpers import commit_all, git, git_out, init_git
 
 runner = CliRunner()
 
@@ -334,17 +336,107 @@ def test_index_updates_readme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8") == readme
 
 
-def test_index_on_empty_repo_writes_empty_index(
+@pytest.mark.parametrize("cols", [[], ["--cols", "all"]])
+def test_index_without_plans_dir_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cols: list[str]
+) -> None:
+    # No .planners/ at all: there is nothing to index, so nothing is created.
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["index", ".", *cols])
+    assert result.exit_code == 0, result.output
+    assert "no .planners/plans/; nothing to index" in result.output
+    assert not (tmp_path / ".planners").exists()
+
+
+def test_index_without_plans_dir_leaves_other_planners_files_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No .planners/plans directory at all: _plan_files returns [] (missing-dir
-    # branch) and index writes a title + empty table rather than crashing.
+    # .planners/ can exist before any plan does (a committed config.toml, a
+    # deferred plan in staging); the check is on plans/, not on .planners/.
+    config = _write_file(tmp_path / ".planners" / "config.toml", "[remote]\n")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["index", "."])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
+    assert "nothing to index" in result.output
+    assert sorted((tmp_path / ".planners").iterdir()) == [config]
+
+
+def test_index_with_empty_plans_dir_writes_empty_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # plans/ exists with no plan in it (every plan removed, say): the index is
+    # still regenerated, as a title and an empty table.
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["index", "."])
+    assert result.exit_code == 0, result.output
+    assert "updated" in result.output
     readme = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
     assert readme.startswith("# Plans\n")
     assert "| # | Plan | Status | Concluded | PR |" in readme
+
+
+def test_index_with_empty_plans_dir_drops_rows_of_removed_plans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    readme = tmp_path / ".planners" / "README.md"
+    assert "plans/001-thing/plan.md" in readme.read_text(encoding="utf-8")
+
+    plan.unlink()
+    plan.parent.rmdir()
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert "001-thing" not in readme.read_text(encoding="utf-8")
+
+
+def test_first_add_in_a_fresh_repo_still_commits_the_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `index` skips a repo with no plans/, but `add` writes the index itself,
+    # so the first plan lands with its row in the same commit.
+    root = tmp_path / "repo"
+    root.mkdir()
+    init_git(root)
+    monkeypatch.chdir(root)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert not (root / ".planners").exists()
+
+    result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
+    assert result.exit_code == 0, result.output
+    readme = (root / ".planners" / "README.md").read_text(encoding="utf-8")
+    assert "plans/000-feature-x/plan.md" in readme
+    committed = git_out(root, "show", "--name-only", "--format=", "HEAD").split()
+    assert ".planners/README.md" in committed
+    assert ".planners/plans/000-feature-x/plan.md" in committed
+    assert git_out(root, "status", "--porcelain") == ""
+
+
+def test_post_merge_index_hook_leaves_a_planless_repo_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A repo that carries the hooks before its first plan: after a clean merge
+    # the post-merge hook runs its `index .`, which must not leave an untracked
+    # .planners/README.md behind.
+    (hook,) = (h for h in HOOKS if h.id == "planners-index")
+    root = tmp_path / "repo"
+    root.mkdir()
+    init_git(root)
+    _write_file(root / "a.txt", "a\n")
+    commit_all(root, "base")
+    git(root, "checkout", "-q", "-b", "side")
+    _write_file(root / "b.txt", "b\n")
+    commit_all(root, "side")
+    git(root, "checkout", "-q", "main")
+    git(root, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, list(hook.args))
+    assert result.exit_code == 0, result.output
+    assert git_out(root, "status", "--porcelain") == ""
+    assert not (root / ".planners").exists()
 
 
 def test_index_rejects_bad_cols(
