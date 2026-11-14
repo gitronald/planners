@@ -172,7 +172,10 @@ def local_paths(note: str) -> list[str]:
     a plan is a shared record, so an absolute or home-directory path in it names
     a single machine.
     """
-    return list(dict.fromkeys(_LOCAL_PATH_RE.findall(note)))
+    # A path at the end of a clause takes its punctuation along; drop it, so the
+    # same path is not reported once per spelling.
+    found = (match.rstrip(".,;:!?") for match in _LOCAL_PATH_RE.findall(note))
+    return list(dict.fromkeys(found))
 
 
 def _recorded(text: str, pattern: re.Pattern[str]) -> str | None:

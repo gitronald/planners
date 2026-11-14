@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `planners log` reported a local path with the sentence punctuation that followed it
 - `planners start` on a single-branch remote no longer reports `0 commit(s) unpushed`
   when the base is level with its upstream
 - `planners finish` judged the wrong branch on the remote when another branch's name
