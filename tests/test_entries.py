@@ -159,3 +159,8 @@ def test_recorded_worktree_reads_the_main_checkout() -> None:
 
 def test_recorded_worktree_is_none_without_an_entry() -> None:
     assert entries.recorded_worktree("# T\n\n## Plan\n\nBody.\n") is None
+
+
+def test_local_paths_leaves_sentence_punctuation_off_a_path() -> None:
+    note = "See /home/u/x, then /home/u/x. Also ~/notes; done."
+    assert entries.local_paths(note) == ["/home/u/x", "~/notes"]

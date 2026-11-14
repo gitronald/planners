@@ -996,9 +996,7 @@ def _render_plan(item: PlanEvidence) -> list[str]:
             lines.append(f"worktree: {state.worktree} ({dirty})")
     if item.pr_state is not None:
         lines.append(f"pr state: {item.pr_state.state} {item.pr_state.url}".rstrip())
-    elif item.pr or (
-        item.status in {s.value for s in CAREFUL_STATUSES} and item.branch
-    ):
+    elif item.pr or (item.status in CAREFUL_STATUSES and item.branch):
         lines.append("pr state: unknown")
     for flag in item.flags:
         lines.append(f"flag: {flag}")

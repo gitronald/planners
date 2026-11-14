@@ -33,6 +33,7 @@ __all__ = [
     "LOCATION_ENV",
     "git_out",
     "pinned_env",
+    "ref_exists",
     "run",
     "upstream",
     "worktrees",
@@ -88,6 +89,11 @@ def git_out(root: Path, args: Sequence[str]) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def ref_exists(root: Path, ref: str) -> bool:
+    """True when ``ref`` names something in the repo at ``root``."""
+    return git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
 
 
 def upstream(root: Path) -> str | None:

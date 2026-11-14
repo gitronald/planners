@@ -201,7 +201,7 @@ def check_base_pushed(
         return Step(SKIPPED, "no remote to push to")
     ahead = ahead_mod.count(root, base, plan_dir)
     if origin is RemoteKind.single_branch:
-        waiting = f"{ahead.total} commit(s) unpushed; " if ahead else ""
+        waiting = f"{ahead.total} commit(s) unpushed; " if ahead and ahead.total else ""
         return Step(
             SKIPPED,
             f"origin is single-branch: {waiting}a push publishes into the live "
@@ -229,10 +229,10 @@ def ensure_branch(root: Path, branch: str, base: str) -> Step:
     follows it instead of diverging from it.
     """
     local = f"refs/heads/{branch}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", local]) is not None:
+    if proc.ref_exists(root, local):
         return Step(DONE, f"{branch} exists")
     tracking = f"refs/remotes/origin/{branch}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is not None:
+    if proc.ref_exists(root, tracking):
         must(root, ["git", "branch", "--track", branch, f"origin/{branch}"])
         return Step(RAN, f"created {branch} from origin/{branch}")
     must(root, ["git", "branch", branch, base])
