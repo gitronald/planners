@@ -390,7 +390,9 @@ class _Git:
         return self._trees[rev]
 
     def show(self, rev: str, path: str) -> str | None:
-        return self.out(["show", f"{rev}:{path}"])
+        # `./` reads ``path`` from the root, as ``ls-tree`` lists it. Bare, git
+        # reads it from the top of the repository.
+        return self.out(["show", f"{rev}:./{path}"])
 
     def log(self, args: list[str]) -> list[Commit]:
         text = self.out(["log", f"--format={_RS}%h{_US}%aI{_US}%s", *args])

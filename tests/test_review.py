@@ -379,6 +379,27 @@ def test_code_refs_are_checked_against_the_tree(repo: Path) -> None:
     assert refs["src/old/"].state == "missing"
 
 
+def test_code_refs_resolve_from_a_directory_below_the_repository_root(
+    tmp_path: Path,
+) -> None:
+    # The plans and the code live in a project folder inside the repository.
+    # `ls-tree` lists the tree from the folder, so `show` has to read it there.
+    init_git(tmp_path)
+    project = tmp_path / "project"
+    _write(project, "src/app.py", "def run():\n    return 1\n")
+    body = "Builds on `app.run` and calls `app.missing`."
+    _write(
+        project,
+        ".planners/plans/000-idea/plan.md",
+        _plan(0, "idea", "draft", "2026-03-01T09:00:00-08:00", body),
+    )
+    _commit(tmp_path, "initial commit", "2026-03-01T09:00:00-08:00")
+    refs = {r.ref: r for r in _by_prefix(_gather(project))["000"].code_refs}
+    assert refs["app.run"].state == "present"
+    assert refs["app.run"].path == "src/app.py"
+    assert refs["app.missing"].state == "missing"
+
+
 def test_an_untracked_path_on_disk_is_present(repo: Path) -> None:
     (repo / "src" / "gone.py").write_text("untracked\n")
     refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
