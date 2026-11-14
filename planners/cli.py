@@ -39,7 +39,7 @@ from planners import start as start_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
 from planners.host import HOST
-from planners.index import INDEX_PATH, render_index, render_plans_table
+from planners.index import INDEX_PATH, render_index, render_plans_table, tracked_cols
 from planners.metadata import (
     CLOSED_STATUSES,
     DIRNAME_RE,
@@ -579,9 +579,20 @@ def _repo_root_of(plan: Path) -> Path | None:
     return None
 
 
-def _refresh_index(repo_root: Path, cols: str) -> Path:
-    """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter."""
+def _refresh_index(repo_root: Path, cols: str | None = None) -> Path:
+    """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter.
+
+    ``cols`` names the column set to write, which is ``index --cols``'s to say.
+    Left out, the index keeps the set it is already in, ``curated`` for a new
+    one: a wide index is a tracked state ``validate`` accepts, so a lifecycle
+    command that refreshes one must not narrow it on the way.
+    """
     index = repo_root / INDEX_PATH
+    if cols is None:
+        try:
+            cols = tracked_cols(index.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            cols = "curated"
     metas = _collect_metas(repo_root / PLANS_DIR)
     index.parent.mkdir(parents=True, exist_ok=True)
     index.write_text(_index_document(metas, cols), encoding="utf-8")
@@ -1060,7 +1071,7 @@ def add(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     _commit(root, f"plan [add]: {prefix} - {slug}", [path, readme])
 
 
@@ -1191,7 +1202,7 @@ def finalize(
     if staging.is_dir() and not any(staging.iterdir()):
         staging.rmdir()
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
 
     if no_commit:
         typer.echo(f"finalized {len(finalized)} plan(s) (no commit)")
@@ -1411,7 +1422,7 @@ def _activate(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     # The subject names the slug, not the title: a slug is fixed by the directory
     # name, while a title can be reworded until the subject no longer names the plan
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
@@ -1548,7 +1559,7 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
+        staged.append(_refresh_index(root))
     _commit(root, f"plan [pr]: {label} - {slug}", staged)
 
 
@@ -1776,7 +1787,7 @@ def implemented(
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
+        staged.append(_refresh_index(root))
     _commit(root, f"plan [implemented]: {label} - {slug}", staged)
     if pr:
         _mark_pr_ready(root, pr)
@@ -2055,7 +2066,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
     finish_mod.delete_local_branch(root, branch, base, say)
 
     if _index_is_stale(root):
-        _refresh_index(root, cols="curated")
+        _refresh_index(root)
     if not _is_unmodified(root, root / INDEX_PATH):
         finish_mod.must(root, ["git", "add", INDEX_PATH.as_posix()])
         finish_mod.must(
@@ -2447,7 +2458,7 @@ def retire(
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
+        staged.append(_refresh_index(root))
     _commit(root, f"plan [retire]: {label} - {slug}", staged)
 
 
@@ -2491,7 +2502,7 @@ def block(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     _commit(root, f"plan [block]: {meta.prefix} - {meta.slug}", [plan, readme])
 
 
@@ -2578,7 +2589,7 @@ def log_(
         return
     paths = [target]
     if (root / INDEX_PATH).is_file() and _index_is_stale(root):
-        readme = _refresh_index(root, cols="curated")
+        readme = _refresh_index(root)
         paths.append(readme)
         typer.echo(f"refreshed the stale index {_shown(readme, root)}")
     _commit(
@@ -2690,7 +2701,7 @@ def conclude(
 
     if no_commit:
         return
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     _commit(root, f"plan [close]: {meta.prefix} - {meta.slug}", [plan, readme])
 
 
@@ -2890,7 +2901,7 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
         raise typer.Exit(1)
 
     _guard_base_branch(root, "plan [review]", allow_branch=allow_branch)
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     paths = [*(root / rel for rel in staged), readme]
     noun = "plan" if len(staged) == 1 else "plans"
     _commit(root, f"plan [review]: {len(staged)} {noun}", paths)
@@ -3096,7 +3107,12 @@ def index(
     repo_path: Path = typer.Argument(
         Path("."), help="Repo root (contains .planners/)."
     ),
-    cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
+    cols: str | None = typer.Option(
+        None,
+        "--cols",
+        help="Column set: curated | all. Default: the set the index is already "
+        "in, curated for a new one.",
+    ),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
 
@@ -3108,7 +3124,7 @@ def index(
     all removed still gets its index regenerated. The commands that create a
     plan write the index themselves, so the first plan still lands with one.
     """
-    if cols not in INDEX_COLS:
+    if cols is not None and cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
     _require_repository(repo_path)

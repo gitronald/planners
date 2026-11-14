@@ -1609,3 +1609,33 @@ def test_validate_json_reports_a_missing_file(
     assert doc["ok"] is False
     assert doc["plans"][0]["plan"] is None
     assert "No such file" in doc["plans"][0]["errors"][0]
+
+
+# --- index column set ----------------------------------------------------------
+
+
+def test_a_wide_index_stays_wide_through_a_lifecycle_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `validate` accepts a wide index as a tracked state, so the commands that
+    # refresh the index must not narrow it back to the curated columns.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", ".", "--cols", "all"]).exit_code == 0
+    commit_all(tmp_path, "initial commit")
+    index = tmp_path / ".planners" / "README.md"
+
+    result = runner.invoke(app, ["block", "1"])
+    assert result.exit_code == 0, result.output
+    text = index.read_text(encoding="utf-8")
+    assert "| # | Plan | Status | Branch | Created | Concluded | PR |" in text
+    assert "| blocked | feature/thing |" in text
+
+    # The hook's bare `index .` keeps it as well; only --cols changes the set.
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert index.read_text(encoding="utf-8") == text
+    assert runner.invoke(app, ["index", ".", "--cols", "curated"]).exit_code == 0
+    assert "| Branch |" not in index.read_text(encoding="utf-8")
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0

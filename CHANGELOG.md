@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `planners index` with no `--cols` keeps the column set the index is already in, and
+  writes the curated set for a new index. The lifecycle commands do the same when they
+  refresh it. Before, each of them, and the `post-merge` hook, rewrote an index made
+  with `--cols all` back to the curated columns. `--cols curated` narrows a wide index
+
 ### Fixed
 
 - `planners index` writes nothing in a repo with no `.planners/plans/` directory, and
