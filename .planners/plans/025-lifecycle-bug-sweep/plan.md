@@ -1,8 +1,8 @@
 ---
 id: 25
 slug: lifecycle-bug-sweep
-status: draft
-branch:
+status: active
+branch: feature/025-lifecycle-bug-sweep
 created: 2026-11-14T10:29:01-08:00
 concluded:
 pr:
@@ -69,3 +69,11 @@ own commit, with a test that fails on the old code, retyped by hand and gated.
 
 Dropped: none from the sweep. The cloud session's plan lifecycle commits for
 plan 024 are dropped there.
+
+## Log
+
+- **2026-11-14T10:37:57-08:00** — Activated.
+  - Branch: `feature/025-lifecycle-bug-sweep`
+  - Base: `dev` at `c06d0ed`
+  - Worktree: `.worktrees/025-lifecycle-bug-sweep`
+  - PR: pending
