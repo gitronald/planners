@@ -157,6 +157,8 @@ INDEX_TITLE = "Plans"
 # staleness comparison can never drift apart — a set the check did not know
 # about would make `validate` fail a correctly generated index.
 INDEX_COLS = ("curated", "all")
+# The widest status name, for the listings that print statuses in a column.
+_STATUS_WIDTH = max(len(status.value) for status in Status)
 
 
 def _version() -> str:
@@ -2826,7 +2828,7 @@ def subplans(
     width = max((len(meta.filename) for meta in metas), default=0)
     for meta in metas:
         typer.echo(
-            f"{prefix}{meta.letter}  {meta.status.value:<8}  "
+            f"{prefix}{meta.letter}  {meta.status.value:<{_STATUS_WIDTH}}  "
             f"{meta.filename:<{width}}  branch: {meta.branch or '-'}  "
             f"needs: {', '.join(meta.needs) or '-'}"
         )

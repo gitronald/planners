@@ -392,3 +392,15 @@ def test_write_table_leaves_a_fenced_example_table_alone() -> None:
     out = write_table(text, [_sub("b", "active")])
     assert example in out
     assert out.endswith(f"| b | active |\n{TABLE_END}\n")
+
+
+def test_write_table_appends_a_row_ahead_of_a_blank_line_before_the_end() -> None:
+    # A blank line between the last row and the end marker: a row added after
+    # it would render as a paragraph outside the table.
+    text = _umbrella("| [a](subplans/a-step-a.md) |  | draft |  |\n\n")
+    out = write_table(text, [_sub("a"), _sub("b")])
+    assert (
+        "| [a](subplans/a-step-a.md) |  | draft |  |\n"
+        "| [b](subplans/b-step-b.md) | step-b | draft |  |\n"
+        f"\n{TABLE_END}\n" in out
+    )

@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A subplan row added to an umbrella's table landed after a blank line left ahead of
+  the end marker, outside the table
+- The `planners subplans` listing lost its column alignment on `implemented`
 - `planners log` reported a local path with the sentence punctuation that followed it
 - `planners start` on a single-branch remote no longer reports `0 commit(s) unpushed`
   when the base is level with its upstream

@@ -481,5 +481,10 @@ def write_table(text: str, subplans: list[SubplanMetadata]) -> str:
         ending = "\n" if lines[at].endswith("\n") else ""
         lines[at] = _row(cells) + ending
     if added:
-        lines[table.end : table.end] = added
+        # After the last row, not after a blank line left ahead of the end
+        # marker, where a row would render as a paragraph outside the table.
+        at = table.end
+        while at > table.header and not lines[at - 1].strip():
+            at -= 1
+        lines[at:at] = added
     return "".join(lines)
