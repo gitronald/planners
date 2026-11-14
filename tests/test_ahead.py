@@ -166,6 +166,29 @@ def test_activate_lists_the_other_commits(
     assert "plan [add]: 005" not in lines[-1]
 
 
+def test_activate_sorts_commits_from_a_directory_below_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plans live in a project folder inside the repository. git lists a
+    # commit's paths from the top of the repository, so the plan's own commits
+    # read as its own only once the paths are taken from the folder, and work
+    # outside the folder still reads as other.
+    repo = _repo_with_remote(tmp_path)
+    project = repo / "project"
+    project.mkdir()
+    _seed_plan(project)
+    (repo / "src").mkdir()
+    (repo / "src" / "widget.py").write_text("x = 1\n", encoding="utf-8")
+    commit_all(repo, "update widget")
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "3 ahead of origin/main" in result.output
+    assert "2 are plan 005's own, 1 are other" in result.output
+    assert result.output.splitlines()[-1].endswith(" update widget")
+
+
 def test_activate_reads_a_non_ascii_path_as_the_plans_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
