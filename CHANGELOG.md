@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   plan's worktree, it named that worktree as the main checkout to run from
 - `planners review --commit` accepts a Log that `planners log` added ahead of a
   `## Handoff` or `## Retrospective` in a plan that had no `## Log`. It refused that
-  plan as changed outside its Log. A change beside the new Log is still refused
+  plan as changed outside its Log. A change beside the new Log, a removed Log, and a
+  Log moved past another section are still refused
 - `planners validate` checks for a stale index when a plan is named from inside
   `.planners/` (`validate .` run in `.planners/plans/`). It skipped the check there
 - A `plan.md` that cannot be read, or is not UTF-8, is reported the way an unparseable

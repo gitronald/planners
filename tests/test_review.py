@@ -710,3 +710,29 @@ def test_cli_commit_still_refuses_a_change_beside_the_new_log(cli_repo: Path) ->
     result = runner.invoke(app, ["review", "--commit"])
     assert result.exit_code == 1
     assert "changed outside its Log" in result.output
+
+
+def test_cli_commit_refuses_a_removed_log(cli_repo: Path) -> None:
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(text[: text.index("## Log")].rstrip("\n") + "\n")
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "its Log was removed" in result.output
+
+
+def test_cli_commit_refuses_a_log_moved_past_another_section(cli_repo: Path) -> None:
+    # Ahead of the Handoff at HEAD, so moving it after the Handoff, with an entry
+    # added, moves a section the review did not write.
+    path = cli_repo / DONE
+    text = path.read_text()
+    head, log = text[: text.index("## Log")], text[text.index("## Log") :]
+    path.write_text(head + log.rstrip("\n") + "\n\n## Handoff\n\nNothing.\n")
+    _commit(cli_repo, "add a handoff after the log", "2026-03-19T10:00:00-08:00")
+    moved = head + "## Handoff\n\nNothing.\n\n" + log.rstrip("\n") + "\n- Reviewed.\n"
+    path.write_text(moved)
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "changed outside its Log" in result.output

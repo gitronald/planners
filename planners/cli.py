@@ -2861,23 +2861,45 @@ def subplans(
         raise typer.Exit(1)
 
 
-def _split_log(text: str) -> tuple[tuple[str | None, tuple[str, ...]], str]:
-    """``text`` as (frontmatter and the non-blank lines outside ``## Log``, the Log).
+def _split_log(
+    text: str,
+) -> tuple[tuple[str | None, tuple[str, ...], tuple[str, ...]], str]:
+    """``text`` as ((frontmatter, lines before ``## Log``, lines after it), the Log).
 
-    Two versions of a plan whose outside parts agree differ only in their Log,
-    the one part of a plan ``review --commit`` may carry. The outside lines are
-    compared without their blank lines and without regard to where the Log sits,
-    so a Log added ahead of a ``## Handoff``, which splits the rest of the body in
-    two, still reads as a Log-only change.
+    The lines on either side of the Log keep only the non-blank ones, so a blank
+    line added around a new Log does not read as a change outside it. A plan with
+    no Log has every line before it and none after.
     """
     fm, body = split_frontmatter(text)
-    span = section_span(body, "Log")
-    lines = body.splitlines()
-    if span is None:
-        return (fm, tuple(ln for ln in lines if ln.strip())), ""
-    outside = (*lines[: span[0]], *lines[span[1] :])
-    log = "".join(body.splitlines(keepends=True)[span[0] : span[1]])
-    return (fm, tuple(ln for ln in outside if ln.strip())), log
+    lines = body.splitlines(keepends=True)
+    start, end = section_span(body, "Log") or (len(lines), len(lines))
+
+    def kept(part: list[str]) -> tuple[str, ...]:
+        return tuple(line.rstrip("\n") for line in part if line.strip())
+
+    return (fm, kept(lines[:start]), kept(lines[end:])), "".join(lines[start:end])
+
+
+def _changed_outside_log(current: str, before: str) -> str | None:
+    """Why ``current`` differs from ``before`` outside its Log, or ``None``.
+
+    The parts on either side of the Log are compared in place, so a Log moved
+    among the other sections is a change outside it. The one exception is a plan
+    with no Log at ``HEAD``: its first Log may land anywhere, since ``log`` puts
+    it ahead of a ``## Handoff`` or ``## Retrospective``, which splits the rest of
+    the body in two.
+    """
+    (fm_now, head_now, tail_now), log_now = _split_log(current)
+    (fm_before, head_before, tail_before), log_before = _split_log(before)
+    if log_before and not log_now:
+        return "its Log was removed; a review only adds to a Log"
+    if fm_now != fm_before:
+        return "changed outside its Log"
+    if log_before:
+        same = (head_now, tail_now) == (head_before, tail_before)
+    else:
+        same = head_now + tail_now == head_before
+    return None if same else "changed outside its Log"
 
 
 def _review_commit(root: Path, *, allow_branch: bool) -> None:
@@ -2906,12 +2928,11 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
         before = proc.git_out(root, ["show", f"HEAD:{rel}"])
         if before is None:
             continue
-        outside_now, log_now = _split_log(current)
-        outside_before, log_before = _split_log(before)
-        if outside_now != outside_before:
-            problems.append(f"{rel}: changed outside its Log")
+        changed = _changed_outside_log(current, before)
+        if changed is not None:
+            problems.append(f"{rel}: {changed}")
             continue
-        if log_now == log_before:
+        if _split_log(current)[1] == _split_log(before)[1]:
             continue
         try:
             meta = PlanMetadata.from_text(current, dirname=path.parent.name)
