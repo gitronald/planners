@@ -1,10 +1,10 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: active
+status: done
 branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
-concluded:
+concluded: 2026-11-14T10:36:44-08:00
 pr: https://github.com/gitronald/planners/pull/71
 ---
 
@@ -91,3 +91,12 @@ lifecycle is rerun here with `planners start`, `log`, and `implemented`.
   - `git diff 5cfa986 HEAD -- planners tests CHANGELOG.md README.md` is empty: the code, tests, and docs match the mobile tree at that commit.
   - Gate at `acc8b1a`: pytest 795 passed (coverage 95%), ruff check and format, pyrefly 0 errors, planners validate ok. The root-only test failure the cloud session saw is fixed by `1cdde87`.
 - **2026-11-14T10:37:34-08:00** — PR opened: https://github.com/gitronald/planners/pull/71
+- **2026-11-14T11:57:51-08:00** — Implemented: 4 commits ahead of `dev`.
+- **2026-11-14T11:58:04-08:00** — Review gate: `/code-review` (low) on #71 found nothing: the correctness finder returned no candidates and the gap sweep added none. No follow-up commits.
+
+## Retrospective
+
+- The fix landed exactly as specified: one early return in `index`, with `_refresh_index` left alone so the plan-creating commands still write the first index.
+- The work came from a cloud session that could not push to `dev` or run as a non-root user. Its one test failure (`chmod 000` does not stop root) was a test problem, not a code problem, and the reauthored branch fixes it in its first commit.
+- The plan lifecycle records the session wrote by hand on its own branch (activate, log, implemented, all with `--allow-branch`) had to be dropped and rerun here. A cloud session should leave the lifecycle to the desktop and record only what it ran.
+- Stacking plan 025 on this branch kept the two changes to `index()` and its changelog bullet in order. The union merge of the index duplicated rows, and the post-merge hook's regeneration repaired them, as designed.
