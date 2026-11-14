@@ -78,3 +78,23 @@ plan 024 are dropped there.
   - Worktree: `.worktrees/025-lifecycle-bug-sweep`
   - PR: pending
 - **2026-11-14T10:38:17-08:00** — PR opened: https://github.com/gitronald/planners/pull/72
+- **2026-11-14T11:53:46-08:00** — Reauthored from `origin/ccr-08cc166f-iubhf8` @ `3522aab8`: all 17 batches retyped by hand, gated, reviewed, and committed one at a time. Every one folds in `85e37b94`; the two marked (+3522aab8) also carry its changelog and skill text.
+  - `b61763f` simplify repeated rev-parse checks into proc.ref_exists
+  - `5f494ac` simplify cli commit, log, and resume helpers
+  - `5a559c9` update index refreshes to keep the tracked column set (+3522aab8)
+  - `5a0a9bf` update base detection to keep head with no mainline
+  - `32e4f0e` update implemented to ask for a push only with a remote
+  - `9464701` update add to skip held letters and leave no empty dir (+3522aab8)
+  - `87f5b8b` fix tracebacks on plan files that are not utf-8
+  - `71219c2` update validate to find a stale index from .planners/
+  - `5cebd35` update review --commit to accept a log before handoff
+  - `8b73c4b` update finish remote branch match and checkout hint
+  - `c46b8bd` update set-pr to compare the recorded url, not the text
+  - `2dc1c25` update head reads to work from below the repo root
+  - `15a8aaf` update retire to resume a failed commit and nest notes
+  - `836b0ac` update start to report no unpushed count when level
+  - `cfd327d` update log to drop sentence punctuation from paths
+  - `397dbc0` update subplans table rows and listing alignment
+  - `f8b8c98` update schema to describe concluded as never null
+  - `git diff 3522aab HEAD` differs from the mobile tip only by the planned decisions (review.py de-duplication kept, `_is_unmodified` fallback kept, README `--cols` note), base.py docstrings reworded to match the new no-mainline result, `_split_log` returning a tuple, ruff import formatting, test order, and the changelog bullets reworded and regrouped under Changed and Fixed.
+  - Gate at the last batch: pytest 818 passed (coverage 95.16%), ruff check and format, pyrefly 0 errors, planners validate ok.
