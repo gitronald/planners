@@ -1,10 +1,10 @@
 ---
 id: 25
 slug: lifecycle-bug-sweep
-status: implemented
+status: done
 branch: feature/025-lifecycle-bug-sweep
 created: 2026-11-14T10:29:01-08:00
-concluded:
+concluded: 2026-11-14T11:57:28-08:00
 pr: https://github.com/gitronald/planners/pull/72
 ---
 
