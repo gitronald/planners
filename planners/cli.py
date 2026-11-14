@@ -2435,7 +2435,9 @@ def retire(
         sentence += f" The work moved to plan {moved}."
     if note:
         sentence += f" {note.strip()}"
-    entry = f"- **{_now()}** — {sentence}"
+    # Through `log_entry`, as `log` writes its own, so a --note of several lines
+    # nests under the entry instead of breaking out of the bullet.
+    entry = entries.log_entry(_now(), sentence)
 
     if nested is not None:
         try:
@@ -2444,31 +2446,41 @@ def retire(
         except (SubplanError, OSError, UnicodeDecodeError) as exc:
             _err(f"cannot read {_shown(nested, root)}: {exc}")
             raise typer.Exit(1) from None
-        if current.status in CLOSED_STATUSES:
+        resuming = _resuming(
+            root, nested, current.status, Status.retired, no_commit=no_commit
+        )
+        if current.status in CLOSED_STATUSES and not resuming:
             _err(f"subplan {label} is {current.status}; it is closed.")
             raise typer.Exit(1)
-        text = set_frontmatter_key(text, "status", Status.retired.value)
-        if moved:
-            text = set_frontmatter_key(text, "moved_to", moved)
-        _sync_subplans(root, plan, {nested: append_to_section(text, "Log", entry)})
-        typer.echo(f"retired {_shown(nested, root)}")
-        staged, slug = [nested, plan], nested.stem[2:]
+        if resuming:
+            typer.echo(f"committing the earlier change to {_shown(nested, root)}")
+        else:
+            text = set_frontmatter_key(text, "status", Status.retired.value)
+            if moved:
+                text = set_frontmatter_key(text, "moved_to", moved)
+            _sync_subplans(root, plan, {nested: _append_log(text, entry)})
+            typer.echo(f"retired {_shown(nested, root)}")
+        staged, slug = [nested, plan], current.step
     else:
         meta = _read_plan(root, plan)
-        if meta.status in CLOSED_STATUSES:
+        resuming = _resuming(
+            root, plan, meta.status, Status.retired, no_commit=no_commit
+        )
+        if meta.status in CLOSED_STATUSES and not resuming:
             _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
             raise typer.Exit(1)
-        _refuse_open_subplans(plan, meta.prefix, "retiring")
-        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
-        meta.status = Status.retired
-        meta.conclude_at(_authored(root) or _now())
-        meta.branch = meta.branch or None
-        meta.pr = meta.pr or None
-        body = append_to_section(
-            body, "Log", entry, before=("Handoff", "Retrospective")
-        )
-        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-        typer.echo(f"retired {_shown(plan, root)}")
+        if resuming:
+            typer.echo(f"committing the earlier change to {_shown(plan, root)}")
+        else:
+            _refuse_open_subplans(plan, meta.prefix, "retiring")
+            _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+            meta.status = Status.retired
+            meta.conclude_at(_authored(root) or _now())
+            meta.branch = meta.branch or None
+            meta.pr = meta.pr or None
+            body = _append_log(body, entry)
+            plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+            typer.echo(f"retired {_shown(plan, root)}")
         staged, slug = [plan], meta.slug
 
     if no_commit:
