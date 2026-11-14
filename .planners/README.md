@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 024 | [Keep the post-merge index hook from creating .planners/ in a repo with no plans](plans/024-post-merge-index-without-plans/plan.md) | draft | — | — |
+| 024 | [Keep the post-merge index hook from creating .planners/ in a repo with no plans](plans/024-post-merge-index-without-plans/plan.md) | active | — | — |
 | 023 | [Link each open plan's feature-branch copy from the index](plans/023-index-branch-link/plan.md) | draft | — | — |
 | 022 | [Mechanize the remaining by-hand lifecycle steps](plans/022-lifecycle-mechanizations/plan.md) | done | 2026-11-01 11:05 PT | [#66](https://github.com/gitronald/planners/pull/66) |
 | 021 | [Simplify the package and its skill text](plans/021-package-simplification/plan.md) | done | 2026-11-01 10:19 PT | [#64](https://github.com/gitronald/planners/pull/64) |

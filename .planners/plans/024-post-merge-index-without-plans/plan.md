@@ -1,8 +1,8 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: draft
-branch:
+status: active
+branch: ccr-08cc166f-iubhf8
 created: 2026-11-12T22:10:19-08:00
 concluded:
 pr:
@@ -54,3 +54,11 @@ next health check, with nothing to commit.
 
 - The `validate` hook, which already matches only plan files.
 - Changing what the template ships: the hook entry stays `planners index .`.
+
+## Log
+
+- **2026-11-14T07:52:08+00:00** — Activated.
+  - Branch: `ccr-08cc166f-iubhf8`
+  - Base: `ccr-08cc166f-iubhf8` at `a5d1742`
+  - Worktree: none (main checkout)
+  - PR: pending
