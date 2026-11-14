@@ -1670,3 +1670,25 @@ def test_add_sibling_of_a_missing_umbrella_leaves_nothing_behind(
     assert "no umbrella plan 000" in result.output
     # An empty plans/ would make the next `index` write an index of nothing.
     assert not (tmp_path / ".planners").exists()
+
+
+# --- a plan file that is not text ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["validate", "."], ["index", "."], ["block", "1", "--no-commit"]],
+    ids=" ".join,
+)
+def test_a_plan_that_is_not_utf8_is_reported_not_raised(
+    args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    plan.write_bytes(plan.read_bytes() + b"\xff\xfe\n")
+
+    result = runner.invoke(app, args)
+    assert not isinstance(result.exception, UnicodeDecodeError), result.output
+    assert "cannot be read" in result.output

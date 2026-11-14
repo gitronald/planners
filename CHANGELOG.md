@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A `plan.md` that cannot be read, or is not UTF-8, is reported the way an unparseable
+  one is. `validate`, `index`, and most lifecycle commands ended in a traceback
 - `planners index` writes nothing in a repo with no `.planners/plans/` directory, and
   prints `no .planners/plans/; nothing to index`. The `planners-index` post-merge hook
   runs it after every clean merge, so a repo that carried the hooks before its first

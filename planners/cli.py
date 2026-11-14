@@ -682,7 +682,12 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
         plan = child / PLAN_FILENAME
         if not plan.is_file():
             continue
-        fm, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        try:
+            text = plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read staged plan {child.name!r}: {exc}")
+            raise typer.Exit(1) from None
+        fm, body = split_frontmatter(text)
         data = parse_frontmatter(fm) if fm is not None else {}
         staged.append((child, data, body))
     staged.sort(key=lambda item: (_created_key(item[1].get("created")), item[0].name))
@@ -2732,7 +2737,11 @@ def _plan_status(
         raise typer.Exit(1)
     text = planned.get(path)
     if text is None:
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read {_shown(path, root)}: {exc}")
+            raise typer.Exit(1) from None
     if split_frontmatter(text)[0] is None:
         # A status can be repaired in a frontmatter that exists. One is never
         # invented: a file without it is somebody's notes, not a subplan.

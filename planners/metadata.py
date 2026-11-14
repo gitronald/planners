@@ -209,9 +209,17 @@ class PlanMetadata(Serializable):
         """Read a plan file and parse it; the parent dir name drives validation.
 
         Identity comes from the containing ``NNN-slug/`` directory, not the file
-        (which is always ``plan.md``)."""
+        (which is always ``plan.md``).
+
+        A file that cannot be read, or is not UTF-8, raises :class:`PlanError`
+        like one that cannot be parsed, so a caller reports either the same way.
+        """
         p = Path(path)
-        return cls.from_text(p.read_text(encoding="utf-8"), dirname=p.parent.name)
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise PlanError(f"the file cannot be read ({exc})") from exc
+        return cls.from_text(text, dirname=p.parent.name)
 
     def render_frontmatter(self) -> str:
         """Emit the frontmatter block in canonical field order.
