@@ -697,6 +697,30 @@ def test_cli_commit_accepts_a_log_added_ahead_of_the_handoff(cli_repo: Path) -> 
     )
 
 
+def test_cli_commit_from_a_directory_below_the_repository_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plans live in a project folder inside the repository. git lists a
+    # diff's paths and reads `HEAD:<path>` from the top of the repository, so
+    # both have to be anchored at the folder the command runs from.
+    init_git(tmp_path)
+    project = tmp_path / "project"
+    rel = ".planners/plans/000-draft-idea/plan.md"
+    _write(project, rel, _plan(0, "draft-idea", "draft", "2026-03-01T09:00:00-08:00"))
+    _commit(tmp_path, "add the plan", "2026-03-01T09:00:00-08:00")
+    _append_log(project, rel, ENTRY)
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(review_mod, "_gh_available", lambda: False)
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == (
+        "plan [review]: 1 plan"
+    )
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(changed) == ["project/.planners/README.md", f"project/{rel}"]
+
+
 def test_cli_commit_still_refuses_a_change_beside_the_new_log(cli_repo: Path) -> None:
     path = cli_repo / DONE
     text = path.read_text()

@@ -2910,7 +2910,12 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
     spec or frontmatter) or is an active, implemented, or blocked plan (whose file
     a review never edits, since its owner may be working on it elsewhere).
     """
-    diff = proc.git_out(root, ["diff", "--name-only", "HEAD", "--", str(PLANS_DIR)])
+    # `--relative` lists the paths from `root`. Without it git lists them from
+    # the top of the repository, which no pattern below matches when `root` is a
+    # directory below that.
+    diff = proc.git_out(
+        root, ["diff", "--name-only", "--relative", "HEAD", "--", str(PLANS_DIR)]
+    )
     if diff is None:
         _err("cannot read the working tree's changes; is this a git repo with commits?")
         raise typer.Exit(1)
@@ -2925,7 +2930,8 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
             problems.append(f"{rel}: deleted; a review never removes a plan")
             continue
         current = path.read_text(encoding="utf-8")
-        before = proc.git_out(root, ["show", f"HEAD:{rel}"])
+        # `./` reads the path from `root`, as `_frontmatter_at_head` does.
+        before = proc.git_out(root, ["show", f"HEAD:./{rel}"])
         if before is None:
             continue
         changed = _changed_outside_log(current, before)
