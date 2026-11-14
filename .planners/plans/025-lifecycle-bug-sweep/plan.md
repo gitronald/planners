@@ -1,7 +1,7 @@
 ---
 id: 25
 slug: lifecycle-bug-sweep
-status: active
+status: implemented
 branch: feature/025-lifecycle-bug-sweep
 created: 2026-11-14T10:29:01-08:00
 concluded:
@@ -99,3 +99,4 @@ plan 024 are dropped there.
   - `git diff 3522aab HEAD` differs from the mobile tip only by the planned decisions (review.py de-duplication kept, `_is_unmodified` fallback kept, README `--cols` note), base.py docstrings reworded to match the new no-mainline result, `_split_log` returning a tuple, ruff import formatting, test order, and the changelog bullets reworded and regrouped under Changed and Fixed.
   - Gate at the last batch: pytest 818 passed (coverage 95.16%), ruff check and format, pyrefly 0 errors, planners validate ok.
 - **2026-11-14T11:57:28-08:00** — Review follow-up: `/code-review` (low) on #72 confirmed one finding. The flattened `_split_log` let `review --commit` commit a plan whose Log was deleted or moved past another section, which `dev` refused. Fixed in `1a45114`: the text either side of the Log is compared in place again, a plan with no Log at HEAD may gain one anywhere, and a removed Log is refused. Two regression tests were added. Gate: pytest 820 passed, ruff, pyrefly, and validate clean. Rejected candidates: the `_unpublished_work` porcelain path match (the same on `dev`), and two low-confidence edge cases.
+- **2026-11-14T12:01:00-08:00** — Implemented: 25 commits ahead of `dev`.
