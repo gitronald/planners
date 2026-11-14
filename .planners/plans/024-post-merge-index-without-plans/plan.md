@@ -5,7 +5,7 @@ status: active
 branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/71
 ---
 
 # Keep the post-merge index hook from creating .planners/ in a repo with no plans
@@ -85,3 +85,9 @@ lifecycle is rerun here with `planners start`, `log`, and `implemented`.
   - Base: `dev` at `fb82004`
   - Worktree: `.worktrees/024-post-merge-index-without-plans`
   - PR: pending
+- **2026-11-14T10:37:29-08:00** — Reauthored from `origin/ccr-08cc166f-iubhf8` @ `3522aab8`, both batches retyped by hand and gated.
+  - `1cdde87` update cli tests to share init_git and run as root <- `5cfa986c`
+  - `acc8b1a` update index to write nothing without a plans directory <- `53b56a74`, `ff1b40a4` (the `3522aab8` edits to these files go to plan 025)
+  - `git diff 5cfa986 HEAD -- planners tests CHANGELOG.md README.md` is empty: the code, tests, and docs match the mobile tree at that commit.
+  - Gate at `acc8b1a`: pytest 795 passed (coverage 95%), ruff check and format, pyrefly 0 errors, planners validate ok. The root-only test failure the cloud session saw is fixed by `1cdde87`.
+- **2026-11-14T10:37:34-08:00** — PR opened: https://github.com/gitronald/planners/pull/71

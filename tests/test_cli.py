@@ -11,7 +11,9 @@ from typer.testing import CliRunner
 
 from planners import cli as cli_mod
 from planners.cli import app
+from planners.host import HOOKS
 from planners.metadata import PlanMetadata
+from tests.helpers import commit_all, git, git_out, init_git
 
 runner = CliRunner()
 
@@ -300,11 +302,7 @@ def test_add_rejects_unsafe_slug(
 def test_add_commits_by_default_in_git_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
@@ -334,17 +332,107 @@ def test_index_updates_readme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8") == readme
 
 
-def test_index_on_empty_repo_writes_empty_index(
+@pytest.mark.parametrize("cols", [[], ["--cols", "all"]])
+def test_index_without_plans_dir_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cols: list[str]
+) -> None:
+    # No .planners/ at all: there is nothing to index, so nothing is created.
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["index", ".", *cols])
+    assert result.exit_code == 0, result.output
+    assert "no .planners/plans/; nothing to index" in result.output
+    assert not (tmp_path / ".planners").exists()
+
+
+def test_index_without_plans_dir_leaves_other_planners_files_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No .planners/plans directory at all: _plan_files returns [] (missing-dir
-    # branch) and index writes a title + empty table rather than crashing.
+    # .planners/ can exist before any plan does (a committed config.toml, a
+    # deferred plan in staging); the check is on plans/, not on .planners/.
+    config = _write_file(tmp_path / ".planners" / "config.toml", "[remote]\n")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["index", "."])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
+    assert "nothing to index" in result.output
+    assert sorted((tmp_path / ".planners").iterdir()) == [config]
+
+
+def test_index_with_empty_plans_dir_writes_empty_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # plans/ exists with no plan in it (every plan removed, say): the index is
+    # still regenerated, as a title and an empty table.
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["index", "."])
+    assert result.exit_code == 0, result.output
+    assert "updated" in result.output
     readme = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
     assert readme.startswith("# Plans\n")
     assert "| # | Plan | Status | Concluded | PR |" in readme
+
+
+def test_index_with_empty_plans_dir_drops_rows_of_removed_plans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    readme = tmp_path / ".planners" / "README.md"
+    assert "plans/001-thing/plan.md" in readme.read_text(encoding="utf-8")
+
+    plan.unlink()
+    plan.parent.rmdir()
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert "001-thing" not in readme.read_text(encoding="utf-8")
+
+
+def test_first_add_in_a_fresh_repo_still_commits_the_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `index` skips a repo with no plans/, but `add` writes the index itself,
+    # so the first plan lands with its row in the same commit.
+    root = tmp_path / "repo"
+    root.mkdir()
+    init_git(root)
+    monkeypatch.chdir(root)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert not (root / ".planners").exists()
+
+    result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
+    assert result.exit_code == 0, result.output
+    readme = (root / ".planners" / "README.md").read_text(encoding="utf-8")
+    assert "plans/000-feature-x/plan.md" in readme
+    committed = git_out(root, "show", "--name-only", "--format=", "HEAD").split()
+    assert ".planners/README.md" in committed
+    assert ".planners/plans/000-feature-x/plan.md" in committed
+    assert git_out(root, "status", "--porcelain") == ""
+
+
+def test_post_merge_index_hook_leaves_a_planless_repo_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A repo that carries the hooks before its first plan: after a clean merge
+    # the post-merge hook runs its `index .`, which must not leave an untracked
+    # .planners/README.md behind.
+    (hook,) = (h for h in HOOKS if h.id == "planners-index")
+    root = tmp_path / "repo"
+    root.mkdir()
+    init_git(root)
+    _write_file(root / "a.txt", "a\n")
+    commit_all(root, "base")
+    git(root, "checkout", "-q", "-b", "side")
+    _write_file(root / "b.txt", "b\n")
+    commit_all(root, "side")
+    git(root, "checkout", "-q", "main")
+    git(root, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+    monkeypatch.chdir(root)
+
+    result = runner.invoke(app, list(hook.args))
+    assert result.exit_code == 0, result.output
+    assert git_out(root, "status", "--porcelain") == ""
+    assert not (root / ".planners").exists()
 
 
 def test_index_rejects_bad_cols(
@@ -432,22 +520,20 @@ def test_git_reports_a_vanished_root_rather_than_blaming_git(
     assert "git not found on PATH" not in err
 
 
-def test_git_turns_an_unreadable_root_into_a_cli_error(
+def test_git_turns_an_unusable_root_into_a_cli_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A non-``FileNotFoundError`` OSError on ``root`` is an error, not a traceback.
 
-    ``chmod 000`` makes ``cwd=root`` raise ``PermissionError``; the docstring
-    promises a clear CLI error in every failure mode, so it must not escape.
+    A regular file as ``root`` makes ``cwd=root`` raise ``NotADirectoryError``;
+    the docstring promises a clear CLI error in every failure mode, so it must
+    not escape. (A ``chmod 000`` directory raises ``PermissionError`` the same
+    way, but not for root, which a container or CI job may run as.)
     """
-    unreadable = tmp_path / "unreadable"
-    unreadable.mkdir()
-    unreadable.chmod(0o000)
-    try:
-        with pytest.raises(typer.Exit) as exc_info:
-            cli_mod._git(unreadable, ["status"])
-    finally:
-        unreadable.chmod(0o755)
+    not_a_dir = tmp_path / "not-a-dir"
+    not_a_dir.write_text("", encoding="utf-8")
+    with pytest.raises(typer.Exit) as exc_info:
+        cli_mod._git(not_a_dir, ["status"])
 
     assert exc_info.value.exit_code == 1
     assert "cannot run git in" in capsys.readouterr().err
@@ -497,14 +583,6 @@ def _write_staged(staging: Path, dirname: str, text: str) -> Path:
     path = d / "plan.md"
     path.write_text(text, encoding="utf-8")
     return path
-
-
-def _init_git(path: Path) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=path, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
 
 
 def test_add_defer_stages_unnumbered_plan(
@@ -583,7 +661,7 @@ def test_finalize_assigns_next_numbers_after_existing(
 def test_finalize_commits_batch_atomically_and_self_check_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     # Distinct created times so the number<->slug mapping is deterministic (the CLI
     # clock has second precision, which would tie two back-to-back `add --defer`s).
     staging = tmp_path / ".planners" / "staging"
@@ -624,7 +702,7 @@ def test_finalize_single_plan_uses_add_slug_commit_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A one-plan batch keeps the familiar `plan [add]: NNN - slug` message.
-    _init_git(tmp_path)
+    init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
     _write_staged(
         staging, "tok-solo", _staged_text("solo", "2026-06-10T09:00:00-07:00")
@@ -921,7 +999,7 @@ def test_activate_on_already_active_plan_is_a_noop(
         "branch:\n", "branch: feature/my-thing\n"
     )
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -960,7 +1038,7 @@ def test_activate_commits_by_default_with_slug_subject(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -1009,7 +1087,7 @@ def test_activate_commits_an_explicit_branch(
 ) -> None:
     """--branch travels the committing path, not just the --no-commit one."""
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -1042,7 +1120,7 @@ def test_activate_appends_the_activation_entry(
         "005-my-thing",
         _DRAFT_PLAN + "\n## Handoff\n\nWhere to pick up.\n",
     )
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     branch, before = (
@@ -1135,7 +1213,7 @@ def test_activate_returns_an_implemented_plan_on_its_feature_branch(
             "branch:\n", "branch: feature/my-thing\n"
         ),
     )
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
@@ -1172,7 +1250,7 @@ def test_activate_still_guards_a_draft_on_a_feature_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
@@ -1467,7 +1545,7 @@ def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
 ) -> None:
     # The old single line, "activated <plan> on <branch>", named the recorded
     # branch in the place a reader expects the branch committed on.
-    _init_git(tmp_path)
+    init_git(tmp_path)
     subprocess.run(["git", "checkout", "-qb", "main"], cwd=tmp_path, check=True)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     _commit_all(tmp_path, "initial commit")
@@ -1494,7 +1572,7 @@ def test_activate_no_commit_claims_no_commit(
 def test_activate_on_a_detached_head_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
@@ -1507,7 +1585,7 @@ def test_activate_on_a_detached_head_says_so(
 def test_finalize_refuses_an_invalid_created_before_moving_anything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
     _write_staged(staging, "tok-a", _staged_text("alpha", "not-a-date"))
     monkeypatch.chdir(tmp_path)

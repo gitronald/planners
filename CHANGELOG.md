@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `planners index` writes nothing in a repo with no `.planners/plans/` directory, and
+  prints `no .planners/plans/; nothing to index`. The `planners-index` post-merge hook
+  runs it after every clean merge, so a repo that carried the hooks before its first
+  plan was left with an untracked `.planners/README.md` holding an empty table. A repo
+  whose `.planners/plans/` exists and is empty still gets its index regenerated, and
+  `add` and `finalize` still write the index with the first plan
+
 ## [0.16.1] - 2026-11-13
 
 ### Changed
