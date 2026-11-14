@@ -101,3 +101,10 @@ plan 024 are dropped there.
 - **2026-11-14T11:57:28-08:00** — Review follow-up: `/code-review` (low) on #72 confirmed one finding. The flattened `_split_log` let `review --commit` commit a plan whose Log was deleted or moved past another section, which `dev` refused. Fixed in `1a45114`: the text either side of the Log is compared in place again, a plan with no Log at HEAD may gain one anywhere, and a removed Log is refused. Two regression tests were added. Gate: pytest 820 passed, ruff, pyrefly, and validate clean. Rejected candidates: the `_unpublished_work` porcelain path match (the same on `dev`), and two low-confidence edge cases.
 - **2026-11-14T12:01:00-08:00** — Implemented: 25 commits ahead of `dev`.
 - **2026-11-14T12:01:12-08:00** — Review gate: `/code-review` (low) on #72 confirmed one finding, fixed in `1a45114` with two regression tests (see the Review follow-up entry above). Gate after merging `dev` with plan 024 closed: pytest 820 passed, ruff check and format, pyrefly 0 errors, planners validate ok.
+
+## Retrospective
+
+- Splitting one 500-line sweep commit into 17 commits, one per fix, made it reviewable. The cost was high, though: 88 agents and about 6.8M subagent tokens over 73 minutes, mostly one opus review per batch. Folding the one-line fixes (start, log, head-read, validate) into a single batch would have cut that by a quarter with no loss of reviewability.
+- The cloud commit's message named about a dozen fixes. The diff carried three more changes it did not name (the review.py de-duplication, the `concluded` schema text, and the subplans listing width). The per-commit review found all three, and each was decided separately: dropped, approved, and kept.
+- The one defect the final review found was in a fix: `_split_log` was flattened to accept a Log added ahead of a Handoff, and that also let a deleted or moved Log through. The per-batch reviewer checked fidelity to the mobile diff, so it could not catch a bug the mobile diff itself introduced. Only the whole-PR review could.
+- Stacking on plan 024's branch worked. Retargeting this PR to `dev` before `finish` deleted 024's branch kept the PR open.
