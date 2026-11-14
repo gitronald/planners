@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   plan was left with an untracked `.planners/README.md` holding an empty table. A repo
   whose `.planners/plans/` exists and is empty still gets its index regenerated, and
   `add` and `finalize` still write the index with the first plan
+- In a repo whose mainline does not resolve (no `dev`, `main`, `master`, or
+  `origin/HEAD`), `implemented` and `conclude` refused every plan with a branch,
+  reading HEAD as detached, and `activate` logged its base as `a detached HEAD`
 
 ## [0.16.1] - 2026-11-13
 
