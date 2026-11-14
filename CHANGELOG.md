@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `planners implemented` ends by asking for a push only where there is a remote to push
   to: with the PR wording for a GitHub origin and with plain wording for another forge or
   a bare remote. With no remote, or a single-branch one, it prints no push line
+- `planners set-pr` with the URL the plan already records writes no second
+  `PR opened` entry when only the spelling of the frontmatter differs
 
 ### Fixed
 

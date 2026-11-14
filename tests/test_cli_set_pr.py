@@ -174,3 +174,26 @@ def test_set_pr_leaves_an_edit_to_a_file_head_has_the_url_in(
     assert "nothing to do" in result.output
     assert git_out(tmp_path, "rev-parse", "HEAD") == head
     assert "An edit." in path.read_text(encoding="utf-8")
+
+
+def test_set_pr_logs_nothing_for_a_url_the_plan_already_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same URL in another spelling (quoted here) is not a change of URL, so
+    # it gets no second "PR opened" entry and no commit.
+    plan_dir = _repo(tmp_path, committed=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["set-pr", "005", _URL]).exit_code == 0
+    plan = plan_dir / "plan.md"
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace(f"pr: {_URL}", f'pr: "{_URL}"'),
+        encoding="utf-8",
+    )
+    commit_all(tmp_path, "quote the url")
+    head = git_out(tmp_path, "rev-parse", "HEAD")
+
+    result = runner.invoke(app, ["set-pr", "005", _URL])
+    assert result.exit_code == 0, result.output
+    assert "nothing to do" in result.output
+    assert plan.read_text(encoding="utf-8").count("PR opened:") == 1
+    assert git_out(tmp_path, "rev-parse", "HEAD") == head

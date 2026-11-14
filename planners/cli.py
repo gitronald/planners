@@ -1532,30 +1532,32 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
     target = nested or plan
 
-    if nested is not None:
-        text = nested.read_text(encoding="utf-8")
+    # Read as a plan first, so one that cannot be read is reported as such.
+    meta = _read_plan(root, plan) if nested is None else None
+    text = target.read_text(encoding="utf-8")
+    frontmatter, body = split_frontmatter(text)
+    recorded = parse_frontmatter(frontmatter or "").get("pr")
+    if meta is None:
         updated = set_frontmatter_key(text, "pr", url)
-        slug = nested.stem[2:]
-        staged = [nested]
+        slug = target.stem[2:]
     else:
-        meta = _read_plan(root, plan)
-        text = plan.read_text(encoding="utf-8")
-        _, body = split_frontmatter(text)
         meta.pr = url
         updated = meta.render_frontmatter() + body
         slug = meta.slug
-        staged = [plan]
+    staged = [target]
 
-    # An uncommitted edit to a file HEAD already has this URL in is not a write an
-    # earlier run failed to commit, and is left where it is.
-    if updated == text and (
-        no_commit
-        or _is_unmodified(root, target)
-        or _frontmatter_at_head(root, target).get("pr") == url
-    ):
-        typer.echo(f"plan {label} already records {url}; nothing to do.")
-        return
-    if updated != text:
+    if recorded == url:
+        # Nothing is written: the file already says so. What is left to settle is
+        # whether an earlier run wrote it and failed to commit. An uncommitted edit
+        # to a file HEAD already has this URL in is not that, and stays where it is.
+        if (
+            no_commit
+            or _is_unmodified(root, target)
+            or _frontmatter_at_head(root, target).get("pr") == url
+        ):
+            typer.echo(f"plan {label} already records {url}; nothing to do.")
+            return
+    else:
         # The entry goes in only with a change of URL, so a re-run that finishes
         # an interrupted commit does not log the same PR twice.
         updated = _append_log(updated, entries.pr_entry(_now(), url))
