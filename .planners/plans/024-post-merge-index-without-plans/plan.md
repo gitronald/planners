@@ -1,7 +1,7 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: active
+status: implemented
 branch: ccr-08cc166f-iubhf8
 created: 2026-11-12T22:10:19-08:00
 concluded:
@@ -68,3 +68,4 @@ next health check, with nothing to commit.
   - Docs: a changelog entry under Unreleased, a paragraph in the `index` skill, and the README command list.
   - Checks at `ff1b40a`: `ruff check`, `ruff format --check`, `pyrefly check`, and the pre-commit hooks pass; pytest 794 passed, 1 failed. The failure is `test_git_turns_an_unreadable_root_into_a_cli_error`, which also fails on the base commit `a5d1742` in this environment: the session runs as root, and `chmod 000` does not stop root.
   - Lifecycle: activated on the session branch with `--allow-branch`, not on `dev`, because this cloud session may push only to its own branch. No draft PR was opened.
+- **2026-11-14T07:56:16+00:00** — Implemented: 0 commits ahead of `ccr-08cc166f-iubhf8`.
