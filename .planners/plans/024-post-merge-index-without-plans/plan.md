@@ -1,10 +1,10 @@
 ---
 id: 24
 slug: post-merge-index-without-plans
-status: implemented
+status: done
 branch: feature/024-post-merge-index-without-plans
 created: 2026-11-12T22:10:19-08:00
-concluded:
+concluded: 2026-11-14T10:36:44-08:00
 pr: https://github.com/gitronald/planners/pull/71
 ---
 
