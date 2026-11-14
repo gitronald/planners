@@ -62,3 +62,9 @@ next health check, with nothing to commit.
   - Base: `ccr-08cc166f-iubhf8` at `a5d1742`
   - Worktree: none (main checkout)
   - PR: pending
+- **2026-11-14T07:56:14+00:00** — Implemented as specified, at `ff1b40a`.
+  - Fix: the `index` command returns before `_refresh_index` when `.planners/plans/` is not a directory, and prints `no .planners/plans/; nothing to index`. `_refresh_index` itself is unchanged, so `add`, `finalize`, and the other lifecycle commands still write the index.
+  - Tests: `test_index_on_empty_repo_writes_empty_index` asserted the old behavior and is replaced. New tests cover the four cases in the spec, plus `.planners/` present without `plans/` (a committed `config.toml`) and an emptied `plans/` dropping its old rows. The hook test invokes the `planners-index` entry's own args from `HOOKS` after a real merge.
+  - Docs: a changelog entry under Unreleased, a paragraph in the `index` skill, and the README command list.
+  - Checks at `ff1b40a`: `ruff check`, `ruff format --check`, `pyrefly check`, and the pre-commit hooks pass; pytest 794 passed, 1 failed. The failure is `test_git_turns_an_unreadable_root_into_a_cli_error`, which also fails on the base commit `a5d1742` in this environment: the session runs as root, and `chmod 000` does not stop root.
+  - Lifecycle: activated on the session branch with `--allow-branch`, not on `dev`, because this cloud session may push only to its own branch. No draft PR was opened.
