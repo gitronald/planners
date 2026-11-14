@@ -32,6 +32,11 @@ concluded datetime, PR number, and plan number, each descending. A plan with no
 concluded datetime or no PR sorts after one that has it. Empty cells render as
 an em-dash.
 
+In a repo with no `.planners/plans/` directory the generator writes nothing and
+prints `no .planners/plans/; nothing to index`, so the `post-merge` hook leaves
+a repo that has no plans yet clean. `{cli} add` writes the index along with the
+first plan.
+
 ### 2. Verify
 
 Show `git diff .planners/README.md` so the change is reviewable, then commit
