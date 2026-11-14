@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `planners index` with no `--cols` keeps the column set the index is already in, and
+  writes the curated set for a new index. The lifecycle commands do the same when they
+  refresh it. Before, each of them, and the `post-merge` hook, rewrote an index made
+  with `--cols all` back to the curated columns. `--cols curated` narrows a wide index
+- `planners retire` finishes an earlier run that wrote the plan and then failed to
+  commit, as `block`, `implemented`, and `conclude` do, where it refused the plan as
+  already closed. A `--note` of several lines nests its later lines under the Log entry
+- `planners implemented` ends by asking for the push only where there is a remote to
+  push to: nothing on a repo with no remote or on a single-branch one
+- `planners set-pr` with the URL the plan already records writes no second
+  `PR opened` entry when only the spelling of the frontmatter differs
+- A `plan.md` that cannot be read, or is not UTF-8, is reported the way an unparseable
+  one is. `validate`, `index`, and most lifecycle commands ended in a traceback
+
 ### Fixed
 
 - `planners index` writes nothing in a repo with no `.planners/plans/` directory, and
@@ -14,7 +30,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   runs it after every clean merge, so a repo that carried the hooks before its first
   plan was left with an untracked `.planners/README.md` holding an empty table. A repo
   whose `.planners/plans/` exists and is empty still gets its index regenerated, and
-  `add` and `finalize` still write the index with the first plan
+  `add` and `finalize` still write the index with the first plan. A refused `add` or
+  `finalize` no longer leaves an empty `.planners/plans/` behind
+- In a repo whose mainline does not resolve (no `dev`, `main`, `master`, or
+  `origin/HEAD`), `implemented` and `conclude` refused every plan with a branch,
+  reading HEAD as detached, and `activate` logged its base as `a detached HEAD`
+- `planners finish` judged the wrong branch on the remote when another branch's name
+  ended in the plan's (`a/fix` beside `fix`), and stopped on every run. Run from the
+  plan's worktree, it named that worktree as the main checkout to run from
+- `planners review --commit` refused a Log added by `planners log` to a plan that had
+  a `## Handoff` or `## Retrospective` and no `## Log`
+- `planners validate` skipped the stale-index check for a plan named from inside
+  `.planners/` (`validate .` run in `.planners/plans/`)
+- `planners add --parent <N>` could hand out a sibling letter already held by a plan
+  whose frontmatter does not parse
+- From a project folder below the repository root, the commands that compare a plan
+  with `HEAD` (`set-pr`, `activate`, `block`, `conclude`, `retire`) read nothing
+  there, so a re-run repeated or refused work that was already committed
+- A subplan row added to an umbrella's table landed after a blank line left ahead of
+  the end marker, outside the table
+- `planners start` on a single-branch remote reported `0 commit(s) unpushed` for a
+  base that was level
+- `planners log` reported a local path with the sentence punctuation that followed it
+- `planners schema` described `concluded` as nullable, which `validate` rejects
+- The `planners subplans` listing lost its column alignment on `implemented`
 
 ## [0.16.1] - 2026-11-13
 
