@@ -54,3 +54,26 @@ next health check, with nothing to commit.
 
 - The `validate` hook, which already matches only plan files.
 - Changing what the template ships: the hook entry stays `planners index .`.
+
+### Landing from a cloud session
+
+The implementation was written in a sandboxed cloud session and is reauthored
+here, batch by batch, under the gate. Its commits are a proposal and are not
+merged or cherry-picked.
+
+- Reauthored from `origin/ccr-08cc166f-iubhf8` @ `3522aab8` (8 commits, forked
+  from `dev` @ `a5d1742`, no PR). The rest of that branch, a lifecycle bug sweep,
+  lands through plan 025, stacked on this plan's branch.
+- Gate: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`,
+  `uv run pyrefly check`, `uv run planners validate .`
+- Per-commit review: `../025-lifecycle-bug-sweep/review.md`
+
+| # | Batch | Desktop subject | Mobile shas | Fixes / regenerations | Approval |
+|---|---|---|---|---|---|
+| 1 | `tests-init-git` | `update cli tests to share init_git and run as root` | 5cfa986c | Adds the `from tests.helpers import init_git` import itself, since on mobile that line came in with 53b56a7, which lands later here; Drops the module's own _init_git and the inline git init in test_add_commits_by_default_in_git_repo in favor of tests.helpers.init_git; Replaces the chmod 000 unreadable-root test with a regular-file root (NotADirectoryError), renamed test_git_turns_an_unusable_root_into_a_cli_error; No Co-Authored-By or Claude-Session trailers |  |
+| 2 | `index-no-plans-dir` | `update index to write nothing without a plans directory` | 53b56a74 ff1b40a4 3522aab8 | Early return plus docstring in index() as on mobile. cols still defaults to "curated" at this point; Tests: the parametrized no-plans-dir test, the leaves-other-.planners-files test, the empty-plans-dir and removed-plans tests, the first-add test, and the post-merge hook test. Adds the HOOKS, commit_all, git, and git_out imports (init_git is already imported); CHANGELOG bullet under Unreleased/Fixed from ff1b40a, without the 'refused add or finalize' sentence that 3522aab appended, which goes in the add-letters batch; README command-reference line and the SKILL.md paragraph from ff1b40a; No trailers |  |
+
+Dropped: `e7b7840c` (`plan [activate]`), `6afbdb69` (`plan [log]`), and
+`7c8edf3a` (`plan [implemented]`). These are the lifecycle records the cloud
+session wrote by hand on its own branch, with its own hashes and checks. The
+lifecycle is rerun here with `planners start`, `log`, and `implemented`.
