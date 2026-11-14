@@ -188,7 +188,7 @@ def test_log_leaves_a_fresh_index_out_of_the_commit(
     ("note", "named"),
     [
         ("Probe passed: `uv run pyrefly check /tmp/probe.py`.", "/tmp/probe.py"),
-        ("Edited ~/.claude/rules/git.md.", "~/.claude/rules/git.md."),
+        ("Edited ~/.claude/rules/git.md.", "(~/.claude/rules/git.md)"),
         ("Copied to C:\\Users\\me\\out.csv", "C:\\Users\\me\\out.csv"),
     ],
 )

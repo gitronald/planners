@@ -4,10 +4,12 @@ Commands: ``add``, ``finalize``, ``start``, ``activate``, ``set-pr``,
 ``implemented``, ``finish``, ``retire``, ``block``, ``log``, ``conclude``, ``subplans``,
 ``review``, ``base``, ``remote``, ``index``, ``schema``, and ``validate``, plus
 ``skill``, ``rule``, ``doc``, ``install``, and ``permissions``, which
-:func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Filesystem and
-subprocess (git) work is confined to this module and the ``add`` helpers; the
-schema/index transforms stay pure. Every shell-out goes through
-:mod:`planners.proc`, which pins it to an explicit repo root.
+:func:`pkgskills.register` mounts from :data:`planners.host.HOST`. Writing plan
+files is confined to this module; the schema, index, body, and Log-entry
+transforms stay pure. Every shell-out, here and in the modules that run git or
+gh for a command (``base``, ``ahead``, ``remote``, ``start``, ``finish``,
+``review``), goes through :mod:`planners.proc`, which pins it to an explicit
+repo root.
 """
 
 import json
@@ -37,7 +39,12 @@ from planners import start as start_mod
 from planners import subplans as subplans_mod
 from planners.body import append_to_section, section_span, set_frontmatter_key
 from planners.host import HOST
-from planners.index import INDEX_PATH, render_index, render_plans_table
+from planners.index import (
+    INDEX_PATH,
+    render_index,
+    render_plans_table,
+    tracked_cols,
+)
 from planners.metadata import (
     CLOSED_STATUSES,
     DIRNAME_RE,
@@ -155,6 +162,8 @@ INDEX_TITLE = "Plans"
 # staleness comparison can never drift apart — a set the check did not know
 # about would make `validate` fail a correctly generated index.
 INDEX_COLS = ("curated", "all")
+# The widest status name, for the listings that print statuses in a column.
+_STATUS_WIDTH = max(len(status.value) for status in Status)
 
 
 def _version() -> str:
@@ -184,7 +193,7 @@ def main_callback(
     """Own a repo's plan-file lifecycle: schema, CLI, and skillstub."""
 
 
-# skill, rule, install, and permissions: the shared pkgskills command grammar.
+# skill, rule, doc, install, and permissions: the shared pkgskills command grammar.
 register(app, HOST)
 
 
@@ -198,7 +207,7 @@ def _warn(message: str) -> None:
 
 
 def _shown(path: Path, root: Path) -> Path:
-    """``path`` relative to ``root`` when possible; a global artifact is under $HOME."""
+    """``path`` relative to ``root`` when it is under it, else as given."""
     try:
         return path.relative_to(root)
     except ValueError:
@@ -421,20 +430,32 @@ def _read_plan(root: Path, path: Path) -> PlanMetadata:
         raise typer.Exit(1) from None
 
 
-def _taken_numbers(plans_dir: Path) -> list[int]:
-    """Every plan number in use, read from the directory names.
+def _taken(plans_dir: Path) -> list[tuple[int, str]]:
+    """Every plan ``(number, letter)`` in use, read from the directory names.
 
     Read from names rather than frontmatter, so a plan whose frontmatter does not
     parse (skipped with a warning by :func:`_collect_metas`) still holds its
-    number and the next ``add`` does not reuse it.
+    number and letter, and the next ``add`` does not hand either out again.
     """
     if not plans_dir.is_dir():
         return []
     return [
-        int(match.group(1))
+        (int(match.group(1)), match.group(2))
         for child in plans_dir.iterdir()
         if child.is_dir() and (match := DIRNAME_RE.match(child.name))
     ]
+
+
+def _umbrella(plans_dir: Path, parent: int) -> Path:
+    """The ``plan.md`` of umbrella ``parent``, or exit: a subplan needs one."""
+    umbrella = _find_plan(plans_dir, parent, "")
+    if umbrella is None:
+        _err(
+            f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
+            "create it first with `planners add`."
+        )
+        raise typer.Exit(1)
+    return umbrella
 
 
 def _collect_metas(plans_dir: Path) -> list[PlanMetadata]:
@@ -488,14 +509,15 @@ def _git(root: Path, args: list[str]) -> None:
         raise typer.Exit(1)
 
 
-def _commit(root: Path, message: str, paths: list[str]) -> None:
-    """Stage ``paths`` and commit them, and only them.
+def _commit(root: Path, message: str, paths: Sequence[Path]) -> None:
+    """Stage ``paths`` (under ``root``) and commit them, and only them.
 
     The pathspec keeps anything else the user had already staged out of the
     plan's commit; it stays staged, as it was.
     """
-    _git(root, ["add", *paths])
-    _git(root, ["commit", "-m", message, "--", *paths])
+    specs = [str(path.relative_to(root)) for path in paths]
+    _git(root, ["add", *specs])
+    _git(root, ["commit", "-m", message, "--", *specs])
 
 
 def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
@@ -522,25 +544,14 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
     raise typer.Exit(1)
 
 
-def _index_document(metas: list[PlanMetadata], cols: str = "curated") -> str:
+def _index_document(metas: list[PlanMetadata], cols: str) -> str:
     """Assemble the index document from already-parsed plan metadata.
 
-    The one place that assembly happens. Split from :func:`_rendered_index` so a
-    caller that needs *both* column sets (:func:`_index_is_stale`) pays for
-    parsing the plans once rather than once per rendering.
+    The one place that assembly happens: :func:`_refresh_index` writes it, and
+    :func:`_index_is_stale` compares the tracked file against it in each column
+    set, parsing the plans once rather than once per rendering.
     """
     return render_index(INDEX_TITLE, render_plans_table(metas, cols=cols))
-
-
-def _rendered_index(repo_root: Path, cols: str = "curated") -> str:
-    """The index document ``repo_root``'s plan frontmatter currently renders to.
-
-    The one place that answer is computed. Three callers need it and would
-    otherwise each re-assemble the same three calls: :func:`_refresh_index`
-    writes it, :func:`_finalize_self_check` asserts the batch landed it, and
-    ``validate`` compares the tracked file against it.
-    """
-    return _index_document(_collect_metas(repo_root / PLANS_DIR), cols)
 
 
 def _index_is_stale(repo_root: Path) -> bool:
@@ -579,20 +590,47 @@ def _repo_root_of(plan: Path) -> Path | None:
     Returns ``None`` for anything not in that layout, so a legacy
     ``docs/plans/`` repo is left alone rather than reported stale.
     """
-    parents = plan.parents
-    if len(parents) < 4:
-        return None
-    if parents[1].name == PLANS_DIR.name and parents[2].name == PLANS_DIR.parent.name:
-        return parents[3]
+    # The path as given first, so a root that was spelled relatively is reported
+    # that way. Resolved second: `validate .` from inside `.planners/plans/` names
+    # a plan by a path too short to show the layout it sits in.
+    for parents in (plan.parents, plan.resolve().parents):
+        if (
+            len(parents) >= 4
+            and parents[1].name == PLANS_DIR.name
+            and parents[2].name == PLANS_DIR.parent.name
+        ):
+            return parents[3]
     return None
 
 
-def _refresh_index(repo_root: Path, cols: str) -> Path:
-    """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter."""
+def _refresh_index(repo_root: Path, cols: str | None = None) -> Path:
+    """Regenerate ``.planners/README.md`` (title + plans table) from frontmatter.
+
+    ``cols`` names the column set to write, which is ``index --cols``'s to say.
+    Left out, the index keeps the set it is already in, ``curated`` for a new
+    one: a wide index is a tracked state ``validate`` accepts, so a lifecycle
+    command that refreshes one must not narrow it on the way.
+    """
     index = repo_root / INDEX_PATH
+    if cols is None:
+        try:
+            cols = tracked_cols(index.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            cols = "curated"
+    metas = _collect_metas(repo_root / PLANS_DIR)
     index.parent.mkdir(parents=True, exist_ok=True)
-    index.write_text(_rendered_index(repo_root, cols), encoding="utf-8")
+    index.write_text(_index_document(metas, cols), encoding="utf-8")
     return index
+
+
+def _append_log(text: str, entry: str) -> str:
+    """``text`` with ``entry`` appended to its ``## Log``.
+
+    A plan with no Log gets one ahead of ``## Handoff`` and ``## Retrospective``,
+    the two sections that close a plan, so the Log reads in the order it was
+    written whichever command writes the first entry.
+    """
+    return append_to_section(text, "Log", entry, before=("Handoff", "Retrospective"))
 
 
 def _now() -> str:
@@ -656,7 +694,12 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
         plan = child / PLAN_FILENAME
         if not plan.is_file():
             continue
-        fm, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+        try:
+            text = plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read staged plan {child.name!r}: {exc}")
+            raise typer.Exit(1) from None
+        fm, body = split_frontmatter(text)
         data = parse_frontmatter(fm) if fm is not None else {}
         staged.append((child, data, body))
     staged.sort(key=lambda item: (_created_key(item[1].get("created")), item[0].name))
@@ -673,16 +716,12 @@ def _git_status_porcelain(root: Path, *paths: Path) -> str | None:
     ``paths`` narrows the report to those pathspecs, which is what lets a caller ask
     whether *one* file is committed without caring about the rest of the tree.
     """
-    args = ["git", "status", "--porcelain"]
+    args = ["status", "--porcelain"]
     if paths:
         args += ["--", *(str(p) for p in paths)]
-    try:
-        result = proc.run(root, args, capture_output=True)
-    except FileNotFoundError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
+    out = proc.git_out(root, args)
+    # Only the end is stripped: a leading space is the first line's status column.
+    return None if out is None else out.rstrip()
 
 
 def _is_unmodified(root: Path, path: Path) -> bool:
@@ -693,11 +732,7 @@ def _is_unmodified(root: Path, path: Path) -> bool:
     An unreadable git state (no repo, no git binary) reports unmodified: the caller's
     next step surfaces that failure with a better message than this check could.
     """
-    try:
-        spec = path.relative_to(root)
-    except ValueError:
-        spec = path
-    return not _git_status_porcelain(root, spec)
+    return not _git_status_porcelain(root, path.relative_to(root))
 
 
 def _frontmatter_at_head(root: Path, path: Path) -> dict[str, str | None]:
@@ -706,7 +741,9 @@ def _frontmatter_at_head(root: Path, path: Path) -> dict[str, str | None]:
     Tells a run that wrote a field and failed to commit, where ``HEAD`` still has
     the old value, from a later edit to a file ``HEAD`` already has that value in.
     """
-    text = proc.git_out(root, ["show", f"HEAD:{path.relative_to(root).as_posix()}"])
+    # `./` reads the path from `root`. Bare, git reads it from the top of the
+    # repository, and finds nothing when `root` is a directory below that.
+    text = proc.git_out(root, ["show", f"HEAD:./{path.relative_to(root).as_posix()}"])
     if text is None:
         return {}
     frontmatter, _ = split_frontmatter(text)
@@ -719,13 +756,22 @@ def _activation_committed(root: Path, plan: Path, branch: str | None) -> bool:
     return head.get("status") == Status.active.value and head.get("branch") == branch
 
 
-def _status_at_head(root: Path, path: Path) -> Status | None:
-    """The status of a plan or subplan file as ``HEAD`` has it, if it can be read."""
-    status = _frontmatter_at_head(root, path).get("status")
-    try:
-        return Status(status) if isinstance(status, str) else None
-    except ValueError:
-        return None
+def _resuming(
+    root: Path, path: Path, status: Status, want: Status, *, no_commit: bool
+) -> bool:
+    """True when an earlier run wrote ``want`` to ``path`` and then failed to commit.
+
+    A rejecting hook or a missing commit identity leaves the file reading ``want``
+    with its change uncommitted. The command that wrote it finishes that commit on
+    a re-run rather than refusing a status it set itself. A file ``HEAD`` already
+    has as ``want`` is not that run, and an edit to it is not a change to commit.
+    """
+    return (
+        status == want
+        and not no_commit
+        and not _is_unmodified(root, path)
+        and _frontmatter_at_head(root, path).get("status") != want.value
+    )
 
 
 def _finalize_self_check(
@@ -815,14 +861,7 @@ def _add_nested(
     mainline, so the guard applies as it does to ``add``. An ``active`` one has a
     branch where its work is, and a subplan added during that work belongs there.
     """
-    plans_dir = root / PLANS_DIR
-    umbrella = _find_plan(plans_dir, parent, "")
-    if umbrella is None:
-        _err(
-            f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
-            "create it first with `planners add`."
-        )
-        raise typer.Exit(1)
+    umbrella = _umbrella(root / PLANS_DIR, parent)
     meta = _read_plan(root, umbrella)
     if meta.status in CLOSED_STATUSES:
         _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
@@ -879,7 +918,7 @@ def _add_nested(
     _commit(
         root,
         f"plan [add]: {meta.prefix}{letter} - {slug}",
-        [str(path.relative_to(root)), str(umbrella.relative_to(root))],
+        [path, umbrella],
     )
 
 
@@ -1005,24 +1044,17 @@ def add(
         return
 
     plans_dir = root / PLANS_DIR
-    plans_dir.mkdir(parents=True, exist_ok=True)
-
-    existing = _collect_metas(plans_dir)
+    taken = _taken(plans_dir)
     if parent is None:
         # Top-level plan: next free number, no subplan letter.
-        plan_id, sub = next_number(_taken_numbers(plans_dir)), ""
+        plan_id, sub = next_number([number for number, _ in taken]), ""
     else:
         # Subplan: share the umbrella's number and take the next free letter. The
         # umbrella must already exist — a subplan with no umbrella is invalid.
-        if not any(m.id == parent and not m.sub for m in existing):
-            _err(
-                f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
-                "create it first with `planners add`."
-            )
-            raise typer.Exit(1)
+        _umbrella(plans_dir, parent)
         plan_id = parent
         try:
-            sub = next_sub([m.sub for m in existing if m.id == parent])
+            sub = next_sub([letter for number, letter in taken if number == parent])
         except ValueError as exc:
             _err(str(exc))
             raise typer.Exit(1) from None
@@ -1052,12 +1084,8 @@ def add(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
-    _commit(
-        root,
-        f"plan [add]: {prefix} - {slug}",
-        [str(path.relative_to(root)), str(readme.relative_to(root))],
-    )
+    readme = _refresh_index(root)
+    _commit(root, f"plan [add]: {prefix} - {slug}", [path, readme])
 
 
 @app.command()
@@ -1079,8 +1107,8 @@ def finalize(
     The single serialized writer behind ``add --defer``: it orders the staged
     plans by ``created``, assigns the next sequential numbers, moves each into
     ``.planners/plans/<NNN>-<slug>/`` (sidecar files included), refreshes the
-    index, commits each one (mirroring a foreground ``add``), and then runs a
-    self-check. Being the sole writer, it cannot race on numbering or the commit.
+    index, commits the batch in one commit, and then runs a self-check. Being
+    the sole writer, it cannot race on numbering or the commit.
     """
     root = Path.cwd()
 
@@ -1096,8 +1124,7 @@ def finalize(
         raise typer.Exit(1)
 
     plans_dir = root / PLANS_DIR
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    start_id = next_number(_taken_numbers(plans_dir))
+    start_id = next_number([number for number, _ in _taken(plans_dir)])
 
     # Pass 1 — validate and resolve every staged plan WITHOUT touching the
     # filesystem. A bad entry aborts the batch before any plan is moved out of
@@ -1187,7 +1214,7 @@ def finalize(
     if staging.is_dir() and not any(staging.iterdir()):
         staging.rmdir()
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
 
     if no_commit:
         typer.echo(f"finalized {len(finalized)} plan(s) (no commit)")
@@ -1199,15 +1226,14 @@ def finalize(
     # but uncommitted with no diagnostic; a single commit instead either lands the
     # whole batch or leaves every plan in the same recoverable "written, not yet
     # committed" state (the documented `add` trade-off, applied uniformly).
-    rels = [str(plan_dir.relative_to(root)) for _, _, plan_dir in finalized]
-    rels.append(str(readme.relative_to(root)))
+    paths = [*(plan_dir for _, _, plan_dir in finalized), readme]
     first, last = finalized[0][0], finalized[-1][0]
     message = (
         f"plan [add]: {first:03d} - {finalized[0][1]}"
         if len(finalized) == 1
         else f"plan [add]: {first:03d}-{last:03d} ({len(finalized)} plans)"
     )
-    _commit(root, message, rels)
+    _commit(root, message, paths)
     typer.echo(f"finalized and committed {len(finalized)} plan(s)")
     _finalize_self_check(root, finalized, start_id, committed=True)
 
@@ -1396,9 +1422,7 @@ def _activate(
         meta.status = Status.active
         meta.branch = new_branch
         if entry is not None:
-            body = append_to_section(
-                body, "Log", entry, before=("Handoff", "Retrospective")
-            )
+            body = _append_log(body, entry)
         # Re-render only the frontmatter and keep the body verbatim — the same
         # mutate-preserving-body shape `finalize` uses. The plan text is the record.
         path.write_text(meta.render_frontmatter() + body, encoding="utf-8")
@@ -1410,16 +1434,12 @@ def _activate(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
+    readme = _refresh_index(root)
     # The subject names the slug, not the title: a slug is fixed by the directory
     # name, while a title can be reworded until the subject no longer names the plan
     # it belongs to. Matches what `add` writes, and a format string owns it, so it
     # cannot drift the way the hand-written subjects did.
-    _commit(
-        root,
-        f"plan [activate]: {meta.prefix} - {meta.slug}",
-        [str(path.relative_to(root)), str(readme.relative_to(root))],
-    )
+    _commit(root, f"plan [activate]: {meta.prefix} - {meta.slug}", [path, readme])
     current = _current_branch(root)
     if from_block:
         # The report below sorts what a push of the base carries. On the plan's own
@@ -1517,38 +1537,35 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
     target = nested or plan
 
-    if nested is not None:
-        text = nested.read_text(encoding="utf-8")
+    # Read as a plan first, so one that cannot be read is reported as such.
+    meta = _read_plan(root, plan) if nested is None else None
+    text = target.read_text(encoding="utf-8")
+    frontmatter, body = split_frontmatter(text)
+    recorded = parse_frontmatter(frontmatter or "").get("pr")
+    if meta is None:
         updated = set_frontmatter_key(text, "pr", url)
-        slug = nested.stem[2:]
-        staged = [nested]
+        slug = target.stem[2:]
     else:
-        meta = _read_plan(root, plan)
-        text = plan.read_text(encoding="utf-8")
-        _, body = split_frontmatter(text)
         meta.pr = url
         updated = meta.render_frontmatter() + body
         slug = meta.slug
-        staged = [plan]
+    staged = [target]
 
-    # An uncommitted edit to a file HEAD already has this URL in is not a write an
-    # earlier run failed to commit, and is left where it is.
-    if updated == text and (
-        no_commit
-        or _is_unmodified(root, target)
-        or _frontmatter_at_head(root, target).get("pr") == url
-    ):
-        typer.echo(f"plan {label} already records {url}; nothing to do.")
-        return
-    if updated != text:
+    if recorded == url:
+        # Nothing is written: the file already says so. What is left to settle is
+        # whether an earlier run wrote it and failed to commit. An uncommitted edit
+        # to a file HEAD already has this URL in is not that, and stays where it is.
+        if (
+            no_commit
+            or _is_unmodified(root, target)
+            or _frontmatter_at_head(root, target).get("pr") == url
+        ):
+            typer.echo(f"plan {label} already records {url}; nothing to do.")
+            return
+    else:
         # The entry goes in only with a change of URL, so a re-run that finishes
         # an interrupted commit does not log the same PR twice.
-        updated = append_to_section(
-            updated,
-            "Log",
-            entries.pr_entry(_now(), url),
-            before=("Handoff", "Retrospective"),
-        )
+        updated = _append_log(updated, entries.pr_entry(_now(), url))
         target.write_text(updated, encoding="utf-8")
         typer.echo(f"recorded {url} in {_shown(target, root)}")
 
@@ -1556,20 +1573,16 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
-    _commit(
-        root,
-        f"plan [pr]: {label} - {slug}",
-        [str(path.relative_to(root)) for path in staged],
-    )
+        staged.append(_refresh_index(root))
+    _commit(root, f"plan [pr]: {label} - {slug}", staged)
 
 
 def _unpublished_work(
     root: Path,
     mainline: base_mod.Mainline,
     *,
-    ignore: tuple[Path, ...] = (),
-    origin: remote_mod.RemoteKind = remote_mod.RemoteKind.github,
+    ignore: tuple[Path, ...],
+    origin: remote_mod.RemoteKind,
 ) -> list[str]:
     """What the branch at ``root`` holds that a reviewer of its PR cannot see.
 
@@ -1591,12 +1604,8 @@ def _unpublished_work(
     if status is None:
         return []
     problems: list[str] = []
-    skipped = {str(path.relative_to(root)) for path in ignore}
-    # Split rather than slice: the helper strips its output, which takes the
-    # leading space off the first line's status column.
-    changed = sum(
-        1 for line in status.splitlines() if line.split(maxsplit=1)[-1] not in skipped
-    )
+    skipped = {path.relative_to(root).as_posix() for path in ignore}
+    changed = sum(1 for line in status.splitlines() if line[3:] not in skipped)
     if changed:
         problems.append(f"{changed} uncommitted change(s); commit them first")
     if origin is remote_mod.RemoteKind.single_branch:
@@ -1609,7 +1618,7 @@ def _unpublished_work(
             and (proc.git_out(root, ["remote"]) or "").strip()
         ):
             branch = mainline.current
-            push = shlex.join(["git", "push", "-u", "origin", branch])
+            push = start_mod.push_command(branch, upstream=True)
             problems.append(f"{branch} has no upstream; push it with `{push}`")
         return problems
     unpushed = int(
@@ -1726,16 +1735,7 @@ def implemented(
         raise typer.Exit(1) from None
 
     kind = "subplan" if nested is not None else "plan"
-    # An earlier run that wrote the status and then failed to commit (a rejecting
-    # hook, say) left the plan reading `implemented` with its change uncommitted.
-    # That run is finished here rather than refused, as `activate` and `set-pr` do.
-    # A file HEAD already has as implemented is not that run.
-    resuming = (
-        status == Status.implemented
-        and not no_commit
-        and not _is_unmodified(root, target)
-        and _status_at_head(root, target) != Status.implemented
-    )
+    resuming = _resuming(root, target, status, Status.implemented, no_commit=no_commit)
     if status != Status.active and not resuming:
         _err(
             f"{kind} {label} is {status.value}; only an active {kind} can be marked "
@@ -1786,17 +1786,13 @@ def implemented(
         entry = _implemented_entry(root, text, plan, nested, mainline)
         if meta is None:
             updated = set_frontmatter_key(text, "status", Status.implemented.value)
-            updated = append_to_section(
-                updated, "Log", entry, before=("Handoff", "Retrospective")
-            )
+            updated = _append_log(updated, entry)
             _sync_subplans(root, plan, {target: updated})
             staged = [target, plan]
         else:
             _, body = split_frontmatter(text)
             meta.status = Status.implemented
-            body = append_to_section(
-                body, "Log", entry, before=("Handoff", "Retrospective")
-            )
+            body = _append_log(body, entry)
             plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
             staged = [plan]
         typer.echo(f"marked {_shown(target, root)} implemented")
@@ -1805,15 +1801,14 @@ def implemented(
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
-    _commit(
-        root,
-        f"plan [implemented]: {label} - {slug}",
-        [str(path.relative_to(root)) for path in staged],
-    )
+        staged.append(_refresh_index(root))
+    _commit(root, f"plan [implemented]: {label} - {slug}", staged)
     if pr:
         _mark_pr_ready(root, pr)
-    typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
+    if origin is remote_mod.RemoteKind.github:
+        typer.echo(f"push {mainline.current} so the PR shows the status change")
+    elif origin in (remote_mod.RemoteKind.other_forge, remote_mod.RemoteKind.bare):
+        typer.echo(f"push {mainline.current} so the remote has the status change")
 
 
 def _closed_plan(root: Path, plan: Path, branch: str, base: str) -> PlanMetadata:
@@ -1860,12 +1855,12 @@ def _sync_base(
         say(f"checked out {base}")
     if local_only:
         return
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is not None:
+    if proc.ref_exists(root, "@{upstream}"):
         finish_mod.must(root, ["git", "pull", "--ff-only"])
         say(f"pulled {base}")
         return
     tracking = f"refs/remotes/origin/{base}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is None:
+    if not proc.ref_exists(root, tracking):
         return
     finish_mod.must(root, ["git", "merge", "--ff-only", tracking])
     say(f"fast-forwarded {base} to origin/{base}")
@@ -1874,7 +1869,7 @@ def _sync_base(
 def _remote_or_local(root: Path, branch: str) -> str:
     """``origin/<branch>`` when it exists, as last fetched, else ``branch`` itself."""
     tracking = f"refs/remotes/origin/{branch}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is not None:
+    if proc.ref_exists(root, tracking):
         return tracking
     return f"refs/heads/{branch}"
 
@@ -1946,7 +1941,7 @@ def _check_merged(
         (
             ref
             for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
-            if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+            if proc.ref_exists(root, ref)
         ),
         None,
     )
@@ -1971,13 +1966,11 @@ def _finish_target(root: Path, ref: str) -> tuple[Path, str, str, base_mod.Mainl
     A plan with no branch, or one that records a mainline branch, is a stop.
     """
     plan = _resolve_plan(root / PLANS_DIR, ref)
-    parts = DIRNAME_RE.match(plan.parent.name)
-    label = f"{parts.group(1)}{parts.group(2)}" if parts else ref
     try:
         on_base = PlanMetadata.from_file(plan)
     except PlanError as exc:
         raise finish_mod.Stop(f"cannot read {_shown(plan, root)}: {exc}") from None
-    branch = on_base.branch
+    label, branch = on_base.prefix, on_base.branch
     mainline = base_mod.detect(root)
     if not branch:
         raise finish_mod.Stop(f"plan {label} records no branch; nothing to finish")
@@ -2068,9 +2061,12 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         say(f"no worktree has {branch} checked out")
     else:
         if Path.cwd().resolve().is_relative_to(worktree.resolve()):
+            # `root` is this worktree; the main checkout is the first one listed.
+            trees = proc.worktrees(root)
+            main = f" ({trees[0][0]})" if trees else ""
             raise finish_mod.Stop(
-                f"this is the worktree being removed; run finish from the main "
-                f"checkout ({root})"
+                "this is the worktree being removed; run finish from the main "
+                f"checkout{main}"
             )
         problems = _unmerged_work(worktree, merged_ref, base)
         if problems:
@@ -2090,7 +2086,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
     finish_mod.delete_local_branch(root, branch, base, say)
 
     if _index_is_stale(root):
-        _refresh_index(root, cols="curated")
+        _refresh_index(root)
     if not _is_unmodified(root, root / INDEX_PATH):
         finish_mod.must(root, ["git", "add", INDEX_PATH.as_posix()])
         finish_mod.must(
@@ -2442,7 +2438,9 @@ def retire(
         sentence += f" The work moved to plan {moved}."
     if note:
         sentence += f" {note.strip()}"
-    entry = f"- **{_now()}** — {sentence}"
+    # Through `log_entry`, as `log` writes its own, so a --note of several lines
+    # nests under the entry instead of breaking out of the bullet.
+    entry = entries.log_entry(_now(), sentence)
 
     if nested is not None:
         try:
@@ -2451,43 +2449,49 @@ def retire(
         except (SubplanError, OSError, UnicodeDecodeError) as exc:
             _err(f"cannot read {_shown(nested, root)}: {exc}")
             raise typer.Exit(1) from None
-        if current.status in CLOSED_STATUSES:
+        resuming = _resuming(
+            root, nested, current.status, Status.retired, no_commit=no_commit
+        )
+        if current.status in CLOSED_STATUSES and not resuming:
             _err(f"subplan {label} is {current.status}; it is closed.")
             raise typer.Exit(1)
-        text = set_frontmatter_key(text, "status", Status.retired.value)
-        if moved:
-            text = set_frontmatter_key(text, "moved_to", moved)
-        _sync_subplans(root, plan, {nested: append_to_section(text, "Log", entry)})
-        typer.echo(f"retired {_shown(nested, root)}")
-        staged, slug = [nested, plan], nested.stem[2:]
+        if resuming:
+            typer.echo(f"committing the earlier change to {_shown(nested, root)}")
+        else:
+            text = set_frontmatter_key(text, "status", Status.retired.value)
+            if moved:
+                text = set_frontmatter_key(text, "moved_to", moved)
+            _sync_subplans(root, plan, {nested: _append_log(text, entry)})
+            typer.echo(f"retired {_shown(nested, root)}")
+        staged, slug = [nested, plan], current.step
     else:
         meta = _read_plan(root, plan)
-        if meta.status in CLOSED_STATUSES:
+        resuming = _resuming(
+            root, plan, meta.status, Status.retired, no_commit=no_commit
+        )
+        if meta.status in CLOSED_STATUSES and not resuming:
             _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
             raise typer.Exit(1)
-        _refuse_open_subplans(plan, meta.prefix, "retiring")
-        _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
-        meta.status = Status.retired
-        meta.conclude_at(_authored(root) or _now())
-        meta.branch = meta.branch or None
-        meta.pr = meta.pr or None
-        body = append_to_section(
-            body, "Log", entry, before=("Handoff", "Retrospective")
-        )
-        plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
-        typer.echo(f"retired {_shown(plan, root)}")
+        if resuming:
+            typer.echo(f"committing the earlier change to {_shown(plan, root)}")
+        else:
+            _refuse_open_subplans(plan, meta.prefix, "retiring")
+            _, body = split_frontmatter(plan.read_text(encoding="utf-8"))
+            meta.status = Status.retired
+            meta.conclude_at(_authored(root) or _now())
+            meta.branch = meta.branch or None
+            meta.pr = meta.pr or None
+            body = _append_log(body, entry)
+            plan.write_text(meta.render_frontmatter() + body, encoding="utf-8")
+            typer.echo(f"retired {_shown(plan, root)}")
         staged, slug = [plan], meta.slug
 
     if no_commit:
         return
 
     if nested is None:
-        staged.append(_refresh_index(root, cols="curated"))
-    _commit(
-        root,
-        f"plan [retire]: {label} - {slug}",
-        [str(path.relative_to(root)) for path in staged],
-    )
+        staged.append(_refresh_index(root))
+    _commit(root, f"plan [retire]: {label} - {slug}", staged)
 
 
 @app.command()
@@ -2511,15 +2515,7 @@ def block(
     plan = _resolve_plan(root / PLANS_DIR, ref)
     meta = _read_plan(root, plan)
 
-    # An earlier run that wrote the status and then failed to commit (a rejecting
-    # hook, say) is finished here rather than refused. A plan HEAD already has as
-    # blocked is not that run, and an edit to it is not a block to commit.
-    resuming = (
-        meta.status == Status.blocked
-        and not no_commit
-        and not _is_unmodified(root, plan)
-        and _status_at_head(root, plan) != Status.blocked
-    )
+    resuming = _resuming(root, plan, meta.status, Status.blocked, no_commit=no_commit)
     if meta.status not in (Status.draft, Status.active) and not resuming:
         _err(
             f"plan {meta.prefix} is {meta.status.value}; only a draft or active plan "
@@ -2538,12 +2534,8 @@ def block(
     if no_commit:
         return
 
-    readme = _refresh_index(root, cols="curated")
-    _commit(
-        root,
-        f"plan [block]: {meta.prefix} - {meta.slug}",
-        [str(plan.relative_to(root)), str(readme.relative_to(root))],
-    )
+    readme = _refresh_index(root)
+    _commit(root, f"plan [block]: {meta.prefix} - {meta.slug}", [plan, readme])
 
 
 @app.command(name="log")
@@ -2622,18 +2614,15 @@ def log_(
     except (OSError, UnicodeDecodeError) as exc:
         _err(f"cannot read {_shown(target, root)}: {exc}")
         raise typer.Exit(1) from None
-    target.write_text(
-        append_to_section(text, "Log", entry, before=("Handoff", "Retrospective")),
-        encoding="utf-8",
-    )
+    target.write_text(_append_log(text, entry), encoding="utf-8")
     typer.echo(f"logged to {_shown(target, root)}")
 
     if no_commit:
         return
-    paths = [str(target.relative_to(root))]
+    paths = [target]
     if (root / INDEX_PATH).is_file() and _index_is_stale(root):
-        readme = _refresh_index(root, cols="curated")
-        paths.append(str(readme.relative_to(root)))
+        readme = _refresh_index(root)
+        paths.append(readme)
         typer.echo(f"refreshed the stale index {_shown(readme, root)}")
     _commit(
         root,
@@ -2660,9 +2649,7 @@ def _work_authored(root: Path, plan: Path, text: str) -> str | None:
     # a commit on whichever is ahead is the base's work, not the plan's, even when
     # the branch merged it in.
     excluded = [
-        f"^{ref}"
-        for ref in (f"origin/{base}", base)
-        if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+        f"^{ref}" for ref in (f"origin/{base}", base) if proc.ref_exists(root, ref)
     ]
     if not excluded:
         return None
@@ -2707,16 +2694,7 @@ def conclude(
     plan = _resolve_plan(root / PLANS_DIR, ref)
     meta = _read_plan(root, plan)
 
-    # An earlier run that wrote the frontmatter and then failed to commit (a
-    # rejecting hook, say) left the plan reading `done` with its change
-    # uncommitted. That run is finished here rather than refused. A plan HEAD
-    # already has as done is not that run.
-    resuming = (
-        meta.status == Status.done
-        and not no_commit
-        and not _is_unmodified(root, plan)
-        and _status_at_head(root, plan) != Status.done
-    )
+    resuming = _resuming(root, plan, meta.status, Status.done, no_commit=no_commit)
     if meta.status not in (Status.active, Status.implemented) and not resuming:
         closed = meta.status in CLOSED_STATUSES
         _err(
@@ -2755,12 +2733,8 @@ def conclude(
 
     if no_commit:
         return
-    staged = [plan, _refresh_index(root, cols="curated")]
-    _commit(
-        root,
-        f"plan [close]: {meta.prefix} - {meta.slug}",
-        [str(path.relative_to(root)) for path in staged],
-    )
+    readme = _refresh_index(root)
+    _commit(root, f"plan [close]: {meta.prefix} - {meta.slug}", [plan, readme])
 
 
 def _plan_status(
@@ -2790,7 +2764,11 @@ def _plan_status(
         raise typer.Exit(1)
     text = planned.get(path)
     if text is None:
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            _err(f"cannot read {_shown(path, root)}: {exc}")
+            raise typer.Exit(1) from None
     if split_frontmatter(text)[0] is None:
         # A status can be repaired in a frontmatter that exists. One is never
         # invented: a file without it is somebody's notes, not a subplan.
@@ -2851,7 +2829,7 @@ def subplans(
     width = max((len(meta.filename) for meta in metas), default=0)
     for meta in metas:
         typer.echo(
-            f"{prefix}{meta.letter}  {meta.status.value:<8}  "
+            f"{prefix}{meta.letter}  {meta.status.value:<{_STATUS_WIDTH}}  "
             f"{meta.filename:<{width}}  branch: {meta.branch or '-'}  "
             f"needs: {', '.join(meta.needs) or '-'}"
         )
@@ -2884,23 +2862,21 @@ def subplans(
         raise typer.Exit(1)
 
 
-def _split_log(text: str) -> tuple[tuple[str | None, str, str], str]:
+def _split_log(text: str) -> tuple[tuple[str | None, list[str]], str]:
     """``text`` as (everything outside the ``## Log`` section, the Log itself).
 
     Two versions of a plan whose outside parts agree differ only in their Log,
-    the one part of a plan ``review --commit`` may carry. The text on either side
-    of the cut is compared with its surrounding blank lines stripped, so adding a
-    Log section to a plan that had none, with a blank line before it, still
-    reads as a Log-only change.
+    the one part of a plan ``review --commit`` may carry. The outside part is the
+    frontmatter and the body's other lines, blank ones left out and with no mark
+    of where the Log sat among them. So a Log added to a plan that had none reads
+    as a Log-only change wherever it lands: at the end, or ahead of ``## Handoff``
+    and ``## Retrospective``, where ``log`` puts a new one.
     """
     fm, body = split_frontmatter(text)
-    span = section_span(body, "Log")
-    if span is None:
-        return (fm, body.strip(), ""), ""
     lines = body.splitlines(keepends=True)
-    head = "".join(lines[: span[0]]).strip()
-    tail = "".join(lines[span[1] :]).strip()
-    return (fm, head, tail), "".join(lines[span[0] : span[1]])
+    start, end = section_span(body, "Log") or (len(lines), len(lines))
+    outside = [line.rstrip("\n") for line in lines[:start] + lines[end:]]
+    return (fm, [line for line in outside if line.strip()]), "".join(lines[start:end])
 
 
 def _review_commit(root: Path, *, allow_branch: bool) -> None:
@@ -2959,8 +2935,8 @@ def _review_commit(root: Path, *, allow_branch: bool) -> None:
         raise typer.Exit(1)
 
     _guard_base_branch(root, "plan [review]", allow_branch=allow_branch)
-    readme = _refresh_index(root, cols="curated")
-    paths = [*staged, str(readme.relative_to(root))]
+    readme = _refresh_index(root)
+    paths = [*(root / rel for rel in staged), readme]
     noun = "plan" if len(staged) == 1 else "plans"
     _commit(root, f"plan [review]: {len(staged)} {noun}", paths)
     typer.echo(f"committed review notes for {len(staged)} {noun}")
@@ -3165,7 +3141,12 @@ def index(
     repo_path: Path = typer.Argument(
         Path("."), help="Repo root (contains .planners/)."
     ),
-    cols: str = typer.Option("curated", "--cols", help="Column set: curated | all."),
+    cols: str | None = typer.Option(
+        None,
+        "--cols",
+        help="Column set: curated | all. Default: the set the index is already "
+        "in, curated for a new one.",
+    ),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
 
@@ -3177,7 +3158,7 @@ def index(
     all removed still gets its index regenerated. The commands that create a
     plan write the index themselves, so the first plan still lands with one.
     """
-    if cols not in INDEX_COLS:
+    if cols is not None and cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
         raise typer.Exit(1)
     _require_repository(repo_path)

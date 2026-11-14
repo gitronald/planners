@@ -156,12 +156,25 @@ def _plan_cell(meta: PlanMetadata) -> str:
     return f"[{_escape(meta.title or meta.slug)}](plans/{dirname}/plan.md)"
 
 
+def _header_row(header: tuple[str, ...]) -> str:
+    return "| " + " | ".join(header) + " |"
+
+
+def tracked_cols(document: str) -> str:
+    """The column set a rendered index is in: ``all`` or ``curated``.
+
+    Read from the table's header row. Anything that is not the wide header,
+    a document with no table included, counts as ``curated``, the default.
+    """
+    return "all" if _header_row(WIDE_HEADER) in document.splitlines() else "curated"
+
+
 def render_plans_table(metas: list[PlanMetadata], cols: str = "curated") -> str:
     """Render the markdown plans table. ``cols`` is ``curated`` or ``all``."""
     wide = cols == "all"
     header = WIDE_HEADER if wide else CURATED_HEADER
     lines = [
-        "| " + " | ".join(header) + " |",
+        _header_row(header),
         "|" + "|".join(["---"] * len(header)) + "|",
     ]
     for meta in sort_plans(metas):

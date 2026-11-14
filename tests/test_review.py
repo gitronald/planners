@@ -676,3 +676,37 @@ def test_last_review_skips_a_fenced_example_marker() -> None:
         "```\n- **2099-01-01T00:00:00-07:00** — Review: moot.\n```\n"
     )
     assert last_review(body) == "2026-06-01T12:00:00-07:00"
+
+
+def test_cli_commit_accepts_a_log_added_ahead_of_the_handoff(cli_repo: Path) -> None:
+    # `log` puts a plan's first Log ahead of `## Handoff`, which splits the rest
+    # of the body in two. That is still a change to the Log and nothing else.
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(
+        text[: text.index("## Log")].rstrip("\n") + "\n\n## Handoff\n\nNothing.\n"
+    )
+    _commit(cli_repo, "swap the log for a handoff", "2026-03-19T10:00:00-08:00")
+    assert runner.invoke(app, ["log", "0", "Reviewed.", "--no-commit"]).exit_code == 0
+    assert path.read_text().index("## Log") < path.read_text().index("## Handoff")
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 0, result.output
+    assert git_out(cli_repo, "log", "-1", "--format=%s").strip() == (
+        "plan [review]: 1 plan"
+    )
+
+
+def test_cli_commit_still_refuses_a_change_beside_the_new_log(cli_repo: Path) -> None:
+    path = cli_repo / DONE
+    text = path.read_text()
+    path.write_text(
+        text[: text.index("## Log")].rstrip("\n") + "\n\n## Handoff\n\nNothing.\n"
+    )
+    _commit(cli_repo, "swap the log for a handoff", "2026-03-19T10:00:00-08:00")
+    assert runner.invoke(app, ["log", "0", "Reviewed.", "--no-commit"]).exit_code == 0
+    path.write_text(path.read_text().replace("Nothing.", "Something."))
+
+    result = runner.invoke(app, ["review", "--commit"])
+    assert result.exit_code == 1
+    assert "changed outside its Log" in result.output

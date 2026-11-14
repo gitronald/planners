@@ -13,8 +13,9 @@ branches are. That is a heuristic over present state, **not** a record of where
 plans were actually committed — see :func:`detect` for what it cannot know.
 
 Everything here is best-effort and read-only. A repo whose mainline cannot be
-resolved yields :data:`UNRESOLVED`, which leaves the guard inert: this module
-never blocks a repo it cannot reason about.
+resolved yields no branches (:data:`UNRESOLVED` when it is not a repo at all),
+which leaves the guard inert: this module never blocks a repo it cannot reason
+about.
 """
 
 from dataclasses import dataclass
@@ -76,10 +77,10 @@ class Mainline:
         return self.current is not None and self.current in self.branches
 
 
-# A repo we cannot reason about: not a git worktree, git missing, or no branches
-# resolved. The guard treats this as "do not block". `thin` is False because
-# nothing was resolved at all — there is no guessed-by-name answer to qualify, and
-# every consumer checks `resolved` before ever reading it.
+# A repo we cannot reason about: not a git worktree, or git missing. The guard
+# treats this as "do not block". `thin` is False because nothing was resolved at
+# all — there is no guessed-by-name answer to qualify, and every consumer checks
+# `resolved` before ever reading it.
 UNRESOLVED = Mainline(
     branches=(), current=None, detached=False, unborn=False, thin=False
 )
@@ -110,10 +111,7 @@ def _is_repo(root: Path) -> bool:
 
 def _has_branch(root: Path, name: str) -> bool:
     """True when a local branch ``name`` exists."""
-    return (
-        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/heads/{name}"])
-        is not None
-    )
+    return proc.ref_exists(root, f"refs/heads/{name}")
 
 
 def _default_branch(root: Path) -> str | None:
@@ -146,10 +144,7 @@ def _default_branch(root: Path) -> str | None:
     # `git checkout <name>` then works even with no local branch yet, because git
     # creates a tracking branch from `origin/<name>` — so a present remote ref is
     # enough to make the refusal's advice actionable.
-    if (
-        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}"])
-        is None
-    ):
+    if not proc.ref_exists(root, f"refs/remotes/origin/{name}"):
         return None
     return name
 
@@ -163,7 +158,10 @@ def detect(root: Path) -> Mainline:
     2. ``refs/remotes/origin/HEAD`` — the remote's default branch as recorded at
        clone time;
     3. failing (2), a local ``main`` then ``master``;
-    4. nothing resolved -> :data:`UNRESOLVED`, and the guard stays inert.
+    4. nothing resolved -> no branches, and the guard stays inert. Where HEAD
+       sits is still reported: a repo whose mainline has another name (``trunk``)
+       is on a branch all the same, and the commands that compare HEAD with a
+       plan's recorded branch need to know which.
 
     **What this cannot know.** It reads the refs that exist now, so it cannot tell
     you which branch a repo's existing plans were actually committed on. Deriving
@@ -182,7 +180,7 @@ def detect(root: Path) -> Mainline:
     # An unborn HEAD (`git init`, nothing committed) names a branch that does not
     # exist yet. Nothing can be reachable-or-not from a mainline that has no
     # commits, so this is inert by construction, not a refusal.
-    unborn = _git_out(root, ["rev-parse", "--verify", "-q", "HEAD"]) is None
+    unborn = not proc.ref_exists(root, "HEAD")
 
     # `--show-current` prints empty on a detached HEAD, which is a distinct state
     # from "not a repo" and gets its own message: a commit made there is not on
@@ -220,15 +218,13 @@ def detect(root: Path) -> Mainline:
                 branches.append(name)
                 break
 
-    if not branches:
-        return UNRESOLVED
-
     return Mainline(
         branches=tuple(branches),
         current=current,
         detached=detached,
         unborn=False,
-        thin=thin,
+        # Nothing resolved means nothing was guessed by name, as for UNRESOLVED.
+        thin=thin and bool(branches),
     )
 
 

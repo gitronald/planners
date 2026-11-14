@@ -1609,3 +1609,113 @@ def test_validate_json_reports_a_missing_file(
     assert doc["ok"] is False
     assert doc["plans"][0]["plan"] is None
     assert "No such file" in doc["plans"][0]["errors"][0]
+
+
+# --- index column set ----------------------------------------------------------
+
+
+def test_a_wide_index_stays_wide_through_a_lifecycle_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `validate` accepts a wide index as a tracked state, so the commands that
+    # refresh the index must not narrow it back to the curated columns.
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", ".", "--cols", "all"]).exit_code == 0
+    commit_all(tmp_path, "initial commit")
+    index = tmp_path / ".planners" / "README.md"
+
+    result = runner.invoke(app, ["block", "1"])
+    assert result.exit_code == 0, result.output
+    text = index.read_text(encoding="utf-8")
+    assert "| # | Plan | Status | Branch | Created | Concluded | PR |" in text
+    assert "| blocked | feature/thing |" in text
+
+    # The hook's bare `index .` keeps it as well; only --cols changes the set.
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    assert index.read_text(encoding="utf-8") == text
+    assert runner.invoke(app, ["index", ".", "--cols", "curated"]).exit_code == 0
+    assert "| Branch |" not in index.read_text(encoding="utf-8")
+    assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+
+# --- validate: the index check, however the plan is named ----------------------
+
+
+@pytest.mark.parametrize(
+    ("cwd", "target"),
+    [
+        (".planners/plans", "."),
+        (".planners/plans", "001-thing/plan.md"),
+        (".planners", "plans"),
+    ],
+)
+def test_validate_finds_a_stale_index_from_inside_the_plans_tree(
+    cwd: str, target: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path / cwd)
+    result = runner.invoke(app, ["validate", target])
+    assert result.exit_code == 1
+    assert "stale" in result.output
+
+
+# --- a plan file that is not text ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["validate", "."], ["index", "."], ["block", "1", "--no-commit"]],
+    ids=" ".join,
+)
+def test_a_plan_that_is_not_utf8_is_reported_not_raised(
+    args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    plan = _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    plan.write_bytes(plan.read_bytes() + b"\xff\xfe\n")
+
+    result = runner.invoke(app, args)
+    assert not isinstance(result.exception, UnicodeDecodeError), result.output
+    assert "cannot be read" in result.output
+
+
+# --- add: numbers and letters held by directory name ---------------------------
+
+
+def test_add_sibling_skips_a_letter_whose_plan_does_not_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 000a's frontmatter is broken, so it is skipped when plans are parsed. Its
+    # directory still holds the letter, and the next sibling must not take it.
+    plans = tmp_path / ".planners" / "plans"
+    umbrella = _VALID_PLAN.replace("id: 1", "id: 0").replace("slug: thing", "slug: umb")
+    _write_plan(plans, "000-umb", umbrella)
+    _write_plan(plans, "000a-one", "---\nid: 0\nsub: a\nstatus: wip\n---\n\n# One\n")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["add", "two", "--parent", "0", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert (plans / "000b-two" / "plan.md").is_file()
+    assert not (plans / "000a-two").exists()
+
+
+def test_add_sibling_of_a_missing_umbrella_leaves_nothing_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["add", "two", "--parent", "0", "--no-commit"])
+    assert result.exit_code == 1
+    assert "no umbrella plan 000" in result.output
+    # An empty plans/ would make the next `index` write an index of nothing.
+    assert not (tmp_path / ".planners").exists()

@@ -297,3 +297,42 @@ def test_retire_refuses_an_umbrella_with_an_unreadable_subplan(
     assert result.exit_code == 1
     assert "plan 015 has subplans that cannot be read" in result.output
     assert (plans / "015-follow-up" / "plan.md").read_text() == before
+
+
+def test_retire_nests_the_later_lines_of_a_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    note = "Superseded.\n- The follow-up covers it."
+    result = runner.invoke(app, ["retire", "5", "--note", note, "--no-commit"])
+    assert result.exit_code == 0, result.output
+    text = (plans / "005-old-idea" / "plan.md").read_text(encoding="utf-8")
+    assert (
+        f"- **{_NOW}** — Retired. Superseded.\n  - The follow-up covers it.\n" in text
+    )
+
+
+@pytest.mark.parametrize(
+    ("ref", "subject"),
+    [("5", "plan [retire]: 005 - old-idea"), ("15d", "plan [retire]: 015d - step")],
+)
+def test_retire_finishes_an_earlier_run_that_did_not_commit(
+    ref: str, subject: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path, committed=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    commit_all(tmp_path, "index")
+    assert runner.invoke(app, ["retire", ref, "--no-commit"]).exit_code == 0
+
+    result = runner.invoke(app, ["retire", ref])
+    assert result.exit_code == 0, result.output
+    assert "committing the earlier change" in result.output
+    assert git_out(tmp_path, "log", "-1", "--format=%s").strip() == subject
+    assert git_out(tmp_path, "status", "--porcelain") == ""
+
+    # Committed now, so a third run is the refusal it always was.
+    result = runner.invoke(app, ["retire", ref])
+    assert result.exit_code == 1
+    assert "it is closed" in result.output

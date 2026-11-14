@@ -422,6 +422,8 @@ def test_finish_stops_inside_the_worktree(
     result = scene.finish()
     assert result.exit_code == 1
     assert "this is the worktree being removed" in result.output
+    # The checkout to run it from is the main one, not the worktree asked about.
+    assert f"main checkout ({scene.root.resolve()})" in " ".join(result.output.split())
     assert scene.worktree.is_dir()
 
 
@@ -769,3 +771,31 @@ def test_finish_stop_keeps_the_owner_of_a_fork_pr(
     result = scene.finish()
     assert result.exit_code == 1
     assert _stop_merge_line(result)[-1] == f"merge: PR #7 - owner/{_BRANCH}"
+
+
+def test_delete_remote_branch_reads_the_branch_it_was_asked_about(
+    tmp_path: Path,
+) -> None:
+    # `ls-remote` matches a name against the tail of each ref, so `fix` also
+    # lists `a/fix`, which sorts first. The unmerged `a/fix` must not stand in
+    # for the merged `fix`, nor for a `fix` that is already gone.
+    root, remote = tmp_path / "repo", tmp_path / "remote.git"
+    root.mkdir()
+    init_git(root)
+    (root / "a.txt").write_text("a\n", encoding="utf-8")
+    commit_all(root, "a")
+    bare_remote(root, remote)
+    git(root, "push", "-q", "origin", "main", "main:fix")
+    git(root, "checkout", "-q", "-b", "a/fix")
+    (root / "b.txt").write_text("b\n", encoding="utf-8")
+    commit_all(root, "b")
+    git(root, "push", "-q", "origin", "a/fix")
+    git(root, "checkout", "-q", "main")
+    git(root, "fetch", "-q", "origin")
+
+    said: list[str] = []
+    delete_remote_branch(root, "fix", "main", said.append, against="origin/main")
+    assert said == ["deleted fix on origin"]
+    delete_remote_branch(root, "fix", "main", said.append, against="origin/main")
+    assert said[-1] == "fix is already gone from origin"
+    assert git_out(root, "ls-remote", "origin", "refs/heads/a/fix").strip()

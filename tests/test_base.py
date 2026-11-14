@@ -779,3 +779,19 @@ def test_activate_leaves_an_edit_to_a_plan_already_active_at_head(
     assert "nothing to do" in result.output
     assert _unredirected(tmp_path, ["rev-parse", "HEAD"]) == head
     assert "An edit." in plan.read_text(encoding="utf-8")
+
+
+def test_detect_reports_the_branch_when_no_mainline_resolves(tmp_path: Path) -> None:
+    """An unresolved mainline does not make HEAD's own branch unknown."""
+    _init_git(tmp_path, branch="trunk")
+    _commit(tmp_path)
+    mainline = base_mod.detect(tmp_path)
+    assert mainline.resolved is False
+    assert mainline.thin is False
+    assert (mainline.current, mainline.detached) == ("trunk", False)
+    assert base_mod.guard_message(mainline, "plan [add]") is None
+
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
+    mainline = base_mod.detect(tmp_path)
+    assert (mainline.current, mainline.detached) == (None, True)
+    assert base_mod.guard_message(mainline, "plan [add]") is None
