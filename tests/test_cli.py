@@ -302,11 +302,7 @@ def test_add_rejects_unsafe_slug(
 def test_add_commits_by_default_in_git_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["add", "feature-x", "--title", "Feature X"])
@@ -524,22 +520,20 @@ def test_git_reports_a_vanished_root_rather_than_blaming_git(
     assert "git not found on PATH" not in err
 
 
-def test_git_turns_an_unreadable_root_into_a_cli_error(
+def test_git_turns_an_unusable_root_into_a_cli_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A non-``FileNotFoundError`` OSError on ``root`` is an error, not a traceback.
 
-    ``chmod 000`` makes ``cwd=root`` raise ``PermissionError``; the docstring
-    promises a clear CLI error in every failure mode, so it must not escape.
+    A regular file as ``root`` makes ``cwd=root`` raise ``NotADirectoryError``;
+    the docstring promises a clear CLI error in every failure mode, so it must
+    not escape. (A ``chmod 000`` directory raises ``PermissionError`` the same
+    way, but not for root, which a container or CI job may run as.)
     """
-    unreadable = tmp_path / "unreadable"
-    unreadable.mkdir()
-    unreadable.chmod(0o000)
-    try:
-        with pytest.raises(typer.Exit) as exc_info:
-            cli_mod._git(unreadable, ["status"])
-    finally:
-        unreadable.chmod(0o755)
+    not_a_dir = tmp_path / "not-a-dir"
+    not_a_dir.write_text("", encoding="utf-8")
+    with pytest.raises(typer.Exit) as exc_info:
+        cli_mod._git(not_a_dir, ["status"])
 
     assert exc_info.value.exit_code == 1
     assert "cannot run git in" in capsys.readouterr().err
@@ -589,14 +583,6 @@ def _write_staged(staging: Path, dirname: str, text: str) -> Path:
     path = d / "plan.md"
     path.write_text(text, encoding="utf-8")
     return path
-
-
-def _init_git(path: Path) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=path, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
 
 
 def test_add_defer_stages_unnumbered_plan(
@@ -675,7 +661,7 @@ def test_finalize_assigns_next_numbers_after_existing(
 def test_finalize_commits_batch_atomically_and_self_check_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     # Distinct created times so the number<->slug mapping is deterministic (the CLI
     # clock has second precision, which would tie two back-to-back `add --defer`s).
     staging = tmp_path / ".planners" / "staging"
@@ -716,7 +702,7 @@ def test_finalize_single_plan_uses_add_slug_commit_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A one-plan batch keeps the familiar `plan [add]: NNN - slug` message.
-    _init_git(tmp_path)
+    init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
     _write_staged(
         staging, "tok-solo", _staged_text("solo", "2026-06-10T09:00:00-07:00")
@@ -1013,7 +999,7 @@ def test_activate_on_already_active_plan_is_a_noop(
         "branch:\n", "branch: feature/my-thing\n"
     )
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -1052,7 +1038,7 @@ def test_activate_commits_by_default_with_slug_subject(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -1101,7 +1087,7 @@ def test_activate_commits_an_explicit_branch(
 ) -> None:
     """--branch travels the committing path, not just the --no-commit one."""
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
 
@@ -1134,7 +1120,7 @@ def test_activate_appends_the_activation_entry(
         "005-my-thing",
         _DRAFT_PLAN + "\n## Handoff\n\nWhere to pick up.\n",
     )
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     branch, before = (
@@ -1227,7 +1213,7 @@ def test_activate_returns_an_implemented_plan_on_its_feature_branch(
             "branch:\n", "branch: feature/my-thing\n"
         ),
     )
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
@@ -1264,7 +1250,7 @@ def test_activate_still_guards_a_draft_on_a_feature_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _init_git(tmp_path)
+    init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
@@ -1559,7 +1545,7 @@ def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
 ) -> None:
     # The old single line, "activated <plan> on <branch>", named the recorded
     # branch in the place a reader expects the branch committed on.
-    _init_git(tmp_path)
+    init_git(tmp_path)
     subprocess.run(["git", "checkout", "-qb", "main"], cwd=tmp_path, check=True)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     _commit_all(tmp_path, "initial commit")
@@ -1586,7 +1572,7 @@ def test_activate_no_commit_claims_no_commit(
 def test_activate_on_a_detached_head_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     _commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
@@ -1599,7 +1585,7 @@ def test_activate_on_a_detached_head_says_so(
 def test_finalize_refuses_an_invalid_created_before_moving_anything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _init_git(tmp_path)
+    init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
     _write_staged(staging, "tok-a", _staged_text("alpha", "not-a-date"))
     monkeypatch.chdir(tmp_path)
