@@ -1692,3 +1692,30 @@ def test_a_plan_that_is_not_utf8_is_reported_not_raised(
     result = runner.invoke(app, args)
     assert not isinstance(result.exception, UnicodeDecodeError), result.output
     assert "cannot be read" in result.output
+
+
+# --- validate: the index check, however the plan is named ----------------------
+
+
+@pytest.mark.parametrize(
+    ("cwd", "target"),
+    [
+        (".planners/plans", "."),
+        (".planners/plans", "001-thing/plan.md"),
+        (".planners", "plans"),
+    ],
+)
+def test_validate_finds_a_stale_index_from_inside_the_plans_tree(
+    cwd: str, target: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plans = tmp_path / ".planners" / "plans"
+    _write_plan(plans, "001-thing", _VALID_PLAN)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    index.write_text("# Plans\n\nnot what the frontmatter says\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path / cwd)
+    result = runner.invoke(app, ["validate", target])
+    assert result.exit_code == 1
+    assert "stale" in result.output

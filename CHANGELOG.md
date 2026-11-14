@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `planners validate` checks for a stale index when a plan is named from inside
+  `.planners/` (`validate .` run in `.planners/plans/`). It skipped the check there
 - A `plan.md` that cannot be read, or is not UTF-8, is reported the way an unparseable
   one is. `validate`, `index`, and most lifecycle commands ended in a traceback
 - `planners index` writes nothing in a repo with no `.planners/plans/` directory, and

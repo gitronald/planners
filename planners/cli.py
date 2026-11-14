@@ -583,11 +583,16 @@ def _repo_root_of(plan: Path) -> Path | None:
     Returns ``None`` for anything not in that layout, so a legacy
     ``docs/plans/`` repo is left alone rather than reported stale.
     """
-    parents = plan.parents
-    if len(parents) < 4:
-        return None
-    if parents[1].name == PLANS_DIR.name and parents[2].name == PLANS_DIR.parent.name:
-        return parents[3]
+    # The path as given first, so a root that was spelled relatively is reported
+    # that way. Resolved second: `validate .` from inside `.planners/plans/` names
+    # a plan by a path too short to show the layout it sits in.
+    for parents in (plan.parents, plan.resolve().parents):
+        if (
+            len(parents) >= 4
+            and parents[1].name == PLANS_DIR.name
+            and parents[2].name == PLANS_DIR.parent.name
+        ):
+            return parents[3]
     return None
 
 
