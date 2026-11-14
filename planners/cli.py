@@ -2840,23 +2840,23 @@ def subplans(
         raise typer.Exit(1)
 
 
-def _split_log(text: str) -> tuple[tuple[str | None, str, str], str]:
-    """``text`` as (everything outside the ``## Log`` section, the Log itself).
+def _split_log(text: str) -> tuple[tuple[str | None, tuple[str, ...]], str]:
+    """``text`` as (frontmatter and the non-blank lines outside ``## Log``, the Log).
 
     Two versions of a plan whose outside parts agree differ only in their Log,
-    the one part of a plan ``review --commit`` may carry. The text on either side
-    of the cut is compared with its surrounding blank lines stripped, so adding a
-    Log section to a plan that had none, with a blank line before it, still
-    reads as a Log-only change.
+    the one part of a plan ``review --commit`` may carry. The outside lines are
+    compared without their blank lines and without regard to where the Log sits,
+    so a Log added ahead of a ``## Handoff``, which splits the rest of the body in
+    two, still reads as a Log-only change.
     """
     fm, body = split_frontmatter(text)
     span = section_span(body, "Log")
+    lines = body.splitlines()
     if span is None:
-        return (fm, body.strip(), ""), ""
-    lines = body.splitlines(keepends=True)
-    head = "".join(lines[: span[0]]).strip()
-    tail = "".join(lines[span[1] :]).strip()
-    return (fm, head, tail), "".join(lines[span[0] : span[1]])
+        return (fm, tuple(ln for ln in lines if ln.strip())), ""
+    outside = (*lines[: span[0]], *lines[span[1] :])
+    log = "".join(body.splitlines(keepends=True)[span[0] : span[1]])
+    return (fm, tuple(ln for ln in outside if ln.strip())), log
 
 
 def _review_commit(root: Path, *, allow_branch: bool) -> None:

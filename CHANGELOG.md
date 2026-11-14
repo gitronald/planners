@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `planners review --commit` accepts a Log that `planners log` added ahead of a
+  `## Handoff` or `## Retrospective` in a plan that had no `## Log`. It refused that
+  plan as changed outside its Log. A change beside the new Log is still refused
 - `planners validate` checks for a stale index when a plan is named from inside
   `.planners/` (`validate .` run in `.planners/plans/`). It skipped the check there
 - A `plan.md` that cannot be read, or is not UTF-8, is reported the way an unparseable
