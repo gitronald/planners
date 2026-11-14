@@ -2054,9 +2054,12 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         say(f"no worktree has {branch} checked out")
     else:
         if Path.cwd().resolve().is_relative_to(worktree.resolve()):
+            # `root` is this worktree; the main checkout is the first one listed.
+            trees = proc.worktrees(root)
+            main = f" ({trees[0][0]})" if trees else ""
             raise finish_mod.Stop(
-                f"this is the worktree being removed; run finish from the main "
-                f"checkout ({root})"
+                "this is the worktree being removed; run finish from the main "
+                f"checkout{main}"
             )
         problems = _unmerged_work(worktree, merged_ref, base)
         if problems:

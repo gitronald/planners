@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `planners finish` judged the wrong branch on the remote when another branch's name
+  ended in the plan's (`a/fix` beside `fix`), and stopped on every run. Run from the
+  plan's worktree, it named that worktree as the main checkout to run from
 - `planners review --commit` accepts a Log that `planners log` added ahead of a
   `## Handoff` or `## Retrospective` in a plan that had no `## Log`. It refused that
   plan as changed outside its Log. A change beside the new Log is still refused

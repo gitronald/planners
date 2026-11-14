@@ -201,14 +201,22 @@ def delete_remote_branch(
     remotes = (proc.git_out(root, ["remote"]) or "").split()
     if "origin" not in remotes:
         return
-    listed = must(root, ["git", "ls-remote", "--heads", "origin", branch])
-    if not listed.strip():
+    # `ls-remote` matches a pattern against the tail of each ref, so `fix` also
+    # lists `refs/heads/a/fix`. Only the line naming this branch exactly counts.
+    ref = f"refs/heads/{branch}"
+    listed = must(root, ["git", "ls-remote", "origin", ref])
+    tips = [
+        fields[0]
+        for fields in (line.split() for line in listed.splitlines())
+        if fields[1:] == [ref]
+    ]
+    if not tips:
         say(f"{branch} is already gone from origin")
         return
     # Judge the tip the remote reports now, not the tracking ref from the last
     # fetch, and delete under a lease on that tip: a push that lands after the
     # check makes the delete fail instead of discarding it.
-    tip = listed.split()[0]
+    tip = tips[0]
     if proc.git_out(root, ["cat-file", "-e", f"{tip}^{{commit}}"]) is None:
         raise Stop(
             f"origin/{branch} is at {tip[:12]}, which has not been fetched; "
