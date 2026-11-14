@@ -5,7 +5,7 @@ status: active
 branch: feature/025-lifecycle-bug-sweep
 created: 2026-11-14T10:29:01-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/72
 ---
 
 # Fix lifecycle bugs found in a review sweep
@@ -77,3 +77,4 @@ plan 024 are dropped there.
   - Base: `dev` at `c06d0ed`
   - Worktree: `.worktrees/025-lifecycle-bug-sweep`
   - PR: pending
+- **2026-11-14T10:38:17-08:00** — PR opened: https://github.com/gitronald/planners/pull/72
