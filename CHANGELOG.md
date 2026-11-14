@@ -64,6 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   was already committed for a run that had failed to commit, and repeated or refused it
 - `planners review --commit` found no changed Log in a repo whose plans sit in a folder
   below the repository root, and left the review's entries uncommitted
+- In the same layout, `activate` and `start` counted the plan's own unpushed commits as
+  other work, and `conclude` dated a plan from its last paperwork commit rather than its
+  last work commit
 
 ## [0.16.1] - 2026-11-13
 
