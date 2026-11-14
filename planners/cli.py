@@ -1860,12 +1860,12 @@ def _sync_base(
         say(f"checked out {base}")
     if local_only:
         return
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", "@{upstream}"]) is not None:
+    if proc.ref_exists(root, "@{upstream}"):
         finish_mod.must(root, ["git", "pull", "--ff-only"])
         say(f"pulled {base}")
         return
     tracking = f"refs/remotes/origin/{base}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is None:
+    if not proc.ref_exists(root, tracking):
         return
     finish_mod.must(root, ["git", "merge", "--ff-only", tracking])
     say(f"fast-forwarded {base} to origin/{base}")
@@ -1874,7 +1874,7 @@ def _sync_base(
 def _remote_or_local(root: Path, branch: str) -> str:
     """``origin/<branch>`` when it exists, as last fetched, else ``branch`` itself."""
     tracking = f"refs/remotes/origin/{branch}"
-    if proc.git_out(root, ["rev-parse", "--verify", "-q", tracking]) is not None:
+    if proc.ref_exists(root, tracking):
         return tracking
     return f"refs/heads/{branch}"
 
@@ -1946,7 +1946,7 @@ def _check_merged(
         (
             ref
             for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}")
-            if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+            if proc.ref_exists(root, ref)
         ),
         None,
     )
@@ -2660,9 +2660,7 @@ def _work_authored(root: Path, plan: Path, text: str) -> str | None:
     # a commit on whichever is ahead is the base's work, not the plan's, even when
     # the branch merged it in.
     excluded = [
-        f"^{ref}"
-        for ref in (f"origin/{base}", base)
-        if proc.git_out(root, ["rev-parse", "--verify", "-q", ref]) is not None
+        f"^{ref}" for ref in (f"origin/{base}", base) if proc.ref_exists(root, ref)
     ]
     if not excluded:
         return None

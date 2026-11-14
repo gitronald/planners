@@ -110,10 +110,7 @@ def _is_repo(root: Path) -> bool:
 
 def _has_branch(root: Path, name: str) -> bool:
     """True when a local branch ``name`` exists."""
-    return (
-        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/heads/{name}"])
-        is not None
-    )
+    return proc.ref_exists(root, f"refs/heads/{name}")
 
 
 def _default_branch(root: Path) -> str | None:
@@ -146,10 +143,7 @@ def _default_branch(root: Path) -> str | None:
     # `git checkout <name>` then works even with no local branch yet, because git
     # creates a tracking branch from `origin/<name>` — so a present remote ref is
     # enough to make the refusal's advice actionable.
-    if (
-        _git_out(root, ["rev-parse", "--verify", "-q", f"refs/remotes/origin/{name}"])
-        is None
-    ):
+    if not proc.ref_exists(root, f"refs/remotes/origin/{name}"):
         return None
     return name
 
@@ -182,7 +176,7 @@ def detect(root: Path) -> Mainline:
     # An unborn HEAD (`git init`, nothing committed) names a branch that does not
     # exist yet. Nothing can be reachable-or-not from a mainline that has no
     # commits, so this is inert by construction, not a refusal.
-    unborn = _git_out(root, ["rev-parse", "--verify", "-q", "HEAD"]) is None
+    unborn = not proc.ref_exists(root, "HEAD")
 
     # `--show-current` prints empty on a detached HEAD, which is a distinct state
     # from "not a repo" and gets its own message: a commit made there is not on

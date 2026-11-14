@@ -223,8 +223,7 @@ def delete_remote_branch(
 
 def delete_local_branch(root: Path, branch: str, base: str, say: Say) -> None:
     """Delete the local ``branch`` when ``base`` contains it. Never ``-D``."""
-    exists = proc.git_out(root, ["rev-parse", "--verify", "-q", f"refs/heads/{branch}"])
-    if exists is None:
+    if not proc.ref_exists(root, f"refs/heads/{branch}"):
         say(f"{branch} is already gone locally")
         return
     if not is_ancestor(root, f"refs/heads/{branch}", base):
