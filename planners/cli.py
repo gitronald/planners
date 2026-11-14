@@ -423,20 +423,32 @@ def _read_plan(root: Path, path: Path) -> PlanMetadata:
         raise typer.Exit(1) from None
 
 
-def _taken_numbers(plans_dir: Path) -> list[int]:
-    """Every plan number in use, read from the directory names.
+def _taken(plans_dir: Path) -> list[tuple[int, str]]:
+    """Every plan ``(number, letter)`` in use, read from the directory names.
 
     Read from names rather than frontmatter, so a plan whose frontmatter does not
     parse (skipped with a warning by :func:`_collect_metas`) still holds its
-    number and the next ``add`` does not reuse it.
+    number and letter, and the next ``add`` does not hand either out again.
     """
     if not plans_dir.is_dir():
         return []
     return [
-        int(match.group(1))
+        (int(match.group(1)), match.group(2))
         for child in plans_dir.iterdir()
         if child.is_dir() and (match := DIRNAME_RE.match(child.name))
     ]
+
+
+def _umbrella(plans_dir: Path, parent: int) -> Path:
+    """The ``plan.md`` of umbrella ``parent``, or exit: a subplan needs one."""
+    umbrella = _find_plan(plans_dir, parent, "")
+    if umbrella is None:
+        _err(
+            f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
+            "create it first with `planners add`."
+        )
+        raise typer.Exit(1)
+    return umbrella
 
 
 def _collect_metas(plans_dir: Path) -> list[PlanMetadata]:
@@ -834,14 +846,7 @@ def _add_nested(
     mainline, so the guard applies as it does to ``add``. An ``active`` one has a
     branch where its work is, and a subplan added during that work belongs there.
     """
-    plans_dir = root / PLANS_DIR
-    umbrella = _find_plan(plans_dir, parent, "")
-    if umbrella is None:
-        _err(
-            f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
-            "create it first with `planners add`."
-        )
-        raise typer.Exit(1)
+    umbrella = _umbrella(root / PLANS_DIR, parent)
     meta = _read_plan(root, umbrella)
     if meta.status in CLOSED_STATUSES:
         _err(f"plan {meta.prefix} is {meta.status}; it is closed.")
@@ -1024,24 +1029,17 @@ def add(
         return
 
     plans_dir = root / PLANS_DIR
-    plans_dir.mkdir(parents=True, exist_ok=True)
-
-    existing = _collect_metas(plans_dir)
+    taken = _taken(plans_dir)
     if parent is None:
         # Top-level plan: next free number, no subplan letter.
-        plan_id, sub = next_number(_taken_numbers(plans_dir)), ""
+        plan_id, sub = next_number([number for number, _ in taken]), ""
     else:
         # Subplan: share the umbrella's number and take the next free letter. The
         # umbrella must already exist — a subplan with no umbrella is invalid.
-        if not any(m.id == parent and not m.sub for m in existing):
-            _err(
-                f"no umbrella plan {parent:03d} found under {PLANS_DIR}; "
-                "create it first with `planners add`."
-            )
-            raise typer.Exit(1)
+        _umbrella(plans_dir, parent)
         plan_id = parent
         try:
-            sub = next_sub([m.sub for m in existing if m.id == parent])
+            sub = next_sub([letter for number, letter in taken if number == parent])
         except ValueError as exc:
             _err(str(exc))
             raise typer.Exit(1) from None
@@ -1094,8 +1092,8 @@ def finalize(
     The single serialized writer behind ``add --defer``: it orders the staged
     plans by ``created``, assigns the next sequential numbers, moves each into
     ``.planners/plans/<NNN>-<slug>/`` (sidecar files included), refreshes the
-    index, commits each one (mirroring a foreground ``add``), and then runs a
-    self-check. Being the sole writer, it cannot race on numbering or the commit.
+    index, commits the batch in one commit, and then runs a self-check. Being
+    the sole writer, it cannot race on numbering or the commit.
     """
     root = Path.cwd()
 
@@ -1111,8 +1109,7 @@ def finalize(
         raise typer.Exit(1)
 
     plans_dir = root / PLANS_DIR
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    start_id = next_number(_taken_numbers(plans_dir))
+    start_id = next_number([number for number, _ in _taken(plans_dir)])
 
     # Pass 1 — validate and resolve every staged plan WITHOUT touching the
     # filesystem. A bad entry aborts the batch before any plan is moved out of

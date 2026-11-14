@@ -24,10 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   runs it after every clean merge, so a repo that carried the hooks before its first
   plan was left with an untracked `.planners/README.md` holding an empty table. A repo
   whose `.planners/plans/` exists and is empty still gets its index regenerated, and
-  `add` and `finalize` still write the index with the first plan
+  `add` and `finalize` still write the index with the first plan. A refused `add` or
+  `finalize` no longer leaves an empty `.planners/plans/` behind
 - In a repo whose mainline does not resolve (no `dev`, `main`, `master`, or
   `origin/HEAD`), `implemented` and `conclude` refused every plan with a branch,
   reading HEAD as detached, and `activate` logged its base as `a detached HEAD`
+- `planners add --parent <N>` could hand out a sibling letter already held by a plan
+  whose frontmatter does not parse
 
 ## [0.16.1] - 2026-11-13
 

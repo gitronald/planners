@@ -1639,3 +1639,34 @@ def test_a_wide_index_stays_wide_through_a_lifecycle_command(
     assert runner.invoke(app, ["index", ".", "--cols", "curated"]).exit_code == 0
     assert "| Branch |" not in index.read_text(encoding="utf-8")
     assert runner.invoke(app, ["validate", "."]).exit_code == 0
+
+
+# --- add: numbers and letters held by directory name ---------------------------
+
+
+def test_add_sibling_skips_a_letter_whose_plan_does_not_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 000a's frontmatter is broken, so it is skipped when plans are parsed. Its
+    # directory still holds the letter, and the next sibling must not take it.
+    plans = tmp_path / ".planners" / "plans"
+    umbrella = _VALID_PLAN.replace("id: 1", "id: 0").replace("slug: thing", "slug: umb")
+    _write_plan(plans, "000-umb", umbrella)
+    _write_plan(plans, "000a-one", "---\nid: 0\nsub: a\nstatus: wip\n---\n\n# One\n")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["add", "two", "--parent", "0", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    assert (plans / "000b-two" / "plan.md").is_file()
+    assert not (plans / "000a-two").exists()
+
+
+def test_add_sibling_of_a_missing_umbrella_leaves_nothing_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["add", "two", "--parent", "0", "--no-commit"])
+    assert result.exit_code == 1
+    assert "no umbrella plan 000" in result.output
+    # An empty plans/ would make the next `index` write an index of nothing.
+    assert not (tmp_path / ".planners").exists()
