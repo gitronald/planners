@@ -102,7 +102,8 @@ def test_implemented_marks_the_plan_and_counts_the_work(
         encoding="utf-8"
     )
     assert git_out(root, "status", "--porcelain") == ""
-    assert "push feature/my-thing" in result.output
+    # No remote, so there is nothing to push and nothing is asked for.
+    assert "push" not in result.output
 
 
 @pytest.mark.parametrize("status", ["draft", "blocked", "implemented"])
@@ -538,3 +539,16 @@ def test_implemented_in_a_repo_whose_mainline_has_another_name(
     result = runner.invoke(app, ["implemented", "005"])
     assert result.exit_code == 0, result.output
     assert "status: implemented" in path.read_text(encoding="utf-8")
+
+
+def test_implemented_asks_for_the_push_where_there_is_a_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    _repo(root)
+    _with_remote(root, tmp_path / "remote.git")
+    git(root, "config", "planners.remoteKind", "github")
+    monkeypatch.chdir(root)
+    result = runner.invoke(app, ["implemented", "005"])
+    assert result.exit_code == 0, result.output
+    assert "push feature/my-thing so the PR shows the status change" in result.output

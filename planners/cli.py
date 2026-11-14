@@ -1791,7 +1791,10 @@ def implemented(
     _commit(root, f"plan [implemented]: {label} - {slug}", staged)
     if pr:
         _mark_pr_ready(root, pr)
-    typer.echo(f"push {_current_branch(root)} so the PR shows the status change")
+    if origin is remote_mod.RemoteKind.github:
+        typer.echo(f"push {mainline.current} so the PR shows the status change")
+    elif origin in (remote_mod.RemoteKind.other_forge, remote_mod.RemoteKind.bare):
+        typer.echo(f"push {mainline.current} so the remote has the status change")
 
 
 def _closed_plan(root: Path, plan: Path, branch: str, base: str) -> PlanMetadata:

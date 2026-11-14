@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   writes the curated set for a new index. The lifecycle commands do the same when they
   refresh it. Before, each of them, and the `post-merge` hook, rewrote an index made
   with `--cols all` back to the curated columns. `--cols curated` narrows a wide index
+- `planners implemented` ends by asking for a push only where there is a remote to push
+  to: with the PR wording for a GitHub origin and with plain wording for another forge or
+  a bare remote. With no remote, or a single-branch one, it prints no push line
 
 ### Fixed
 
