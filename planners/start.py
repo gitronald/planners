@@ -201,7 +201,7 @@ def check_base_pushed(
         return Step(SKIPPED, "no remote to push to")
     ahead = ahead_mod.count(root, base, plan_dir)
     if origin is RemoteKind.single_branch:
-        waiting = f"{ahead.total} commit(s) unpushed; " if ahead else ""
+        waiting = f"{ahead.total} commit(s) unpushed; " if ahead and ahead.total else ""
         return Step(
             SKIPPED,
             f"origin is single-branch: {waiting}a push publishes into the live "

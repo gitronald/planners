@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `planners start` on a single-branch remote no longer reports `0 commit(s) unpushed`
+  when the base is level with its upstream
 - `planners finish` judged the wrong branch on the remote when another branch's name
   ended in the plan's (`a/fix` beside `fix`), and stopped on every run. Run from the
   plan's worktree, it named that worktree as the main checkout to run from

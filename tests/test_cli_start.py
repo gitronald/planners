@@ -603,6 +603,20 @@ def test_start_on_a_single_branch_remote_pushes_nothing(
     assert git_out(scene.root, "ls-remote", "--heads", "origin", _BRANCH) == ""
 
 
+def test_start_on_a_single_branch_remote_counts_no_commits_when_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scene = Scene(tmp_path, monkeypatch, kind="single-branch")
+    assert scene.start().exit_code == 0
+    git(scene.root, "push", "-q", "origin", "main")
+    result = scene.start()
+    assert result.exit_code == 0, result.output
+    assert "commit(s) unpushed" not in result.output
+    assert "skipped push-base: origin is single-branch: a push publishes" in (
+        result.output
+    )
+
+
 def test_start_on_a_bare_remote_asks_for_the_pushes_and_opens_no_pr(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
