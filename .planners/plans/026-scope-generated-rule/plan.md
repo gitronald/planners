@@ -1,8 +1,8 @@
 ---
 id: 26
 slug: scope-generated-rule
-status: draft
-branch:
+status: active
+branch: feature/026-scope-generated-rule
 created: 2026-11-18T13:38:44-08:00
 concluded:
 pr:
@@ -90,3 +90,11 @@ From the Claude Code memory documentation and fresh-session probes on Claude Cod
 
 - Shortening the convention itself
 - Any change to pkgskills
+
+## Log
+
+- **2026-11-18T13:39:03-08:00** — Activated.
+  - Branch: `feature/026-scope-generated-rule`
+  - Base: `dev` at `28c986d`
+  - Worktree: `.worktrees/026-scope-generated-rule`
+  - PR: pending
