@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-18
+
 ### Changed
 
 - The generated convention rule is scoped to plan files. `planners.md` now
