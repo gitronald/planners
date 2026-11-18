@@ -1,10 +1,10 @@
 ---
 id: 26
 slug: scope-generated-rule
-status: active
+status: done
 branch: feature/026-scope-generated-rule
 created: 2026-11-18T13:38:44-08:00
-concluded:
+concluded: 2026-11-18T13:44:25-08:00
 pr: https://github.com/gitronald/planners/pull/75
 ---
 
@@ -113,3 +113,18 @@ From the Claude Code memory documentation and fresh-session probes on Claude Cod
   - Checks after the fixes: ruff lint and format clean, pyrefly 0 errors, 830 tests passed at 95.10 percent coverage
   - The loading test in the entry above ran on the longer core rule and was not repeated; the frontmatter it depends on did not change
 - **2026-11-18T13:44:47-08:00** — Correction to the entry above: the core rule's source is 1,878 characters, not 2,028.
+
+## Retrospective
+
+- No library change was needed: the stamp already lives in the rule's frontmatter and a
+  source's own block is lifted verbatim, so `paths` was one block in the source. Reading
+  the renderer before planning saved a second package's release
+- A second rule changed a command's behavior that the plan did not foresee: a bare `rule`
+  now exits 1 and asks for a name. The existing tests caught it on the first run
+- The always-on part was drafted to a list in the plan, and review cut a third of it.
+  For text that loads everywhere, "would a session act differently without this line,
+  before anything else has loaded" is the test to apply while drafting, not after
+- A model asked to quote a token it has in context can still answer that there is none:
+  one of four no-tool probes did. A loading probe needs repeats before its negative
+  result means anything
+- Not verified: a per-repo install in a real session, and loading after compaction
