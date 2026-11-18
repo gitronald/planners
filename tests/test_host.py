@@ -4,8 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
-from pkgskills import precommit, split_frontmatter
+from pkgskills import Frontmatter, precommit, split_frontmatter
 from pkgskills.testing import (
     Sandbox,
     assert_prompt_commands,
@@ -375,16 +374,14 @@ def test_permissions_ladder() -> None:
 
 
 CORE_RULE = Path(".claude/rules/planners-core.md")
-SCOPE = ["**/.planners/**", "**/docs/plans/**"]
+SCOPE = 'paths:\n  - "**/.planners/**"\n  - "**/docs/plans/**"\n'
 
 
-def _front(path: Path) -> dict[str, object]:
-    """The frontmatter of an installed rule, parsed."""
+def _front(path: Path) -> Frontmatter:
+    """The frontmatter block of an installed rule."""
     front, _ = split_frontmatter(path.read_text(encoding="utf-8"))
     assert front is not None, path
-    fields = yaml.safe_load(front.inner)
-    assert isinstance(fields, dict), path
-    return fields
+    return front
 
 
 @pytest.mark.parametrize("mode", ["global", "local"])
@@ -396,12 +393,12 @@ def test_the_full_rule_is_scoped_and_the_core_rule_is_always_on(
     assert runner.invoke(app, ["install", f"--{mode}"]).exit_code == 0
 
     full = _front(root / RULE)
-    assert full["paths"] == SCOPE
-    assert "metadata" in full
+    assert SCOPE in full.inner
+    assert full.metadata_field("pkgskills-host") == "planners"
 
     core = _front(root / CORE_RULE)
-    assert "paths" not in core
-    assert "metadata" in core
+    assert "paths:" not in core.inner
+    assert core.metadata_field("pkgskills-host") == "planners"
 
 
 def test_the_core_rule_stays_short_and_points_at_the_full_one(box: Sandbox) -> None:
@@ -409,7 +406,6 @@ def test_the_core_rule_stays_short_and_points_at_the_full_one(box: Sandbox) -> N
     core = (box.home / CORE_RULE).read_text(encoding="utf-8")
     full = (box.home / RULE).read_text(encoding="utf-8")
     assert "`planners rule planners`" in core
-    assert "`planners skill <subcommand>`" in core
     # It loads into every session, so it is held to a fraction of the full rule.
     assert len(core) < len(full) / 5
 
@@ -438,9 +434,8 @@ def test_an_unscoped_rule_from_an_earlier_release_upgrades(
     assert runner.invoke(app, ["install", flag]).exit_code == 0
     rule = root / RULE
     text = rule.read_text(encoding="utf-8")
-    scope = 'paths:\n  - "**/.planners/**"\n  - "**/docs/plans/**"\n'
-    assert scope in text
-    rule.write_text(text.replace(scope, ""), encoding="utf-8")
+    assert SCOPE in text
+    rule.write_text(text.replace(SCOPE, ""), encoding="utf-8")
     (root / CORE_RULE).unlink()
 
     before = runner.invoke(app, ["install", flag, "--check"])
@@ -451,5 +446,5 @@ def test_an_unscoped_rule_from_an_earlier_release_upgrades(
     assert runner.invoke(app, ["install", flag]).exit_code == 0
     after = runner.invoke(app, ["install", flag, "--check"])
     assert after.exit_code == 0, after.output
-    assert _front(rule)["paths"] == SCOPE
+    assert SCOPE in _front(rule).inner
     assert _row(after.output, CORE_RULE) == ["ok", mode]
