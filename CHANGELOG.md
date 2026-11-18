@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-18
+
+### Changed
+
+- The generated convention rule is scoped to plan files. `planners.md` now
+  carries `paths` frontmatter (`**/.planners/**` and the legacy
+  `**/docs/plans/**`), so Claude Code loads it when a session reads or writes a
+  plan file inside its working directory instead of into every session.
+  `planners install` rewrites the installed rule, and `install --check` reports
+  the earlier unscoped file as drifted until it runs.
+- `planners rule` needs a name now that there are two rules: `planners rule
+  planners` prints the full convention, and a bare `planners rule` lists the
+  names and exits 1.
+
+### Added
+
+- A short always-on rule, `planners-core.md`, installed beside the scoped one.
+  It holds what a session applies before it has opened a plan file: the
+  lifecycle goes through the skill and the CLI, the `plan [add]` and
+  `plan [activate]` commits belong on the mainline, tool-written commit
+  subjects, no personal or local specifics in a plan, and how to print the full
+  convention (`planners rule planners`).
+
 ## [0.16.2] - 2026-11-14
 
 ### Changed

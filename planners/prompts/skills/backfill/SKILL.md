@@ -14,7 +14,8 @@ reconcile.
 
 ## What to fill
 
-The planners rule defines each `status` and the empty-vs-`null` convention.
+The planners rule defines each `status` and the empty-vs-`null` convention
+(`{cli} rule planners` prints it).
 For the closed states (`done`/`retired`), fill `concluded` and use explicit
 `null` for a genuinely-absent `branch`/`pr`; for `inactive`, keep those fields
 empty (pending). Closure is always `retired` — there is no separate failed

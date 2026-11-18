@@ -22,7 +22,8 @@ follow *Implementing one nested subplan*.
 
 `start` shells out to git. If commands prompt for permission every time,
 `{cli} permissions --apply` writes an allow-rule profile (default `assist`) that
-pre-authorizes the reversible ones — see *Automation levels* in the planners rule.
+pre-authorizes the reversible ones — see *Automation levels* in the planners rule
+(`{cli} rule planners` prints it).
 
 ## Steps
 

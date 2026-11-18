@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from pkgskills import precommit
+from pkgskills import Frontmatter, precommit, split_frontmatter
 from pkgskills.testing import (
     Sandbox,
     assert_prompt_commands,
@@ -144,7 +144,7 @@ def test_printed_bodies_render_the_installed_mode(box: Sandbox) -> None:
     skill = runner.invoke(app, ["skill", "add"])
     assert skill.exit_code == 0
     assert "uv run planners add" in skill.output
-    rule = runner.invoke(app, ["rule"])
+    rule = runner.invoke(app, ["rule", "planners"])
     assert rule.exit_code == 0
     assert "uv run planners index ." in rule.output
 
@@ -371,3 +371,80 @@ def test_permissions_ladder() -> None:
     assert "Bash(planners:*)" not in local.output
     full = runner.invoke(app, ["permissions", "--level", "full"])
     assert "Bash(gh pr merge:*)" in full.output
+
+
+CORE_RULE = Path(".claude/rules/planners-core.md")
+SCOPE = 'paths:\n  - "**/.planners/**"\n  - "**/docs/plans/**"\n'
+
+
+def _front(path: Path) -> Frontmatter:
+    """The frontmatter block of an installed rule."""
+    front, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    assert front is not None, path
+    return front
+
+
+@pytest.mark.parametrize("mode", ["global", "local"])
+def test_the_full_rule_is_scoped_and_the_core_rule_is_always_on(
+    box: Sandbox, mode: str
+) -> None:
+    """`paths` is what the harness reads; without it a rule loads everywhere."""
+    root = box.home if mode == "global" else box.repo
+    assert runner.invoke(app, ["install", f"--{mode}"]).exit_code == 0
+
+    full = _front(root / RULE)
+    assert SCOPE in full.inner
+    assert full.metadata_field("pkgskills-host") == "planners"
+
+    core = _front(root / CORE_RULE)
+    assert "paths:" not in core.inner
+    assert core.metadata_field("pkgskills-host") == "planners"
+
+
+def test_the_core_rule_stays_short_and_points_at_the_full_one(box: Sandbox) -> None:
+    assert runner.invoke(app, ["install", "--global"]).exit_code == 0
+    core = (box.home / CORE_RULE).read_text(encoding="utf-8")
+    full = (box.home / RULE).read_text(encoding="utf-8")
+    assert "`planners rule planners`" in core
+    # It loads into every session, so it is held to a fraction of the full rule.
+    assert len(core) < len(full) / 5
+
+
+def test_rule_needs_a_name_now_that_there_are_two() -> None:
+    listed = runner.invoke(app, ["rule", "--list"])
+    assert listed.exit_code == 0, listed.output
+    assert listed.output.split() == ["planners", "planners-core"]
+
+    bare = runner.invoke(app, ["rule"])
+    assert bare.exit_code == 1
+    assert "planners-core" in bare.output
+
+    core = runner.invoke(app, ["rule", "planners-core"])
+    assert core.exit_code == 0, core.output
+    assert "always-on part" in core.output
+
+
+@pytest.mark.parametrize("mode", ["global", "local"])
+def test_an_unscoped_rule_from_an_earlier_release_upgrades(
+    box: Sandbox, mode: str
+) -> None:
+    """Releases before the split wrote one stamped rule with no `paths`."""
+    root = box.home if mode == "global" else box.repo
+    flag = f"--{mode}"
+    assert runner.invoke(app, ["install", flag]).exit_code == 0
+    rule = root / RULE
+    text = rule.read_text(encoding="utf-8")
+    assert SCOPE in text
+    rule.write_text(text.replace(SCOPE, ""), encoding="utf-8")
+    (root / CORE_RULE).unlink()
+
+    before = runner.invoke(app, ["install", flag, "--check"])
+    assert before.exit_code == 1
+    assert _row(before.output, RULE) == ["drifted", mode]
+    assert _row(before.output, CORE_RULE) == ["missing", mode]
+
+    assert runner.invoke(app, ["install", flag]).exit_code == 0
+    after = runner.invoke(app, ["install", flag, "--check"])
+    assert after.exit_code == 0, after.output
+    assert SCOPE in _front(rule).inner
+    assert _row(after.output, CORE_RULE) == ["ok", mode]
