@@ -112,3 +112,4 @@ From the Claude Code memory documentation and fresh-session probes on Claude Cod
   - No paired regression tests: the fixes were to prose and to the tests themselves
   - Checks after the fixes: ruff lint and format clean, pyrefly 0 errors, 830 tests passed at 95.10 percent coverage
   - The loading test in the entry above ran on the longer core rule and was not repeated; the frontmatter it depends on did not change
+- **2026-11-18T13:44:47-08:00** — Correction to the entry above: the core rule's source is 1,878 characters, not 2,028.
