@@ -45,7 +45,7 @@ PATH_CHECKED = {
 ANYWHERE = {
     "doc": ["doc", "orchestrated-run"],
     "permissions": ["permissions"],
-    "rule": ["rule"],
+    "rule": ["rule", "planners"],
     "schema": ["schema"],
     "skill": ["skill"],
     "validate": ["validate", "--allow-empty"],
