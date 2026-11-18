@@ -29,8 +29,9 @@ These tools can be used manually via CLI commands, but they are largely intended
 
    This will:
    - (Re)generate the global `~/.claude/skills/planners/SKILL.md` and
-     `~/.agents/skills/planners/SKILL.md` holders and the `~/.claude/rules/planners.md`
-     convention rule, which can change as the package version advances.
+     `~/.agents/skills/planners/SKILL.md` holders and the two convention rules,
+     `~/.claude/rules/planners.md` and `~/.claude/rules/planners-core.md`, which can
+     change as the package version advances.
    - Wire the `planners-validate` (pre-commit) and `planners-index` (post-merge) hooks into the project folder/repo's `.pre-commit-config.yaml` (registering them when `pre-commit` is available).
    - Give the generated index its merge semantics: a `.planners/README.md merge=union`
      line in the repo's `.gitattributes`, so a **local** merge whose two sides both
@@ -166,9 +167,19 @@ GitHub auto-renders on folder browse.
 
 ## Convention rule
 
-`planners install` writes a version-stamped, auto-loaded `~/.claude/rules/planners.md` (global) or
-`.claude/rules/planners.md` (per-repo). The rule is **owned by the package** — edit the convention in
-the package and reinstall; don't hand-edit the installed file. A hand-maintained `plan-files.md` is
+`planners install` writes two version-stamped rules under `~/.claude/rules/` (global) or
+`.claude/rules/` (per-repo):
+
+- `planners.md` is the full convention. Its `paths` frontmatter scopes it to plan files, so Claude
+  Code loads it when a session reads or writes a file under `.planners/` (or the legacy
+  `docs/plans/`) inside its working directory, and not before.
+- `planners-core.md` is short and loads into every session. It holds what has to apply before a plan
+  file is open: plans go through the skill and the CLI, the `plan [add]` and `plan [activate]`
+  commits belong on the mainline, and a plan carries no personal or local specifics.
+
+`planners rule planners` prints the full convention for a session that needs it sooner. Both rules
+are **owned by the package** — edit the convention in the package and reinstall; don't hand-edit the
+installed files. A hand-maintained `plan-files.md` is
 superseded by the generated `planners.md` (install reports it, and never deletes an unstamped one).
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
