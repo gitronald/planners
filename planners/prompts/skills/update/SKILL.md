@@ -157,7 +157,7 @@ so from a feature branch it is not there yet. The order is:
 **Handoff** — for an effort that spans sessions, keep a `## Handoff` section
 between Log and Retrospective, **rewritten in place**: the one exception to
 append-only, because it describes the present and the Log keeps the history.
-*Handoff* in the planners rule lists what it holds.
+*Handoff* in the planners rule lists what it holds (`{cli} rule planners` prints it).
 
 **Close** — defer to `/planners close`, which runs the review gate and merge.
 

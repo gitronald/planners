@@ -143,6 +143,9 @@ HOST = Host(
         Rule(
             name="planners", source="rules/planners.md", previous_names=("plan-files",)
         ),
+        # The full rule is scoped to plan files by its `paths` frontmatter, so this
+        # short one carries what has to hold before a session has opened a plan.
+        Rule(name="planners-core", source="rules/planners-core.md"),
     ),
     # Loaded only when a run fans out, so the implement skill stays short for the
     # sessions that do not.
