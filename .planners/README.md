@@ -2,6 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
+| 026 | [Scope the generated rule to plan files and keep a short always-on part](plans/026-scope-generated-rule/plan.md) | draft | — | — |
 | 023 | [Link each open plan's feature-branch copy from the index](plans/023-index-branch-link/plan.md) | draft | — | — |
 | 025 | [Fix lifecycle bugs found in a review sweep](plans/025-lifecycle-bug-sweep/plan.md) | done | 2026-11-14 11:57 PT | [#72](https://github.com/gitronald/planners/pull/72) |
 | 024 | [Keep the post-merge index hook from creating .planners/ in a repo with no plans](plans/024-post-merge-index-without-plans/plan.md) | done | 2026-11-14 10:36 PT | [#71](https://github.com/gitronald/planners/pull/71) |
