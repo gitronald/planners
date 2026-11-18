@@ -5,7 +5,7 @@ status: active
 branch: feature/026-scope-generated-rule
 created: 2026-11-18T13:38:44-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/75
 ---
 
 # Scope the generated rule to plan files and keep a short always-on part
@@ -98,3 +98,4 @@ From the Claude Code memory documentation and fresh-session probes on Claude Cod
   - Base: `dev` at `28c986d`
   - Worktree: `.worktrees/026-scope-generated-rule`
   - PR: pending
+- **2026-11-18T13:41:15-08:00** — PR opened: https://github.com/gitronald/planners/pull/75
