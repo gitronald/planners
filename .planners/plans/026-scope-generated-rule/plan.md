@@ -99,3 +99,10 @@ From the Claude Code memory documentation and fresh-session probes on Claude Cod
   - Worktree: `.worktrees/026-scope-generated-rule`
   - PR: pending
 - **2026-11-18T13:41:15-08:00** — PR opened: https://github.com/gitronald/planners/pull/75
+- **2026-11-18T13:42:30-08:00** — Implemented the split and verified loading in real sessions.
+  - What was done: `planners.md` carries `paths` frontmatter and a new sentence saying when it loads; `planners-core.md` is the always-on part; `host.py` declares the second rule; three skills say how to print the full rule where they cite it; README and changelog updated
+  - Departures from the spec: no new test pins the commands the core rule names, since the existing prompt-commands test already covers every rule source. A consequence the plan did not name: with two rules, a bare `rule` command exits 1 and lists the names, so two existing tests now pass the name, and the changelog says so
+  - Checks at eddb28f: ruff lint and format clean, pyrefly 0 errors, 830 tests passed at 95.10 percent coverage
+  - Loading test (Claude Code 2.1.327): both rules rendered from the branch build into a scratch home, copied with a token line each into the user-level rules directory, and fresh haiku sessions run in a scratch repository. No tool use: the core token only, in 3 of 4 runs (the fourth returned nothing, and a repeat of the same prompt returned the core token). Read of a file under `.planners/`: both tokens. Read of a file under the legacy `docs/plans/`: both. Read of a README: the core token only. The copies were removed afterwards
+  - Measure: the installed always-on text goes from 21,216 characters (0.16.2's one rule) to 2,642 (the core rule, frontmatter included); the scoped rule is 21,493
+  - Not tested: a per-repo (`--local`) install in a real session, and loading after compaction
