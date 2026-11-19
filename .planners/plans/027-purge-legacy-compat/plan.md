@@ -1,7 +1,7 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: active
+status: implemented
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
@@ -105,3 +105,4 @@ Each step is its own commit.
   - Worktree: `.worktrees/027-purge-legacy-compat`
   - PR: pending
 - **2026-11-18T17:29:21-08:00** — PR opened: https://github.com/gitronald/planners/pull/77
+- **2026-11-18T17:29:31-08:00** — Implemented: 6 commits ahead of `dev`.
