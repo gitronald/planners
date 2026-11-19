@@ -51,7 +51,7 @@ puts the work somewhere other than `.worktrees/<NNN>-<slug>`.
 
 Each step (`base`, `activate`, `ignore`, `push-base`, `branch`, `worktree`,
 `setup`, `push`, `pr`) reads its result first and prints one line, `done`,
-`ran`, or `skipped`, with what it settled. `setup` runs
+`ran`, `waiting`, or `skipped`, with what it settled. `setup` runs
 `.planners/hooks/post-worktree` when the repo has one, else copies `.claude/`
 and runs `uv sync`.
 
@@ -61,18 +61,24 @@ frontmatter, run `{cli} index`, or redo a step by hand.
 
 **A stop exits 1 and says what to do. Do that, then re-run:**
 
-- **A push.** `start` publishes no code: a permission rule sees only the command a
+- **The pushes.** `start` publishes no code: a permission rule sees only the command a
   session runs, so a push from inside `start` would skip the gate that the `confirm`
-  level exists to open. It prints the `git push` to run, and a first run stops this
-  way for the base and again for the branch. A push from inside a worktree fails when
-  `origin` is a relative path (`git remote get-url origin`), since it resolves from
-  the main checkout; push from there instead.
-- **Commits on the base that are not the plan's.** The stop before the base's push
-  prints the same sorted report `activate` does (`6 are plan 008's own, 0 are other`).
-  A commit is the plan's own when every path it touches is under the plan's directory
-  or is the index. When the report says `0 are other`, push: a plan edited or split
-  before activation arrives with several of its own. When it says more, show the
-  listed commits to the user and confirm before pushing.
+  level exists to open. A first run does every local step (the branch, the worktree,
+  the setup) and then stops once, printing both pushes on one line, the base first:
+  `git push origin <base> && git push -u origin <branch>`. Run the line as printed, so
+  the branch is not published unless the base was. The `push-base` line reads
+  `waiting` until then, with the sorted report `activate` prints (`6 are plan 008's
+  own, 0 are other`). When only one of the two is owed, the stop names that one.
+  **Do not run `start` again just to confirm the pushes.** The next run is the one in
+  step 4, after the first commit, and it checks both. A push from inside a worktree
+  fails when `origin` is a relative path (`git remote get-url origin`), since it
+  resolves from the main checkout; push from there instead.
+- **Commits on the base that are not the plan's.** This stop comes first, before the
+  branch exists, and names the base's push alone. A commit is the plan's own when
+  every path it touches is under the plan's directory or is the index, and a plan
+  edited or split before activation arrives with several of its own, which do not
+  stop here. Show the listed commits to the user and confirm before pushing, then
+  run `start` again.
 - **Off the mainline.** Ask whether to base the work on the current branch or on the
   first mainline branch, then check that branch out.
 - **No mainline detected** (no `dev`, no `refs/remotes/origin/HEAD`, no

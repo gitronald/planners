@@ -2268,6 +2268,11 @@ def _start(
             "activate",
             start_mod.Step(start_mod.DONE, f"plan {meta.prefix} is active"),
         )
+        published = start_mod.check_activation_published(
+            root, entries.recorded_base(plan.read_text(encoding="utf-8")), origin
+        )
+        if published is not None:
+            show("push-base", published)
     else:
         pending: tuple[Path, ...] = ()
         if meta.status == Status.active:
@@ -2301,23 +2306,25 @@ def _start(
         meta.prefix, meta.slug
     )
     base = mainline.current or ""
+    # The base's push, when it is owed and holds only the plan's own commits. It
+    # is asked for at the `push` step below, with the branch's, so one stop covers
+    # both and every local step has run by then.
+    owed: start_mod.OwedPush | None = None
     if not on_branch:
         show("ignore", start_mod.ensure_ignored(root, recorded))
-        show(
-            "push-base",
-            start_mod.check_base_pushed(
-                root,
-                base,
-                plan.parent.relative_to(root).as_posix(),
-                meta.prefix,
-                origin,
-            ),
+        step, owed = start_mod.check_base_pushed(
+            root,
+            base,
+            plan.parent.relative_to(root).as_posix(),
+            meta.prefix,
+            origin,
         )
+        show("push-base", step)
     show("branch", start_mod.ensure_branch(root, target, base))
     step, work_dir = start_mod.ensure_worktree(root, main, target, recorded)
     show("worktree", step)
     show("setup", start_mod.set_up_worktree(work_dir, main))
-    show("push", start_mod.check_branch_pushed(work_dir, target, origin))
+    show("push", start_mod.check_branch_pushed(work_dir, target, origin, owed))
     show("pr", _start_pr(work_dir, ref, plan_rel, target, origin))
     say(f"plan {meta.prefix} is started; work in {_shown(work_dir, main)}")
 
@@ -2348,14 +2355,17 @@ def start(
     behind), activate, ignore the worktree directory, check the base is pushed,
     create the branch, create the worktree, set it up, check the branch is pushed,
     and open the draft PR. Each step reads its result first and prints `done`,
-    `ran`, or `skipped` with the reason, so a re-run picks up where the last one
-    ended and the output is the resume record.
+    `ran`, `waiting`, or `skipped` with the reason, so a re-run picks up where the
+    last one ended and the output is the resume record.
 
     `start` publishes no code. A push stays the session's own command, so the
-    permission profile still governs it: at each one `start` stops with exit 1 and
-    prints the command to run before the re-run. The draft PR waits for a commit
-    on the branch, since GitHub opens none without one. Run `start` again from the
-    worktree once that commit is pushed.
+    permission profile still governs it. Every local step runs first, and then
+    `start` stops once, with exit 1, and prints the pushes to run: the base's and
+    the branch's on one line, the base first. A base that carries commits other
+    than the plan's own stops earlier, before the branch exists, so they can be
+    looked at. The draft PR waits for a commit on the branch, since GitHub opens
+    none without one. Run `start` again from the worktree once that commit is
+    pushed.
 
     Also stops with exit 1 on a dirty tree, a base behind its upstream, a worktree
     path held by something else, a failing setup, or a refused git or gh call.

@@ -14,6 +14,14 @@ automation level exists to open. So a step that needs a push raises
 :class:`~planners.finish.Stop` with the command to run, and the re-run sees it done.
 The draft PR is opened here because it publishes nothing the push did not.
 
+**One stop covers both pushes.** A base that is ahead by the plan's own commits
+does not stop the run where it is found: the branch, the worktree, and the setup
+are all local, so they go ahead, and the run ends at a single stop that names the
+base's push and then the branch's. The base still goes first, so the activation is
+on the remote's mainline whether or not the branch ever lands. A base carrying
+commits that are not the plan's stops at once, as someone has to look at those
+before anything is pushed with them.
+
 This module holds the pieces ``start`` is built from.
 """
 
@@ -37,7 +45,10 @@ __all__ = [
     "DONE",
     "RAN",
     "SKIPPED",
+    "WAITING",
+    "OwedPush",
     "Step",
+    "check_activation_published",
     "check_base",
     "check_base_pushed",
     "check_branch_pushed",
@@ -54,6 +65,8 @@ __all__ = [
 DONE = "done"
 RAN = "ran"
 SKIPPED = "skipped"
+# A push that is owed and will be asked for at the run's one push stop.
+WAITING = "waiting"
 
 # Where the setup step records that it finished, under the worktree's own git
 # directory: out of the tree, per worktree, and gone with the worktree. A setup
@@ -69,6 +82,14 @@ class Step:
     outcome: str
     detail: str
     notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OwedPush:
+    """A push of ``branch`` that the run's push stop still has to ask for."""
+
+    branch: str
+    command: str
 
 
 def push_command(branch: str, *, upstream: bool = False) -> str:
@@ -189,23 +210,30 @@ def ensure_ignored(root: Path, recorded: str) -> Step:
 
 def check_base_pushed(
     root: Path, base: str, plan_dir: str, prefix: str, origin: RemoteKind
-) -> Step:
-    """Nothing on ``base`` waits for a push, or a stop that says what to push.
+) -> tuple[Step, OwedPush | None]:
+    """Whether ``base`` waits for a push, and the push to ask for when it does.
 
-    The commits are sorted the way ``activate`` reports them, so the ones that are
-    not the plan's own are in front of whoever decides on the push. A single-branch
-    remote is never stopped for: its upstream is the live document, so pushing is a
-    publish and not a precondition.
+    A base ahead by the plan's own commits is not a stop: the step reports it as
+    waiting and returns the push, which :func:`check_branch_pushed` asks for with
+    the branch's, at the run's one push stop. A base carrying any other commit
+    stops here, with the commits sorted the way ``activate`` reports them, so the
+    ones that are not the plan's own are in front of whoever decides on the push.
+    So does a base with no upstream, where a push would publish the whole branch.
+    A single-branch remote is never stopped for: its upstream is the live document,
+    so pushing is a publish and not a precondition.
     """
     if origin is RemoteKind.none:
-        return Step(SKIPPED, "no remote to push to")
+        return Step(SKIPPED, "no remote to push to"), None
     ahead = ahead_mod.count(root, base, plan_dir)
     if origin is RemoteKind.single_branch:
         waiting = f"{ahead.total} commit(s) unpushed; " if ahead and ahead.total else ""
-        return Step(
-            SKIPPED,
-            f"origin is single-branch: {waiting}a push publishes into the live "
-            "document, so it is left to you",
+        return (
+            Step(
+                SKIPPED,
+                f"origin is single-branch: {waiting}a push publishes into the live "
+                "document, so it is left to you",
+            ),
+            None,
         )
     if ahead is None:
         command = push_command(base, upstream=True)
@@ -213,12 +241,48 @@ def check_base_pushed(
             f"{base} has no upstream; push it, then run start again:\n  {command}"
         )
     if ahead.total == 0:
-        return Step(DONE, f"{base} is level with {ahead.upstream}")
+        return Step(DONE, f"{base} is level with {ahead.upstream}"), None
     lines = [*ahead_mod.report(ahead, prefix)]
     if ahead.other:
         lines.append("Confirm the commits above before pushing the plan's with them.")
-    lines.append(f"Push {base}, then run start again:\n  {push_command(base)}")
-    raise Stop("\n".join(lines))
+        lines.append(f"Push {base}, then run start again:\n  {push_command(base)}")
+        raise Stop("\n".join(lines))
+    return Step(WAITING, lines[0]), OwedPush(base, push_command(base))
+
+
+def check_activation_published(
+    work_dir: Path, base: str | None, origin: RemoteKind
+) -> Step | None:
+    """On the plan's branch: the commit it was activated on has reached the remote.
+
+    The base's push is asked for together with the branch's, so a session can push
+    the branch and leave the base behind. A re-run from the branch is where that
+    shows: the draft PR would link a plan the remote's mainline does not have. The
+    branch's fork point from ``base`` is the activation, or a later commit of the
+    base merged in since, and either must be on the base's upstream.
+
+    ``None`` when there is nothing to check: no base recorded, a remote that takes
+    no such push, or a base this clone cannot compare against its upstream.
+    """
+    if base is None or origin in (RemoteKind.none, RemoteKind.single_branch):
+        return None
+    tracking = proc.git_out(
+        work_dir,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{base}@{{upstream}}"],
+    )
+    fork = proc.git_out(work_dir, ["merge-base", base, "HEAD"])
+    if not (tracking and tracking.strip() and fork and fork.strip()):
+        return None
+    upstream = tracking.strip()
+    if (
+        proc.git_out(work_dir, ["merge-base", "--is-ancestor", fork.strip(), upstream])
+        is not None
+    ):
+        return Step(DONE, f"the activation is on {upstream}")
+    raise Stop(
+        f"{base} is not pushed, so the plan's activation is not on {upstream}; push "
+        f"it, then run start again:\n  {push_command(base)}"
+    )
 
 
 def ensure_branch(root: Path, branch: str, base: str) -> Step:
@@ -372,22 +436,33 @@ def set_up_worktree(worktree: Path, main: Path) -> Step:
     return Step(RAN, ", ".join(ran), tuple(notes))
 
 
-def check_branch_pushed(work_dir: Path, branch: str, origin: RemoteKind) -> Step:
-    """``branch`` is on ``origin`` with tracking set, or a stop with the push to run."""
+def check_branch_pushed(
+    work_dir: Path, branch: str, origin: RemoteKind, base: OwedPush | None = None
+) -> Step:
+    """``branch`` is on ``origin`` with tracking set, or a stop with the push to run.
+
+    This is the run's one push stop. When ``base`` is owed too, its push is named
+    first on the same line, joined with ``&&``, so the branch is not published
+    unless the base was.
+    """
     if origin is RemoteKind.none:
         return Step(SKIPPED, "no remote to push to")
     if origin is RemoteKind.single_branch:
         return Step(SKIPPED, "origin is single-branch and takes no feature branch")
+    both = f"{base.branch} and {branch}" if base else branch
+    first = f"{base.command} && " if base else ""
     upstream = proc.upstream(work_dir)
     if upstream is None:
         command = push_command(branch, upstream=True)
-        raise Stop(f"push {branch}, then run start again:\n  {command}")
+        raise Stop(f"push {both}, then run start again:\n  {first}{command}")
     unpushed = int(must(work_dir, ["git", "rev-list", "--count", "@{upstream}..HEAD"]))
     if unpushed:
         raise Stop(
-            f"{branch} has {unpushed} commit(s) not on {upstream}; push them, then "
-            f"run start again:\n  {push_command(branch)}"
+            f"{branch} has {unpushed} commit(s) not on {upstream}; push {both}, then "
+            f"run start again:\n  {first}{push_command(branch)}"
         )
+    if base:
+        raise Stop(f"push {base.branch}, then run start again:\n  {base.command}")
     return Step(DONE, f"{branch} is level with {upstream}")
 
 
