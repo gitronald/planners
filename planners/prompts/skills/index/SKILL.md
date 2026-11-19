@@ -62,9 +62,11 @@ and author, with the regenerated index. There is nothing to commit by hand, and
 the tree is clean when the merge returns.
 
 The hook leaves the repair as an **uncommitted change**, and prints why, when
-rewriting the commit would be wrong: the merge was a fast-forward (there is no
-merge commit of yours to put it in), a remote branch already holds the commit,
-the commit is signed, or another operation is in progress. Then add the index
+rewriting the commit would be wrong: the merge was a fast-forward or a squash
+(there is no merge commit of its own to put it in, whatever HEAD is), a remote
+branch already holds the commit, the commit is signed or merges a signed tag,
+the commit does not track the index, or another operation is in progress. Run
+by hand, outside the hook, the command also leaves it. Then add the index
 to the next commit you make. Do not make a commit that holds only the index.
 `{cli} validate` fails on an index that disagrees with the frontmatter, so a
 missed repair surfaces on the next plan commit rather than going unnoticed.

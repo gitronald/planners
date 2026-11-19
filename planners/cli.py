@@ -3199,8 +3199,9 @@ def index(
     after_merge: bool = typer.Option(
         False,
         "--after-merge",
-        help="Amend a changed index into HEAD when HEAD is a merge commit that is "
-        "on no remote branch. What the post-merge hook passes.",
+        help="Amend a changed index into HEAD when HEAD is the merge commit git "
+        "has just made and no remote branch holds it. What the post-merge hook "
+        "passes; outside that hook it leaves the change uncommitted.",
     ),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
@@ -3217,8 +3218,9 @@ def index(
     ``merge=union``, which can leave a row duplicated, and only once the merge
     commit exists are both sides' plan files on disk to regenerate from. The
     repair then belongs in that commit, so it is amended in, with the message
-    kept, when the commit is still local. See :mod:`planners.aftermerge` for
-    the cases that are left as an uncommitted change instead.
+    kept, when the commit is the one the merge has just made and is still local.
+    See :mod:`planners.aftermerge` for the cases that are left as an uncommitted
+    change instead, a run outside the hook among them.
     """
     if cols is not None and cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")

@@ -40,15 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The `post-merge` hook puts the regenerated index into the merge commit: same
   parents, message, and author. Before, the repair was left as an uncommitted
   change to commit by hand. It is still left uncommitted, with the reason
-  printed, after a fast-forward, when a remote branch already holds the merge
-  commit, when the commit is signed, or while another operation is in progress.
+  printed, after a fast-forward or a squash, when a remote branch already holds
+  the merge commit, when the commit is signed or merges a signed tag, or while
+  another operation is in progress.
 - The `implement` skill separates a check of your own work, which comes before
   `planners implemented`, from the review, which comes after it.
 
 ### Added
 
 - `planners index --after-merge`, which the `post-merge` hook passes. A plain
-  `planners index` never rewrites a commit.
+  `planners index` never rewrites a commit, and neither does the option run by
+  hand, outside the hook.
 - `planners install` gives a `planners-index` hook entry written by an earlier
   release the `--after-merge` option, and `planners install --check` reports an
   entry without it as `outdated`. An entry someone changed by hand is left alone.
