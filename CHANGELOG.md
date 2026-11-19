@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-19
+
+### Removed
+
+- Support for the old `docs/plans/` + `TODO.md` layout. The full rule's `paths` no
+  longer match `**/docs/plans/**`, so it stops loading in repos that have an
+  unrelated `docs/plans/` directory, and `review` reports a repo with no
+  `.planners/plans/` as having no plans directory.
+- The upgrade path from installs written before planners adopted pkgskills (0.7.0).
+  A file carrying the old HTML-comment stamp is no longer recognized as generated:
+  `install` refuses it until `--force`. An old `plan-files.md` rule is left in place
+  for you to delete. Upgrades from 0.7.0 and later are unchanged.
+- The convention's note on the `completed` key, which `concluded` replaced in 0.2.0.
+- `scripts/install.sh`, the multi-repo rollout script. `planners install` does what
+  it did.
+
 ## [0.17.0] - 2026-11-18
 
 ### Changed

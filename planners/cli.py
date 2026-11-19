@@ -582,8 +582,8 @@ def _repo_root_of(plan: Path) -> Path | None:
     Lets ``validate`` check the index even when it is handed individual plan
     files — which is exactly how the pre-commit hook calls it (``files:`` matches
     plan paths, and pre-commit passes the matched filenames, never a root).
-    Returns ``None`` for anything not in that layout, so a legacy
-    ``docs/plans/`` repo is left alone rather than reported stale.
+    Returns ``None`` for anything not in that layout, so a plan file elsewhere
+    is not checked against an index it was never rendered into.
     """
     # The path as given first, so a root that was spelled relatively is reported
     # that way. Resolved second: `validate .` from inside `.planners/plans/` names
