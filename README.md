@@ -55,14 +55,13 @@ These tools can be used manually via CLI commands, but they are largely intended
    come from [pkgskills](https://pypi.org/project/pkgskills/), which planners
    declares itself to as a host.
 
-   **Upgrading.** A plain `planners install` upgrades files from any earlier release, so
-   no `--force` is needed. `install --check` reads `drifted` and exits 1 until you run it,
+   **Upgrading.** A plain `planners install` upgrades files from any release since 0.7.0,
+   so no `--force` is needed. `install --check` reads `drifted` and exits 1 until you run it,
    and prints `planners install` as the repair. The install treats those files as
    generated, which has two effects:
    - It overwrites edits made to them. Their stamp said not to edit them.
-   - A global install removes the repo's local copies, and each install removes an old
-     stamped `plan-files.md` from the scope it writes to. If the repo tracks `.claude/`,
-     the removals show as deletions in `git status`.
+   - A global install removes the repo's local copies. If the repo tracks `.claude/`, the
+     removals show as deletions in `git status`.
 
    `--force` is still needed for a file it does not recognize as generated: one with no
    stamp, another package's stamp, or an altered stamp. `install --check` prints that form
@@ -179,7 +178,6 @@ GitHub auto-renders on folder browse.
 
 `planners rule planners` prints the full convention for a session that needs it sooner. Both rules
 are **owned by the package** — edit the convention in the package and reinstall; don't hand-edit the
-installed files. A hand-maintained `plan-files.md` is
-superseded by the generated `planners.md` (install reports it, and never deletes an unstamped one).
+installed files.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
