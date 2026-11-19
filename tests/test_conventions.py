@@ -1,4 +1,4 @@
-"""Tree-wide convention guards from the plan's verification todos."""
+"""Guards on the status enum and the order the index sorts it in."""
 
 from planners.index import STATUS_ORDER
 from planners.metadata import Status
