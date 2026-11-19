@@ -28,6 +28,7 @@ from pkgskills import (
     Rule,
     Skill,
     precommit,
+    printing_mode,
 )
 
 from planners.index import INDEX_PATH
@@ -171,7 +172,7 @@ def _extra_checks(host: Host, root: Path, mode: Mode | None) -> Sequence[ExtraCh
                 note=(
                     "planners-index runs without --after-merge, so the index repair "
                     "after a merge is left uncommitted; run "
-                    f"`{host.install_command(mode or host.default_mode)}`"
+                    f"`{host.install_command(mode or printing_mode(host, root))}`"
                 ),
             )
         )
