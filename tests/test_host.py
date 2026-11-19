@@ -209,14 +209,14 @@ HOLDER = Path(".claude/skills/planners/SKILL.md")
 RULE = Path(".claude/rules/planners.md")
 
 
-def _plant(root: Path, relative: Path, stamp: str, body: str = "old body") -> Path:
+def _plant(root: Path, relative: Path, stamp: str) -> Path:
     """Write a file that opens with ``stamp``; the holder keeps its frontmatter."""
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     head = (
         "---\nname: planners\ndescription: old\n---\n\n" if relative == HOLDER else ""
     )
-    path.write_text(f"{head}{stamp}\n\n{body}\n", encoding="utf-8")
+    path.write_text(f"{head}{stamp}\n\nold body\n", encoding="utf-8")
     return path
 
 
