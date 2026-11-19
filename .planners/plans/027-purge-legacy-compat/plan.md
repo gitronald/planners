@@ -1,7 +1,7 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: implemented
+status: active
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
@@ -113,3 +113,4 @@ Each step is its own commit.
   - Verified at f080d07: full suite 818 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean; the rendered rule's `paths` lists only the `.planners/` glob; a final grep finds no remaining references outside CHANGELOG and earlier plans
   - Not verified: an install over a real pre-pkgskills file (none exist to test against)
   - This entry was written after `implemented`: the first attempt was refused because the path check read a glob as a local path
+- **2026-11-18T17:45:44-08:00** — Reactivated: back to active after review.
