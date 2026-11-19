@@ -135,7 +135,7 @@ def test_from_text_requires_frontmatter() -> None:
         ("---\nid: 1\nstatus: draft\n---\n# t\n", "slug"),
         ("---\nid: 1\nslug: x\n---\n# t\n", "status"),
         ("---\nid: 1\nslug: x\nstatus: Active\n---\n# t\n", "invalid status"),
-        ("---\nid: 1\nslug: x\nstatus: abandoned\n---\n# t\n", "invalid status"),
+        ("---\nid: 1\nslug: x\nstatus: bogus\n---\n# t\n", "invalid status"),
     ],
 )
 def test_from_text_structural_errors(text: str, match: str) -> None:
