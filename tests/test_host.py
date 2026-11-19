@@ -290,6 +290,21 @@ def test_anything_else_is_refused_until_forced(box: Sandbox, stamp: str) -> None
     assert holder.read_text(encoding="utf-8") != planted
 
 
+def test_a_global_install_removes_the_local_copies(box: Sandbox) -> None:
+    """The README's upgrade note: a repo's own copies go when the install is global."""
+    assert runner.invoke(app, ["install", "--local"]).exit_code == 0
+    holder, rule = box.repo / HOLDER, box.repo / RULE
+    assert holder.is_file()
+    assert rule.is_file()
+
+    assert runner.invoke(app, ["install", "--global"]).exit_code == 0
+
+    assert not holder.exists()
+    assert not rule.exists()
+    assert (box.home / HOLDER).is_file()
+    assert (box.home / RULE).is_file()
+
+
 def test_permissions_ladder() -> None:
     assist = runner.invoke(app, ["permissions", "--global"])
     assert assist.exit_code == 0, assist.output
