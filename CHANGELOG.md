@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The `/planners` skill description is about half as long (424 characters, from
   779). It loads into every session's skill listing, and still names each
   subcommand.
+- The `pipeline` skill keeps the driving session's context small. The session
+  runs the lifecycle commands, the gate, and the merge; the work and the review
+  each run in a worker (a subagent, or a headless session), one at a time, and
+  hand back a short report. It checks each handoff by command, reads the plan's
+  frontmatter instead of the whole file, and resumes from the plan on disk after
+  an interruption. A plan of a few edits still runs in one session.
 
 ## [0.18.0] - 2026-11-19
 
