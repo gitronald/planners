@@ -101,7 +101,6 @@ class Scene:
         """Run ``start``, doing the pushes it asks for, until it stops asking."""
         self.start()
         git(self.root, "push", "-q", "origin", "main")
-        self.start()
         git(self.root, "push", "-qu", "origin", _BRANCH)
         return self.start()
 
@@ -118,34 +117,34 @@ def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
     return Scene(tmp_path, monkeypatch)
 
 
-def test_start_runs_to_a_draft_pr_with_a_stop_at_each_push(scene: Scene) -> None:
+def test_start_runs_to_a_draft_pr_with_one_stop_for_both_pushes(
+    scene: Scene,
+) -> None:
     first = scene.start()
     assert first.exit_code == 1
     assert "done base: on main, clean, not behind origin/main" in first.output
     assert "ran activate: plan 005 is active" in first.output
     assert "done ignore:" in first.output
+    # The base's push is owed, and the run goes on to every local step.
+    assert "waiting push-base: main is 1 ahead of origin/main" in first.output
     assert "1 are plan 005's own, 0 are other" in first.output
-    assert "stopped:" in first.output
-    assert "git push origin main" in first.output
-    # Nothing was published, and nothing past the stop ran.
+    assert f"ran branch: created {_BRANCH} from main" in first.output
+    assert f"ran worktree: created {_TREE} on {_BRANCH}" in first.output
+    assert first.output.count("stopped:") == 1
+    assert f"stopped: push main and {_BRANCH}, then run start again:" in first.output
+    assert f"git push origin main && git push -u origin {_BRANCH}" in first.output
+    # Nothing was published.
     assert git_out(scene.root, "rev-parse", "origin/main") != git_out(
         scene.root, "rev-parse", "main"
     )
-    assert git_out(scene.root, "branch", "--list", _BRANCH) == ""
-
-    git(scene.root, "push", "-q", "origin", "main")
-    second = scene.start()
-    assert second.exit_code == 1
-    assert "done activate:" in second.output
-    assert "done push-base: main is level with origin/main" in second.output
-    assert f"ran branch: created {_BRANCH} from main" in second.output
-    assert f"ran worktree: created {_TREE} on {_BRANCH}" in second.output
-    assert f"git push -u origin {_BRANCH}" in second.output
     assert git_out(scene.root, "ls-remote", "--heads", "origin", _BRANCH) == ""
 
+    git(scene.root, "push", "-q", "origin", "main")
     git(scene.root, "push", "-qu", "origin", _BRANCH)
     third = scene.start()
     assert third.exit_code == 0, third.output
+    assert "done activate:" in third.output
+    assert "done push-base: main is level with origin/main" in third.output
     assert f"done branch: {_BRANCH} exists" in third.output
     assert "done worktree:" in third.output
     assert "done setup:" in third.output
@@ -158,7 +157,8 @@ def test_start_runs_to_a_draft_pr_with_a_stop_at_each_push(scene: Scene) -> None
     fourth = scene.start(cwd=scene.worktree)
     assert fourth.exit_code == 0, fourth.output
     assert f"skipped base: on {_BRANCH}" in fourth.output
-    assert "ignore:" not in fourth.output and "push-base:" not in fourth.output
+    assert "ignore:" not in fourth.output
+    assert "done push-base: the activation is on origin/main" in fourth.output
     assert f"ran pr: recorded {_URL}" in fourth.output
     assert f"git push origin {_BRANCH}" in fourth.output
     text = (scene.worktree / _REL_PLAN).read_text(encoding="utf-8")
@@ -283,6 +283,52 @@ def test_start_lists_commits_that_are_not_the_plans_before_the_push(
     assert "Confirm the commits above" in result.output
 
 
+def test_start_stops_before_the_branch_when_the_base_carries_another_commit(
+    scene: Scene,
+) -> None:
+    (scene.root / "other.txt").write_text("other\n", encoding="utf-8")
+    commit_all(scene.root, "someone else's work")
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "Confirm the commits above before pushing" in result.output
+    assert "git push origin main" in result.output
+    assert "&&" not in result.output
+    # The stop came before any local step that follows the base's push.
+    assert "branch:" not in result.output
+    assert git_out(scene.root, "branch", "--list", _BRANCH) == ""
+
+
+def test_start_asks_for_the_branch_alone_when_the_base_is_level(scene: Scene) -> None:
+    scene.start()
+    git(scene.root, "push", "-q", "origin", "main")
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "done push-base: main is level with origin/main" in result.output
+    assert f"stopped: push {_BRANCH}, then run start again:" in result.output
+    assert f"git push -u origin {_BRANCH}" in result.output
+    assert "&&" not in result.output
+
+
+def test_start_asks_for_the_base_alone_when_only_the_branch_was_pushed(
+    scene: Scene,
+) -> None:
+    scene.start()
+    git(scene.root, "push", "-qu", "origin", _BRANCH)
+    result = scene.start()
+    assert result.exit_code == 1
+    assert "waiting push-base:" in result.output
+    assert "stopped: push main, then run start again:" in result.output
+    assert "git push origin main" in result.output
+    # From the branch's own worktree the same gap stops the run before the PR.
+    scene.first_commit()
+    on_branch = scene.start(cwd=scene.worktree)
+    assert on_branch.exit_code == 1
+    assert "main is not pushed, so the plan's activation is not on origin/main" in (
+        on_branch.output
+    )
+    assert scene.gh_creates() == 0
+
+
 def test_start_stops_for_a_base_with_no_upstream(scene: Scene) -> None:
     git(scene.root, "branch", "--unset-upstream")
     result = scene.start()
@@ -364,19 +410,19 @@ def test_start_uses_the_worktree_the_log_records(scene: Scene) -> None:
     (scene.root / ".gitignore").write_text("trees/\n", encoding="utf-8")
     commit_all(scene.root, "ignore trees")
     git(scene.root, "push", "-q", "origin", "main")
-    scene.start("--worktree", "trees/mine")
+    first = scene.start("--worktree", "trees/mine")
+    assert "ran worktree: created trees/mine" in first.output
+    assert (scene.root / "trees" / "mine" / _REL_PLAN).exists()
     git(scene.root, "push", "-q", "origin", "main")
     # A re-run with no flag reads the path back rather than taking the default.
     result = scene.start()
-    assert "ran worktree: created trees/mine" in result.output
-    assert (scene.root / "trees" / "mine" / _REL_PLAN).exists()
+    assert f"done worktree: {_BRANCH} is checked out at trees/mine" in result.output
+    assert not scene.worktree.exists()
 
 
 def test_start_stops_when_something_else_holds_the_worktree_path(
     scene: Scene,
 ) -> None:
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
     scene.worktree.mkdir(parents=True)
     result = scene.start()
     assert result.exit_code == 1
@@ -390,8 +436,6 @@ def test_start_stops_when_something_else_holds_the_worktree_path(
 
 
 def test_start_accepts_a_worktree_at_another_path(scene: Scene, tmp_path: Path) -> None:
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
     moved = tmp_path / "moved"
     git(scene.root, "branch", _BRANCH, "main")
     git(scene.root, "worktree", "add", "-q", str(moved), _BRANCH)
@@ -425,20 +469,28 @@ def test_start_follows_a_branch_that_is_only_on_the_remote(scene: Scene) -> None
 
 
 def test_start_no_worktree_switches_the_main_checkout(scene: Scene) -> None:
-    scene.start("--no-worktree")
+    first = scene.start("--no-worktree")
     assert "none (main checkout)" in scene.plan.read_text(encoding="utf-8")
-    git(scene.root, "push", "-q", "origin", "main")
-    second = scene.start()
-    assert "skipped ignore: the work is in the main checkout" in second.output
-    assert f"ran worktree: switched the checkout to {_BRANCH}" in second.output
-    assert "skipped setup: the main checkout is set up already" in second.output
+    assert "skipped ignore: the work is in the main checkout" in first.output
+    assert f"ran worktree: switched the checkout to {_BRANCH}" in first.output
+    assert "skipped setup: the main checkout is set up already" in first.output
+    assert f"git push origin main && git push -u origin {_BRANCH}" in first.output
     assert git_out(scene.root, "branch", "--show-current").strip() == _BRANCH
     assert not scene.worktree.exists()
-    # Now on the plan's branch, so the re-run skips what belongs on the mainline.
+    # Now on the plan's branch. Pushing it alone leaves the activation off the
+    # remote's mainline, and the re-run from the branch says so.
     git(scene.root, "push", "-qu", "origin", _BRANCH)
+    second = scene.start()
+    assert second.exit_code == 1
+    assert "main is not pushed, so the plan's activation is not on origin/main" in (
+        second.output
+    )
+    assert "git push origin main" in second.output
+    git(scene.root, "push", "-q", "origin", "main")
     third = scene.start()
     assert third.exit_code == 0, third.output
     assert f"skipped base: on {_BRANCH}" in third.output
+    assert "done push-base: the activation is on origin/main" in third.output
 
 
 def test_setup_runs_the_repos_hook_once(scene: Scene) -> None:
@@ -451,10 +503,8 @@ def test_setup_runs_the_repos_hook_once(scene: Scene) -> None:
     )
     commit_all(scene.root, "add hook")
     git(scene.root, "push", "-q", "origin", "main")
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
-    second = scene.start()
-    assert "ran setup: ran the post-worktree hook" in second.output
+    first = scene.start()
+    assert "ran setup: ran the post-worktree hook" in first.output
     assert "done setup:" in scene.start().output
     runs = runs_file.read_text(encoding="utf-8").splitlines()
     assert [Path(run).resolve() for run in runs] == [scene.worktree.resolve()]
@@ -471,8 +521,6 @@ def test_setup_reruns_after_a_failing_hook(scene: Scene) -> None:
         f'[ -e "{flag}" ] && exit 0\necho "hook says no" >&2\nexit 3\n',
     )
     commit_all(scene.root, "add hook")
-    git(scene.root, "push", "-q", "origin", "main")
-    scene.start()
     git(scene.root, "push", "-q", "origin", "main")
     failed = scene.start()
     assert failed.exit_code == 1
@@ -503,8 +551,6 @@ def test_setup_syncs_and_copies_claude_and_reports_the_rest(
     (scene.root / ".claude" / "settings.json").write_text("{}\n", encoding="utf-8")
     (scene.root / "data").symlink_to(tmp_path)
 
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
     result = scene.start()
     assert "ran setup: copied .claude/, ran uv sync" in result.output
     assert "note: near is a relative path dependency" in result.output
@@ -516,8 +562,6 @@ def test_setup_syncs_and_copies_claude_and_reports_the_rest(
 
 
 def test_setup_says_when_it_knows_no_environment(scene: Scene) -> None:
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
     result = scene.start()
     assert "skipped setup: nothing this step knows how to set up" in result.output
     assert "note: no uv.lock and no .planners/hooks/post-worktree" in result.output
@@ -531,8 +575,6 @@ def test_setup_reruns_after_a_failed_sync(scene: Scene, tmp_path: Path) -> None:
     )
     (scene.root / "uv.lock").write_text("", encoding="utf-8")
     commit_all(scene.root, "lock")
-    git(scene.root, "push", "-q", "origin", "main")
-    scene.start()
     git(scene.root, "push", "-q", "origin", "main")
     failed = scene.start()
     assert failed.exit_code == 1
@@ -693,8 +735,6 @@ def test_setup_stops_when_it_cannot_copy_claude(
     (scene.root / ".gitignore").write_text(".worktrees/\n.claude/\n", encoding="utf-8")
     commit_all(scene.root, "ignore claude")
     git(scene.root, "push", "-q", "origin", "main")
-    scene.start()
-    git(scene.root, "push", "-q", "origin", "main")
 
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("disk full")
@@ -718,8 +758,6 @@ def test_setup_does_not_take_a_partial_claude_copy_for_a_finished_one(
     (claude / "settings.json").write_text("{}\n", encoding="utf-8")
     (scene.root / ".gitignore").write_text(".worktrees/\n.claude/\n", encoding="utf-8")
     commit_all(scene.root, "ignore claude")
-    git(scene.root, "push", "-q", "origin", "main")
-    scene.start()
     git(scene.root, "push", "-q", "origin", "main")
 
     def stop_partway(_source: Path, target: Path, **_kwargs: object) -> None:

@@ -29,9 +29,9 @@ import typer
 from pkgskills import register
 from typer.core import TyperGroup
 
+from planners import aftermerge, entries, proc
 from planners import ahead as ahead_mod
 from planners import base as base_mod
-from planners import entries, proc
 from planners import finish as finish_mod
 from planners import remote as remote_mod
 from planners import review as review_mod
@@ -1361,7 +1361,8 @@ def _activate(
     # A plan going back to work on its feature branch, where review or a block left
     # it. That return is not guarded, and it writes no second activation entry.
     from_block = _back_from_block(root, meta, path)
-    returning = meta.status == Status.implemented or from_block
+    from_review = meta.status == Status.implemented
+    returning = from_review or from_block
 
     # The worktree is recorded only in the first activation's entry, so the flags
     # mean nothing to a plan that is already active or is coming back from review.
@@ -1446,6 +1447,15 @@ def _activate(
         typer.echo(f"committed the return from the block on {current}")
         return
     typer.echo(f"committed the activation on {current}")
+    if from_review:
+        # A reactivation covers the review round. Said here, at the one command a
+        # session runs to start that round, because the costly habit is the next
+        # step: marking the plan implemented again after each follow-up.
+        typer.echo(
+            f"plan {meta.prefix} is active for a review round: keep it active "
+            f"through the follow-ups, and run `planners implemented {meta.prefix}` "
+            "when the reviewer says the round is done, or go straight to the close."
+        )
     # The skill pushes next, and that push carries every unpushed commit on the
     # base. Count and sort them here so the skill reads a fact instead of sorting
     # by eye; quiet when there is no upstream to compare against.
@@ -2258,6 +2268,11 @@ def _start(
             "activate",
             start_mod.Step(start_mod.DONE, f"plan {meta.prefix} is active"),
         )
+        published = start_mod.check_activation_published(
+            root, entries.recorded_base(plan.read_text(encoding="utf-8")), origin
+        )
+        if published is not None:
+            show("push-base", published)
     else:
         pending: tuple[Path, ...] = ()
         if meta.status == Status.active:
@@ -2291,23 +2306,25 @@ def _start(
         meta.prefix, meta.slug
     )
     base = mainline.current or ""
+    # The base's push, when it is owed and holds only the plan's own commits. It
+    # is asked for at the `push` step below, with the branch's, so one stop covers
+    # both and every local step has run by then.
+    owed: start_mod.OwedPush | None = None
     if not on_branch:
         show("ignore", start_mod.ensure_ignored(root, recorded))
-        show(
-            "push-base",
-            start_mod.check_base_pushed(
-                root,
-                base,
-                plan.parent.relative_to(root).as_posix(),
-                meta.prefix,
-                origin,
-            ),
+        step, owed = start_mod.check_base_pushed(
+            root,
+            base,
+            plan.parent.relative_to(root).as_posix(),
+            meta.prefix,
+            origin,
         )
+        show("push-base", step)
     show("branch", start_mod.ensure_branch(root, target, base))
     step, work_dir = start_mod.ensure_worktree(root, main, target, recorded)
     show("worktree", step)
     show("setup", start_mod.set_up_worktree(work_dir, main))
-    show("push", start_mod.check_branch_pushed(work_dir, target, origin))
+    show("push", start_mod.check_branch_pushed(work_dir, target, origin, owed))
     show("pr", _start_pr(work_dir, ref, plan_rel, target, origin))
     say(f"plan {meta.prefix} is started; work in {_shown(work_dir, main)}")
 
@@ -2338,14 +2355,17 @@ def start(
     behind), activate, ignore the worktree directory, check the base is pushed,
     create the branch, create the worktree, set it up, check the branch is pushed,
     and open the draft PR. Each step reads its result first and prints `done`,
-    `ran`, or `skipped` with the reason, so a re-run picks up where the last one
-    ended and the output is the resume record.
+    `ran`, `waiting`, or `skipped` with the reason, so a re-run picks up where the
+    last one ended and the output is the resume record.
 
     `start` publishes no code. A push stays the session's own command, so the
-    permission profile still governs it: at each one `start` stops with exit 1 and
-    prints the command to run before the re-run. The draft PR waits for a commit
-    on the branch, since GitHub opens none without one. Run `start` again from the
-    worktree once that commit is pushed.
+    permission profile still governs it. Every local step runs first, and then
+    `start` stops once, with exit 1, and prints the pushes to run: the base's and
+    the branch's on one line, the base first. A base that carries commits other
+    than the plan's own stops earlier, before the branch exists, so they can be
+    looked at. The draft PR waits for a commit on the branch, since GitHub opens
+    none without one. Run `start` again from the worktree once that commit is
+    pushed.
 
     Also stops with exit 1 on a dirty tree, a base behind its upstream, a worktree
     path held by something else, a failing setup, or a refused git or gh call.
@@ -2577,7 +2597,8 @@ def log_(
 
     The entry itself changes nothing the index shows, but the working tree around
     it can: a local merge resolves the index with ``merge=union`` and can leave a
-    row duplicated, and the ``post-merge`` hook's repair lands uncommitted. A
+    row duplicated, and the ``post-merge`` hook's repair can be left uncommitted
+    (a fast-forward, or a merge commit a remote already holds). A
     commit of the plan alone then trips the validate hook, since pre-commit
     stashes the unstaged repair and checks the stale index. So a tracked index
     that has gone stale is refreshed and committed with the entry, as every other
@@ -3175,6 +3196,13 @@ def index(
         help="Column set: curated | all. Default: the set the index is already "
         "in, curated for a new one.",
     ),
+    after_merge: bool = typer.Option(
+        False,
+        "--after-merge",
+        help="Amend a changed index into HEAD when HEAD is the merge commit git "
+        "has just made and no remote branch holds it. What the post-merge hook "
+        "passes; outside that hook it leaves the change uncommitted.",
+    ),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
 
@@ -3185,6 +3213,14 @@ def index(
     check is on the directory, not the plan count, so a repo whose plans were
     all removed still gets its index regenerated. The commands that create a
     plan write the index themselves, so the first plan still lands with one.
+
+    ``--after-merge`` is the hook's form. A merge resolves the index with
+    ``merge=union``, which can leave a row duplicated, and only once the merge
+    commit exists are both sides' plan files on disk to regenerate from. The
+    repair then belongs in that commit, so it is amended in, with the message
+    kept, when the commit is the one the merge has just made and is still local.
+    See :mod:`planners.aftermerge` for the cases that are left as an uncommitted
+    change instead, a run outside the hook among them.
     """
     if cols is not None and cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
@@ -3195,6 +3231,8 @@ def index(
         return
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
+    if after_merge:
+        typer.echo(aftermerge.repair(repo_path.resolve(), INDEX_PATH.as_posix()))
 
 
 @app.command()

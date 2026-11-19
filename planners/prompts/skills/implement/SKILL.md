@@ -51,7 +51,7 @@ puts the work somewhere other than `.worktrees/<NNN>-<slug>`.
 
 Each step (`base`, `activate`, `ignore`, `push-base`, `branch`, `worktree`,
 `setup`, `push`, `pr`) reads its result first and prints one line, `done`,
-`ran`, or `skipped`, with what it settled. `setup` runs
+`ran`, `waiting`, or `skipped`, with what it settled. `setup` runs
 `.planners/hooks/post-worktree` when the repo has one, else copies `.claude/`
 and runs `uv sync`.
 
@@ -61,18 +61,24 @@ frontmatter, run `{cli} index`, or redo a step by hand.
 
 **A stop exits 1 and says what to do. Do that, then re-run:**
 
-- **A push.** `start` publishes no code: a permission rule sees only the command a
+- **The pushes.** `start` publishes no code: a permission rule sees only the command a
   session runs, so a push from inside `start` would skip the gate that the `confirm`
-  level exists to open. It prints the `git push` to run, and a first run stops this
-  way for the base and again for the branch. A push from inside a worktree fails when
-  `origin` is a relative path (`git remote get-url origin`), since it resolves from
-  the main checkout; push from there instead.
-- **Commits on the base that are not the plan's.** The stop before the base's push
-  prints the same sorted report `activate` does (`6 are plan 008's own, 0 are other`).
-  A commit is the plan's own when every path it touches is under the plan's directory
-  or is the index. When the report says `0 are other`, push: a plan edited or split
-  before activation arrives with several of its own. When it says more, show the
-  listed commits to the user and confirm before pushing.
+  level exists to open. A first run does every local step (the branch, the worktree,
+  the setup) and then stops once, printing both pushes on one line, the base first:
+  `git push origin <base> && git push -u origin <branch>`. Run the line as printed, so
+  the branch is not published unless the base was. The `push-base` line reads
+  `waiting` until then, with the sorted report `activate` prints (`6 are plan 008's
+  own, 0 are other`). When only one of the two is owed, the stop names that one.
+  **Do not run `start` again just to confirm the pushes.** The next run is the one in
+  step 4, after the first commit, and it checks both. A push from inside a worktree
+  fails when `origin` is a relative path (`git remote get-url origin`), since it
+  resolves from the main checkout; push from there instead.
+- **Commits on the base that are not the plan's.** This stop comes first, before the
+  branch exists, and names the base's push alone. A commit is the plan's own when
+  every path it touches is under the plan's directory or is the index, and a plan
+  edited or split before activation arrives with several of its own, which do not
+  stop here. Show the listed commits to the user and confirm before pushing, then
+  run `start` again.
 - **Off the mainline.** Ask whether to base the work on the current branch or on the
   first mainline branch, then check that branch out.
 - **No mainline detected** (no `dev`, no `refs/remotes/origin/HEAD`, no
@@ -112,6 +118,18 @@ clone only, and it wins).
 
 Work inside the worktree. Follow the plan's implementation order; commit in
 logical chunks and push as you go.
+
+**A Log entry rides with the change it describes.** When an entry records a
+change you are about to commit, write it with `--no-commit` and commit the plan
+file with that change, so the two are one commit:
+
+```bash
+{cli} log {NNN} "<note>" --no-commit
+git add <the changed files> .planners/plans/{NNN}-<slug>/plan.md && git commit -m "<the change>"
+```
+
+`{cli} log` without the option, which commits `plan [log]` on its own, is for an
+entry with no change beside it: a decision, an answer, a result.
 
 For an umbrella with **nested subplans**, run `{cli} subplans {NNN}` first. It
 lists each subplan with its status and the execution order, and fails when the
@@ -169,6 +187,12 @@ Once the plan's work is finished, committed, and pushed, and its checks pass:
 git push
 ```
 
+**Check your own work first; the review comes after.** Reading your own diff
+against the plan and running the checks belong before `implemented`. A review
+(the repo's review skill, the reviewer's own reading) does not: `implemented` is
+what asks for one, and `/planners close` runs it at its gate. Do not hold the
+plan `active`, or its PR in draft, waiting for a review.
+
 Off GitHub, `implemented` does not require the feature branch to have an
 upstream (it prints `origin is <kind>: ...`), but it still refuses uncommitted
 changes, and unpushed commits on a branch that has an upstream. On a
@@ -186,10 +210,15 @@ failing `gh pr ready` is reported as a warning with the commit kept; run it by
 hand.
 
 `implemented` closes nothing. The merge, Retrospective, and `concluded` stay
-with `/planners close`, which runs only when the user asks for it. Review that
-asks for more work returns the plan with `{cli} activate {NNN}`, run on the
-feature branch, which logs `Reactivated`; mark it implemented again when the
-follow-up is pushed.
+with `/planners close`, which runs only when the user asks for it.
+
+**A reactivation covers a review round, not a review item.** When the reviewer
+asks for a change, return the plan once with `{cli} activate {NNN}`, run on the
+feature branch, which logs `Reactivated`. Keep it `active` through every
+follow-up of that round: commit, push, and log each one, and leave the status
+alone. Run `{cli} implemented {NNN}` again when the reviewer says the round is
+done, not after each push. When what they ask for next is the close, skip it:
+`/planners close` takes an `active` plan.
 
 The worktree stays until the plan closes: `{cli} finish`, run by `/planners
 close`, removes it, deletes the branch, and re-points any hook installed from

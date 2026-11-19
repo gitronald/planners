@@ -1,11 +1,11 @@
 ---
 id: 28
 slug: review-rounds-and-lifecycle-paperwork
-status: active
+status: done
 branch: feature/028-review-rounds-and-lifecycle-paperwork
 created: 2026-11-19T14:30:37-08:00
-concluded:
-pr:
+concluded: 2026-11-19T15:00:34-08:00
+pr: https://github.com/gitronald/planners/pull/79
 ---
 
 # Treat review follow-ups as one round and cut lifecycle paperwork
@@ -176,3 +176,28 @@ Docs: `CHANGELOG.md` under `[Unreleased]`; `README.md` where it describes the ho
   - Base: `dev` at `ec10f2a`
   - Worktree: `.worktrees/028-review-rounds-and-lifecycle-paperwork`
   - PR: pending
+- **2026-11-19T14:32:46-08:00** — PR opened: https://github.com/gitronald/planners/pull/79
+- **2026-11-19T14:42:42-08:00** — Implemented decisions 1 to 6 in five commits. The full gate (ruff check, ruff format --check, pyrefly check, pytest: 835 passed, coverage 94.95%) ran clean on the tree of `567a5cf`.
+  - Decision 4, departure in mechanism: the repair cannot be put into the merge commit with `git commit --amend`. Git runs `post-merge` before it clears the merge state, so `MERGE_HEAD` is still present, `--amend` refuses, and a plain commit would record a second merge. A test that lets git run the real hook caught it. The repair is written with plumbing instead (`read-tree` and `update-index` on a scratch index, `commit-tree`, `update-ref`), in the new `planners/aftermerge.py`. The outcome is the one decided: same parents, message, and author, with the regenerated index, and a clean tree when the merge returns. A `MERGE_HEAD` that names HEAD's own parents is the merge git has just committed and is allowed; any other is a merge still open and is not.
+  - Decision 4, two additions. A signed merge commit is left alone, since the rewrite would drop the signature. And `install` does not rewire an entry that is already present (the wiring keys a hook on its id), which the plan assumed it did: `install` now gives an earlier release's exact `planners-index` entry the option, and `install --check` reports one without it as `outdated`, without gating. This repo's own config was updated by hand to the entry `install` writes.
+  - Decision 5, two departures. A base with no upstream keeps its own early stop and does not join the combined one: pushing it publishes the whole branch, which is not the plan's own commits. And the single stop opened a gap the two stops did not have: a session can push the branch and leave the base. A re-run from the plan's branch now checks that the branch's fork point from the recorded base is on the base's upstream, and stops before the PR when it is not. The `push-base` line gained a `waiting` outcome.
+  - Decision 3: the `pipeline` skill's work brief was left as it is. Its log line asks for a closing summary, which has no change beside it, and the worker reads the `implement` skill, which carries the new paragraph.
+  - Ten `start` tests were rewritten for the new order (the first run now reaches the branch, the worktree, and the setup), and four were added for the stop's shapes. Nine tests cover `index --after-merge`, one of them through a real git hook, and three cover the entry upgrade.
+  - Checked by hand and not kept as a test: the repair under the pre-commit framework's own `post-merge` shim, in a scratch repo. The tree was clean, the merge commit kept both parents, and the merge state was cleared.
+  - Not verified: a signed merge commit (no key in the test environment), git versions other than the one here for when `MERGE_HEAD` is cleared, and Windows.
+- **2026-11-19T14:43:00-08:00** — Implemented: 7 commits ahead of `dev`.
+- **2026-11-19T15:00:55-08:00** — Review gate at the close: the repo's review skill ran on the PR at its medium level and the findings were posted there. Seven findings, four of them reproduced in scratch repos, all four in `planners/aftermerge.py`. Fixed in two commits; the full gate (ruff check, ruff format --check, pyrefly check, pytest: 843 passed, coverage 95.03%) ran clean on the tree of `60d0357`.
+  - Review follow-up, actioned with tests. A merge commit at HEAD was taken for the merge git had just made, so a fast-forward or a squash onto an earlier unpushed merge commit rewrote that commit (the hook runs after both, and neither makes a commit). The repair now requires `MERGE_HEAD` to name HEAD's own non-first parents, which git still holds while `post-merge` runs for a real merge. Two tests let git run the hook after a fast-forward and after a squash, and a third covers `--no-ff` over a branch that could have fast-forwarded.
+  - Review follow-up, actioned with tests. The rewritten message gained a blank line at its end (`log --format=%B` adds a newline); it is now read from the commit object, and a test compares the stored message before and after. Only `gpgsig` was guarded, though the rewrite drops every extra header: a commit with any header other than tree, parent, author, and committer is now left alone, which covers the `mergetag` of a signed tag and `encoding`. With the index untracked, HEAD was rewritten and the output said it was left uncommitted: the repair now refuses before the rewrite when the merge commit does not track the index.
+  - Review follow-up, actioned without a new test. `check_activation_published` now calls `finish.is_ancestor`, which reports a git failure as one instead of as a base that is not pushed. The two outcomes it had are covered already; the third needs a damaged repo.
+  - Conscious no-ops. The entry-upgrade pattern in `planners/host.py` is not tied to the hook id, and it takes a hand-duplicated entry under another id to reach. `_blocker` forks one `rev-parse` per state file, a few milliseconds once per merge whose index changed.
+  - Departure from decision 4 that follows from the first fix: `index --after-merge` run by hand, outside the hook, never amends. The help text, the `index` skill, and the changelog say so.
+  - Not verified: a commit with a real signature (the guard is tested with a crafted `gpgsig` header), a message with carriage returns or bytes that are not UTF-8, and Windows. A git that clears `MERGE_HEAD` before the hook now leaves the repair uncommitted, where before it was an unknown.
+
+## Retrospective
+
+- The wording decisions (1, 3, 6) and the `activate` hint landed as written. Decision 4 changed mechanism twice: from `commit --amend` to plumbing during the work, and from "HEAD is a merge commit" to "`MERGE_HEAD` names HEAD's parents" at the review. Both came from the same question, asked late: what state is git in when `post-merge` runs, and after which commands does it run. The plan's line that a fast-forward makes no merge commit was true and did not cover a fast-forward onto one
+- The merge state that made `--amend` refuse was the proof the repair needed. It was worked around as an obstacle in the implementation and only at the review read as the one fact that tells the merge git has just made from every other merge commit
+- A rewrite by plumbing answers for everything it does not copy. The guard for a signature became a list of the headers that are written back, with every other header a refusal, and "same message" held only once the stored bytes were compared. Checking what is kept is shorter and safer than listing what might be lost
+- The tests that invoked the command in a repo the test had finished merging exercised a state the hook never sees. The one test that let git run the hook found the `--amend` problem, and the same shape, run after a fast-forward and a squash, would have found the review's main finding. For code a hook runs, start with the test through git, one per command that fires the hook
+- Joining the two push stops removed an ordering that had been protecting something: the base reached the remote before the branch could. The gap was closed with a check on the re-run from the branch. When two stops become one, ask what the first one guaranteed to the second

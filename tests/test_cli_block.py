@@ -180,6 +180,8 @@ def test_block_and_activate_on_the_plans_branch_merge_without_a_conflict(
     assert "Reactivated: back to active after a block." in text
     assert text.count("Activated.") == 1
     assert "committed the return from the block on feature/005" in result.output
+    # The round hint is for a return from review, not from a block.
+    assert "review round" not in result.output
     git(tmp_path, "checkout", "-q", "main")
     git(tmp_path, "merge", "-q", "--no-ff", "feature/005-my-thing", "-m", "merge")
     assert git_out(tmp_path, "status", "--porcelain") == ""
