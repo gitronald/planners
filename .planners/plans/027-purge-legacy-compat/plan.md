@@ -114,3 +114,12 @@ Each step is its own commit.
   - Not verified: an install over a real pre-pkgskills file (none exist to test against)
   - This entry was written after `implemented`: the first attempt was refused because the path check read a glob as a local path
 - **2026-11-18T17:45:44-08:00** — Reactivated: back to active after review.
+- **2026-11-18T17:46:51-08:00** — Review of the implementation found three gaps; two are fixed and one is left open.
+  - Fixed (3906c21): deleting the legacy-layout validate test left the `.planners` parent check in `_repo_root_of` with no test. With that condition removed the whole suite still passed. A test now validates a plan under `archive/plans/` beside an index that does not list it, and it fails when the condition is removed
+  - Fixed (4596843): decision 2 was tested only on the holder and only for a plain `install`. A test now plants the pre-pkgskills stamp on the holder and the rule and checks that `install --check` reads both as `foreign` with one `overwrite:` hint, and that `--force` replaces both
+  - Fixed (58e0868): the README's `--force` sentence names the stamp of a release before 0.7.0 as a fourth case
+  - Decision 2 as written does not hold for an old `plan-files.md`: a probe in a scratch repo showed it is not reported by `install --check` and survives `--force`, since install no longer knows the name. The spec text stays as the record. The behavior stands as the CHANGELOG describes it (left in place to delete by hand), and no test locks it in
+  - Open, not changed: the guards for the `abandoned` status are the same kind of history as the `completed` test this plan removed. They are three tests in `tests/test_conventions.py`, a case in `tests/test_metadata.py`, and the relabelled case in `tests/test_cli.py`, which now duplicates the `bogus` case above it. The spec said that case stays, so removing them is a decision for the owner or a follow-up
+  - Correction to the entry above: six steps, five commits. Step 6 was verification and made no commit
+  - The earlier "not verified" item is now covered by a synthetic file carrying the old stamp verbatim, in the probe and in the new test. No real pre-pkgskills install was found to test against: none of the repos checked on the development machine carries the old stamp or a `plan-files.md` rule
+  - Verified at 58e0868: full suite 820 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean
