@@ -5,7 +5,7 @@ status: active
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/77
 ---
 
 # Remove the legacy layout and pre-pkgskills compatibility
@@ -104,3 +104,4 @@ Each step is its own commit.
   - Base: `dev` at `94b357d`
   - Worktree: `.worktrees/027-purge-legacy-compat`
   - PR: pending
+- **2026-11-18T17:29:21-08:00** — PR opened: https://github.com/gitronald/planners/pull/77
