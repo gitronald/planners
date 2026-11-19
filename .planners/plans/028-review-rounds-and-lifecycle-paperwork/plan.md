@@ -1,8 +1,8 @@
 ---
 id: 28
 slug: review-rounds-and-lifecycle-paperwork
-status: draft
-branch:
+status: active
+branch: feature/028-review-rounds-and-lifecycle-paperwork
 created: 2026-11-19T14:30:37-08:00
 concluded:
 pr:
@@ -168,3 +168,11 @@ Docs: `CHANGELOG.md` under `[Unreleased]`; `README.md` where it describes the ho
 - Returning the PR to draft on a reactivation
 - A status for "under review, being changed"
 - Rewriting the Logs of plans that cycled. They are history
+
+## Log
+
+- **2026-11-19T14:31:19-08:00** — Activated.
+  - Branch: `feature/028-review-rounds-and-lifecycle-paperwork`
+  - Base: `dev` at `ec10f2a`
+  - Worktree: `.worktrees/028-review-rounds-and-lifecycle-paperwork`
+  - PR: pending
