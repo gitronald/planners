@@ -1,7 +1,7 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: implemented
+status: active
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
@@ -124,3 +124,4 @@ Each step is its own commit.
   - The earlier "not verified" item is now covered by a synthetic file carrying the old stamp verbatim, in the probe and in the new test. No real pre-pkgskills install was found to test against: none of the repos checked on the development machine carries the old stamp or a `plan-files.md` rule
   - Verified at 58e0868: full suite 820 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean
 - **2026-11-18T17:47:11-08:00** — Implemented: 13 commits ahead of `dev`.
+- **2026-11-18T18:33:24-08:00** — Reactivated: back to active after review.
