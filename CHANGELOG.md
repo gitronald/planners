@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-19
+
 ### Changed
 
 - The `/planners` skill description is about half as long (424 characters, from
