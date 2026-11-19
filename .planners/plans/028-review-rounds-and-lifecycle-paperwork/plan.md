@@ -1,7 +1,7 @@
 ---
 id: 28
 slug: review-rounds-and-lifecycle-paperwork
-status: active
+status: implemented
 branch: feature/028-review-rounds-and-lifecycle-paperwork
 created: 2026-11-19T14:30:37-08:00
 concluded:
@@ -185,3 +185,4 @@ Docs: `CHANGELOG.md` under `[Unreleased]`; `README.md` where it describes the ho
   - Ten `start` tests were rewritten for the new order (the first run now reaches the branch, the worktree, and the setup), and four were added for the stop's shapes. Nine tests cover `index --after-merge`, one of them through a real git hook, and three cover the entry upgrade.
   - Checked by hand and not kept as a test: the repair under the pre-commit framework's own `post-merge` shim, in a scratch repo. The tree was clean, the merge commit kept both parents, and the merge state was cleared.
   - Not verified: a signed merge commit (no key in the test environment), git versions other than the one here for when `MERGE_HEAD` is cleared, and Windows.
+- **2026-11-19T14:43:00-08:00** — Implemented: 7 commits ahead of `dev`.
