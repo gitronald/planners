@@ -125,3 +125,9 @@ Each step is its own commit.
   - Verified at 58e0868: full suite 820 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean
 - **2026-11-18T17:47:11-08:00** — Implemented: 13 commits ahead of `dev`.
 - **2026-11-18T18:33:24-08:00** — Reactivated: back to active after review.
+- **2026-11-18T18:34:08-08:00** — Removed the guards against the `abandoned` status (efd28dd), settling the open item in the entry above. The owner confirmed the status is dead and asked for the removal, which reverses the spec's "the case stays".
+  - `tests/test_conventions.py`: the two tests that searched the package source and the skill bodies for the word are gone. The enum test keeps its seven members and their order, drops the `abandoned` assertion, and is renamed `test_status_enum_has_exactly_seven_members`
+  - `tests/test_metadata.py`: the unknown-status case uses `bogus` in place of `abandoned`, so a value outside the enum is still covered beside the wrong-case `Active`
+  - `tests/test_cli.py`: the relabelled case is removed, since it duplicated the `bogus` case above it
+  - Evidence the status is dead: the `Status` enum has no such member, the package source does not contain the word, and no plan in this repo or in the other repos checked on the development machine carries it. The `update` skill still maps a request to "abandon" a plan onto `retire`, which is current behavior and stays
+  - Verified at efd28dd: full suite 817 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean. The word no longer appears outside CHANGELOG and earlier plans
