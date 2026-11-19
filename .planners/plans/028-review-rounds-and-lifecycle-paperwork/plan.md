@@ -1,10 +1,10 @@
 ---
 id: 28
 slug: review-rounds-and-lifecycle-paperwork
-status: implemented
+status: done
 branch: feature/028-review-rounds-and-lifecycle-paperwork
 created: 2026-11-19T14:30:37-08:00
-concluded:
+concluded: 2026-11-19T15:00:34-08:00
 pr: https://github.com/gitronald/planners/pull/79
 ---
 
@@ -193,3 +193,11 @@ Docs: `CHANGELOG.md` under `[Unreleased]`; `README.md` where it describes the ho
   - Conscious no-ops. The entry-upgrade pattern in `planners/host.py` is not tied to the hook id, and it takes a hand-duplicated entry under another id to reach. `_blocker` forks one `rev-parse` per state file, a few milliseconds once per merge whose index changed.
   - Departure from decision 4 that follows from the first fix: `index --after-merge` run by hand, outside the hook, never amends. The help text, the `index` skill, and the changelog say so.
   - Not verified: a commit with a real signature (the guard is tested with a crafted `gpgsig` header), a message with carriage returns or bytes that are not UTF-8, and Windows. A git that clears `MERGE_HEAD` before the hook now leaves the repair uncommitted, where before it was an unknown.
+
+## Retrospective
+
+- The wording decisions (1, 3, 6) and the `activate` hint landed as written. Decision 4 changed mechanism twice: from `commit --amend` to plumbing during the work, and from "HEAD is a merge commit" to "`MERGE_HEAD` names HEAD's parents" at the review. Both came from the same question, asked late: what state is git in when `post-merge` runs, and after which commands does it run. The plan's line that a fast-forward makes no merge commit was true and did not cover a fast-forward onto one
+- The merge state that made `--amend` refuse was the proof the repair needed. It was worked around as an obstacle in the implementation and only at the review read as the one fact that tells the merge git has just made from every other merge commit
+- A rewrite by plumbing answers for everything it does not copy. The guard for a signature became a list of the headers that are written back, with every other header a refusal, and "same message" held only once the stored bytes were compared. Checking what is kept is shorter and safer than listing what might be lost
+- The tests that invoked the command in a repo the test had finished merging exercised a state the hook never sees. The one test that let git run the hook found the `--amend` problem, and the same shape, run after a fast-forward and a squash, would have found the review's main finding. For code a hook runs, start with the test through git, one per command that fires the hook
+- Joining the two push stops removed an ordering that had been protecting something: the base reached the remote before the branch could. The gap was closed with a check on the re-run from the branch. When two stops become one, ask what the first one guaranteed to the second
