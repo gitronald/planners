@@ -120,7 +120,7 @@ git add <the changed files> .planners/plans/{NNN}-<slug>/plan.md && git commit -
 The committing form is for an entry with no change beside it: a decision, an
 answer, a result. There is no mainline guard: a Log entry belongs on
 the feature branch, with the work. When the tracked index is stale (a local
-merge left a duplicated row, or the `post-merge` repair is still uncommitted),
+merge left a duplicated row, or a `post-merge` repair was left uncommitted),
 the command refreshes it and commits it with the entry. It refuses a note that
 names an absolute or home-directory path; describe the file, or copy it into the
 plan's directory as a sidecar (`--allow-local-paths` overrides).

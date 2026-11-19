@@ -29,9 +29,9 @@ import typer
 from pkgskills import register
 from typer.core import TyperGroup
 
+from planners import aftermerge, entries, proc
 from planners import ahead as ahead_mod
 from planners import base as base_mod
-from planners import entries, proc
 from planners import finish as finish_mod
 from planners import remote as remote_mod
 from planners import review as review_mod
@@ -2587,7 +2587,8 @@ def log_(
 
     The entry itself changes nothing the index shows, but the working tree around
     it can: a local merge resolves the index with ``merge=union`` and can leave a
-    row duplicated, and the ``post-merge`` hook's repair lands uncommitted. A
+    row duplicated, and the ``post-merge`` hook's repair can be left uncommitted
+    (a fast-forward, or a merge commit a remote already holds). A
     commit of the plan alone then trips the validate hook, since pre-commit
     stashes the unstaged repair and checks the stale index. So a tracked index
     that has gone stale is refreshed and committed with the entry, as every other
@@ -3185,6 +3186,12 @@ def index(
         help="Column set: curated | all. Default: the set the index is already "
         "in, curated for a new one.",
     ),
+    after_merge: bool = typer.Option(
+        False,
+        "--after-merge",
+        help="Amend a changed index into HEAD when HEAD is a merge commit that is "
+        "on no remote branch. What the post-merge hook passes.",
+    ),
 ) -> None:
     """Regenerate <repo>/.planners/README.md (title + plans table) from frontmatter.
 
@@ -3195,6 +3202,13 @@ def index(
     check is on the directory, not the plan count, so a repo whose plans were
     all removed still gets its index regenerated. The commands that create a
     plan write the index themselves, so the first plan still lands with one.
+
+    ``--after-merge`` is the hook's form. A merge resolves the index with
+    ``merge=union``, which can leave a row duplicated, and only once the merge
+    commit exists are both sides' plan files on disk to regenerate from. The
+    repair then belongs in that commit, so it is amended in, with the message
+    kept, when the commit is still local. See :mod:`planners.aftermerge` for
+    the cases that are left as an uncommitted change instead.
     """
     if cols is not None and cols not in INDEX_COLS:
         _err(f"--cols must be 'curated' or 'all', got {cols!r}")
@@ -3205,6 +3219,8 @@ def index(
         return
     readme = _refresh_index(repo_path, cols=cols)
     typer.echo(f"updated {readme}")
+    if after_merge:
+        typer.echo(aftermerge.repair(repo_path.resolve(), INDEX_PATH.as_posix()))
 
 
 @app.command()

@@ -43,9 +43,11 @@ edit that changes a plan's title, status, `concluded`, or `pr` must be committed
 with a refreshed index. The lifecycle commands refresh and commit it themselves, and `log`
 repairs a stale one it finds; after a hand edit to frontmatter, or a merge you resolved by
 hand, run `{cli} index .` before committing (`validate --no-index` skips the comparison).
-`install` marks the index `merge=union` and wires a `post-merge` hook that regenerates it,
-as an **uncommitted change**, after a clean local merge; the `index` skill covers the merge
-cases, including the conflicted merge and the PR that GitHub still reports as conflicting.
+`install` marks the index `merge=union` and wires a `post-merge` hook that regenerates it
+after a clean local merge and puts the repair **into the merge commit** while that commit is
+still local (it is left as an uncommitted change otherwise, and the hook says why); the `index`
+skill covers the merge cases, including the conflicted merge and the PR that GitHub still
+reports as conflicting.
 
 ## Naming
 

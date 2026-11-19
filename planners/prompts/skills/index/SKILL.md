@@ -55,11 +55,23 @@ The index is marked `merge=union` in `.gitattributes` (written by
 `{cli} install`), so a **local** merge whose two branches both touched it
 resolves instead of conflicting. When both branches rewrote the *same* row,
 though, union keeps both, leaving that plan listed twice. The `post-merge` hook
-`install` wires (`planners-index`) runs the generator after a clean merge, but
-git writes the merge tree before the hook runs, so the repaired index lands as
-an **uncommitted change**: commit it alongside. `{cli} validate` fails on an
-index that disagrees with the frontmatter, so a missed repair surfaces on the
-next plan commit rather than going unnoticed.
+`install` wires (`planners-index`) runs the generator after a clean merge
+(`{cli} index . --after-merge`). Git writes the merge commit before the hook
+runs, so the hook puts the repair **into that commit**: same parents, message,
+and author, with the regenerated index. There is nothing to commit by hand, and
+the tree is clean when the merge returns.
+
+The hook leaves the repair as an **uncommitted change**, and prints why, when
+rewriting the commit would be wrong: the merge was a fast-forward (there is no
+merge commit of yours to put it in), a remote branch already holds the commit,
+the commit is signed, or another operation is in progress. Then add the index
+to the next commit you make. Do not make a commit that holds only the index.
+`{cli} validate` fails on an index that disagrees with the frontmatter, so a
+missed repair surfaces on the next plan commit rather than going unnoticed.
+
+A config written by an earlier release runs the hook without `--after-merge`.
+`{cli} install --check` reports that entry as `outdated`, and `{cli} install`
+rewrites it.
 
 Two gaps look like the hook having done its job:
 

@@ -32,7 +32,7 @@ These tools can be used manually via CLI commands, but they are largely intended
      `~/.agents/skills/planners/SKILL.md` holders and the two convention rules,
      `~/.claude/rules/planners.md` and `~/.claude/rules/planners-core.md`, which can
      change as the package version advances.
-   - Wire the `planners-validate` (pre-commit) and `planners-index` (post-merge) hooks into the project folder/repo's `.pre-commit-config.yaml` (registering them when `pre-commit` is available).
+   - Wire the `planners-validate` (pre-commit) and `planners-index` (post-merge, which regenerates the index and puts the repair into the merge commit) hooks into the project folder/repo's `.pre-commit-config.yaml` (registering them when `pre-commit` is available).
    - Give the generated index its merge semantics: a `.planners/README.md merge=union`
      line in the repo's `.gitattributes`, so a **local** merge whose two sides both
      added or closed plans stops conflicting on it. `union` is built into git, so the
