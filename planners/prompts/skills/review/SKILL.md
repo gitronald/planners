@@ -29,8 +29,7 @@ only status changes are retirements the user confirms.
 ```
 
 `--stale-days N` (default 14) sets when an active, implemented, or blocked plan's branch
-counts as idle. The command refuses a repo on the legacy `docs/plans/` + `TODO.md`
-layout until it is migrated to `.planners/`.
+counts as idle.
 
 The report holds:
 

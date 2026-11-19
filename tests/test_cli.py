@@ -76,8 +76,6 @@ def test_validate_passes_on_conformant_plan(
     [
         # status not in the enum
         ("001-thing", _VALID_PLAN.replace("status: active", "status: bogus")),
-        # legacy abandoned
-        ("001-thing", _VALID_PLAN.replace("status: active", "status: abandoned")),
         # literal "none"
         ("001-thing", _VALID_PLAN.replace("pr:", "pr: none")),
         # id/slug disagree with the plan directory name
@@ -1342,17 +1340,16 @@ def test_validate_does_not_invent_a_missing_index(
     assert runner.invoke(app, ["validate", "."]).exit_code == 0
 
 
-def test_validate_ignores_a_legacy_layout_plan(
+def test_validate_does_not_check_a_plan_outside_the_layout_against_the_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A repo mid-migration: plans still under docs/plans/, and a .planners index
-    # that describes the (empty) new tree. A legacy plan must not be attributed to
-    # that index — matching on `plans` alone would do exactly that, and report a
-    # stale index for a plan the index was never generated from.
-    plan = _write_plan(tmp_path / "docs" / "plans", "001-thing", _VALID_PLAN)
+    # A plan under some other `plans/` directory, beside a .planners index that
+    # was never rendered from it. Matching on `plans` alone would attribute the
+    # file to that index and report the index stale.
+    plan = _write_plan(tmp_path / "archive" / "plans", "001-thing", _VALID_PLAN)
     (tmp_path / ".planners" / "plans").mkdir(parents=True)
     (tmp_path / ".planners" / "README.md").write_text(
-        "# Plans\n\n| 001 | a row the new tree does not have |\n", encoding="utf-8"
+        "# Plans\n\n| 001 | a row the tree does not have |\n", encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["validate", str(plan)])
