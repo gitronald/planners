@@ -1,7 +1,7 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: active
+status: implemented
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
@@ -131,3 +131,4 @@ Each step is its own commit.
   - `tests/test_cli.py`: the relabelled case is removed, since it duplicated the `bogus` case above it
   - Evidence the status is dead: the `Status` enum has no such member, the package source does not contain the word, and no plan in this repo or in the other repos checked on the development machine carries it. The `update` skill still maps a request to "abandon" a plan onto `retire`, which is current behavior and stays
   - Verified at efd28dd: full suite 817 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean. The word no longer appears outside CHANGELOG and earlier plans
+- **2026-11-18T18:34:15-08:00** — Implemented: 17 commits ahead of `dev`.
