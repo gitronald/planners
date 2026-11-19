@@ -79,7 +79,8 @@ PR out of draft (`gh pr ready`); it refuses while the branch has uncommitted or 
 It is an open state, so `concluded` stays empty and an umbrella does not close over a subplan
 in it. It closes nothing: merging, the Retrospective, and `concluded` stay with `close`. Review
 feedback that needs more work returns it to `active` with `{cli} activate {NNN}`, run on the
-feature branch.
+feature branch, once for the review round: it stays `active` through the follow-ups and is marked
+`implemented` again when the reviewer says the round is done.
 Use `blocked` for work that is **waiting on a person**: a decision, a manual check, access only
 they have. `{cli} block {NNN}` sets it, on the plan's feature branch once it has one. It differs
 from `implemented`, which waits on a person to accept finished work;

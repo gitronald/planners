@@ -113,6 +113,18 @@ clone only, and it wins).
 Work inside the worktree. Follow the plan's implementation order; commit in
 logical chunks and push as you go.
 
+**A Log entry rides with the change it describes.** When an entry records a
+change you are about to commit, write it with `--no-commit` and commit the plan
+file with that change, so the two are one commit:
+
+```bash
+{cli} log {NNN} "<note>" --no-commit
+git add <the changed files> .planners/plans/{NNN}-<slug>/plan.md && git commit -m "<the change>"
+```
+
+`{cli} log` without the option, which commits `plan [log]` on its own, is for an
+entry with no change beside it: a decision, an answer, a result.
+
 For an umbrella with **nested subplans**, run `{cli} subplans {NNN}` first. It
 lists each subplan with its status and the execution order, and fails when the
 umbrella's table disagrees with the subplan frontmatter. Work through the
@@ -169,6 +181,12 @@ Once the plan's work is finished, committed, and pushed, and its checks pass:
 git push
 ```
 
+**Check your own work first; the review comes after.** Reading your own diff
+against the plan and running the checks belong before `implemented`. A review
+(the repo's review skill, the reviewer's own reading) does not: `implemented` is
+what asks for one, and `/planners close` runs it at its gate. Do not hold the
+plan `active`, or its PR in draft, waiting for a review.
+
 Off GitHub, `implemented` does not require the feature branch to have an
 upstream (it prints `origin is <kind>: ...`), but it still refuses uncommitted
 changes, and unpushed commits on a branch that has an upstream. On a
@@ -186,10 +204,15 @@ failing `gh pr ready` is reported as a warning with the commit kept; run it by
 hand.
 
 `implemented` closes nothing. The merge, Retrospective, and `concluded` stay
-with `/planners close`, which runs only when the user asks for it. Review that
-asks for more work returns the plan with `{cli} activate {NNN}`, run on the
-feature branch, which logs `Reactivated`; mark it implemented again when the
-follow-up is pushed.
+with `/planners close`, which runs only when the user asks for it.
+
+**A reactivation covers a review round, not a review item.** When the reviewer
+asks for a change, return the plan once with `{cli} activate {NNN}`, run on the
+feature branch, which logs `Reactivated`. Keep it `active` through every
+follow-up of that round: commit, push, and log each one, and leave the status
+alone. Run `{cli} implemented {NNN}` again when the reviewer says the round is
+done, not after each push. When what they ask for next is the close, skip it:
+`/planners close` takes an `active` plan.
 
 The worktree stays until the plan closes: `{cli} finish`, run by `/planners
 close`, removes it, deletes the branch, and re-points any hook installed from
