@@ -1224,6 +1224,21 @@ def test_activate_returns_an_implemented_plan_on_its_feature_branch(
     assert "— Reactivated" in text
     assert "Activated." not in text
     assert "committed the activation on feature/my-thing" in result.output
+    # One reactivation covers the round, and the command says so.
+    assert "plan 005 is active for a review round" in result.output
+    assert "run `planners implemented 005` when the reviewer says" in result.output
+
+
+def test_a_first_activation_prints_no_review_round_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _commit_all(tmp_path, "initial commit")
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert "review round" not in result.output
 
 
 @pytest.mark.parametrize("status", ["active", "implemented"])

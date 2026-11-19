@@ -1361,7 +1361,8 @@ def _activate(
     # A plan going back to work on its feature branch, where review or a block left
     # it. That return is not guarded, and it writes no second activation entry.
     from_block = _back_from_block(root, meta, path)
-    returning = meta.status == Status.implemented or from_block
+    from_review = meta.status == Status.implemented
+    returning = from_review or from_block
 
     # The worktree is recorded only in the first activation's entry, so the flags
     # mean nothing to a plan that is already active or is coming back from review.
@@ -1446,6 +1447,15 @@ def _activate(
         typer.echo(f"committed the return from the block on {current}")
         return
     typer.echo(f"committed the activation on {current}")
+    if from_review:
+        # A reactivation covers the review round. Said here, at the one command a
+        # session runs to start that round, because the costly habit is the next
+        # step: marking the plan implemented again after each follow-up.
+        typer.echo(
+            f"plan {meta.prefix} is active for a review round: keep it active "
+            f"through the follow-ups, and run `planners implemented {meta.prefix}` "
+            "when the reviewer says the round is done, or go straight to the close."
+        )
     # The skill pushes next, and that push carries every unpushed commit on the
     # base. Count and sort them here so the skill reads a fact instead of sorting
     # by eye; quiet when there is no upstream to compare against.
