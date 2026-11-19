@@ -1,7 +1,7 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: draft
+status: active
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
 concluded:
@@ -96,3 +96,11 @@ Each step is its own commit.
 - Rewriting CHANGELOG history or earlier plans
 - pkgskills' own `legacy_stamps` and `previous_names` features, which stay in that
   library
+
+## Log
+
+- **2026-11-18T17:26:12-08:00** — Activated.
+  - Branch: `feature/purge-legacy-compat`
+  - Base: `dev` at `94b357d`
+  - Worktree: `.worktrees/027-purge-legacy-compat`
+  - PR: pending
