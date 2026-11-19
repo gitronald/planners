@@ -303,8 +303,7 @@ Retrospective section.
 
 ## Skills
 
-Drive the lifecycle through the `/planners` skill (which replaces the retired `/plan-*`
-skills):
+Drive the lifecycle through the `/planners` skill:
 
 - `/planners add` — scaffold a new plan
 - `/planners implement` — run `{cli} start <NNN>` on the mainline (activate, branch from

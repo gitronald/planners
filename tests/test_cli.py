@@ -76,7 +76,7 @@ def test_validate_passes_on_conformant_plan(
     [
         # status not in the enum
         ("001-thing", _VALID_PLAN.replace("status: active", "status: bogus")),
-        # legacy abandoned
+        # a status outside the enum
         ("001-thing", _VALID_PLAN.replace("status: active", "status: abandoned")),
         # literal "none"
         ("001-thing", _VALID_PLAN.replace("pr:", "pr: none")),
