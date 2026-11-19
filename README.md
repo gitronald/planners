@@ -64,8 +64,9 @@ These tools can be used manually via CLI commands, but they are largely intended
      removals show as deletions in `git status`.
 
    `--force` is still needed for a file it does not recognize as generated: one with no
-   stamp, another package's stamp, or an altered stamp. `install --check` prints that form
-   on an `overwrite:` line, naming what it would replace.
+   stamp, another package's stamp, an altered stamp, or the stamp of a release before
+   0.7.0. `install --check` prints that form on an `overwrite:` line, naming what it would
+   replace.
 
 3. **Start planning** — scaffold your first plan using the `add` command.
 
