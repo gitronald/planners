@@ -1342,6 +1342,22 @@ def test_validate_does_not_invent_a_missing_index(
     assert runner.invoke(app, ["validate", "."]).exit_code == 0
 
 
+def test_validate_does_not_check_a_plan_outside_the_layout_against_the_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A plan under some other `plans/` directory, beside a .planners index that
+    # was never rendered from it. Matching on `plans` alone would attribute the
+    # file to that index and report the index stale.
+    plan = _write_plan(tmp_path / "archive" / "plans", "001-thing", _VALID_PLAN)
+    (tmp_path / ".planners" / "plans").mkdir(parents=True)
+    (tmp_path / ".planners" / "README.md").write_text(
+        "# Plans\n\n| 001 | a row the tree does not have |\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["validate", str(plan)])
+    assert result.exit_code == 0, result.output
+
+
 def test_validate_survives_a_plan_file_with_no_room_for_a_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
