@@ -47,18 +47,15 @@ SKILL_NAMES = (
 
 # The single dispatcher's description must absorb the union of all eight
 # subcommands' triggers so /planners still auto-fires across the whole plan flow.
+# It loads into every session's skill listing, so it names each subcommand once
+# and stays near 400 characters.
 HOLDER_DESCRIPTION = (
-    "Manage this repo's plan-file lifecycle end to end. Use whenever the user "
-    "wants to plan, spec out, propose, draft, or outline new work (add); start, "
-    "implement, or begin work on a plan (implement); activate, log, update, "
-    "finish, close, complete, ship, or abandon/retire a plan (update, close); "
-    "drive a plan from implementation through close in one run (pipeline); "
-    "review plans against the repo to find stale, done, or moot ones (review); "
-    "regenerate or refresh the plan index / README table (index); or "
-    "backfill missing plan frontmatter from git history and PRs (backfill). "
-    'Triggers on "let\'s plan", "spec this out", "write up a plan", '
-    '"start/close this plan", "take this plan to done", "update the plan status", '
-    '"review the plans", "which drafts are stale", or "refresh the index".'
+    "Manage this repo's plan-file lifecycle. Use to plan, spec out, or draft new "
+    "work (add); start or implement a plan (implement); activate, log, close, or "
+    "retire one (update, close); take one from implementation through close "
+    "(pipeline); find stale or done plans (review); refresh the plan index "
+    '(index); or backfill frontmatter (backfill). Triggers on "let\'s plan", '
+    '"write up a plan", "close this plan", or "review the plans".'
 )
 
 HOOKS = (

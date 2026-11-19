@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- The `/planners` skill description is about half as long (424 characters, from
+  779). It loads into every session's skill listing, and still names each
+  subcommand.
+
 ## [0.18.0] - 2026-11-19
 
 ### Removed
