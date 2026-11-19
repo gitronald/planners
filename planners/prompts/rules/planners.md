@@ -69,11 +69,6 @@ subplan** adds `sub:` (its letter) directly after `slug`; every other plan omits
 rather than writing it empty. `{cli} add` writes the frontmatter, and
 `{cli} schema PlanMetadata` is the authority on it.
 
-> **Field name.** The terminal-timestamp field is **`concluded`** — renamed from `completed`,
-> shipped in planners 004 (>= 0.2.0) as a hard cutover with **no read-alias**. A legacy plan
-> still keyed `completed:` fails `validate` (its `concluded` parses empty) until the key is
-> renamed; rename the first frontmatter occurrence per file when migrating.
-
 `status` is one of `draft`, `active`, `implemented`, `blocked`, `done`, `inactive`, `retired`
 (the shipped enum; the neutral terminal status is `retired`, with no failure connotation). Update
 it as work progresses: `draft` -> `active` -> `implemented` -> `done` (or `retired`).

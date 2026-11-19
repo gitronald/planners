@@ -226,30 +226,6 @@ def test_validate_retired_requires_concluded() -> None:
     assert any("requires a concluded timestamp" in e for e in meta.validate())
 
 
-def test_old_completed_key_parses_empty_and_fails_validate() -> None:
-    # Hard cutover: there is no read-alias. Frontmatter that still uses the old
-    # `completed:` key (no `concluded:`) parses with an empty concluded, so a
-    # terminal plan fails validation rather than silently picking up the old
-    # value. This locks in the accepted "fine for it to fail" behavior and guards
-    # against a fallback being reintroduced.
-    text = (
-        "---\n"
-        "id: 1\n"
-        "slug: x\n"
-        "status: done\n"
-        "branch: null\n"
-        "created: 2026-06-07T12:00:00-07:00\n"
-        "completed: 2026-06-08T09:00:00-07:00\n"
-        "pr: null\n"
-        "---\n"
-        "\n"
-        "# X\n"
-    )
-    meta = PlanMetadata.from_text(text)
-    assert meta.concluded == ""
-    assert any("requires a concluded timestamp" in e for e in meta.validate())
-
-
 def test_validate_unparseable_timestamp() -> None:
     meta = _valid_active()
     meta.created = "not-a-date"
