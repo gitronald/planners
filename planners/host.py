@@ -11,6 +11,7 @@ attribute.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from pkgskills import (
     Rule,
     Skill,
     precommit,
+    printing_mode,
 )
 
 from planners.index import INDEX_PATH
@@ -47,18 +49,15 @@ SKILL_NAMES = (
 
 # The single dispatcher's description must absorb the union of all eight
 # subcommands' triggers so /planners still auto-fires across the whole plan flow.
+# It loads into every session's skill listing, so it names each subcommand once
+# and stays near 400 characters.
 HOLDER_DESCRIPTION = (
-    "Manage this repo's plan-file lifecycle end to end. Use whenever the user "
-    "wants to plan, spec out, propose, draft, or outline new work (add); start, "
-    "implement, or begin work on a plan (implement); activate, log, update, "
-    "finish, close, complete, ship, or abandon/retire a plan (update, close); "
-    "drive a plan from implementation through close in one run (pipeline); "
-    "review plans against the repo to find stale, done, or moot ones (review); "
-    "regenerate or refresh the plan index / README table (index); or "
-    "backfill missing plan frontmatter from git history and PRs (backfill). "
-    'Triggers on "let\'s plan", "spec this out", "write up a plan", '
-    '"start/close this plan", "take this plan to done", "update the plan status", '
-    '"review the plans", "which drafts are stale", or "refresh the index".'
+    "Manage this repo's plan-file lifecycle. Use to plan, spec out, or draft new "
+    "work (add); start or implement a plan (implement); activate, log, close, or "
+    "retire one (update, close); take one from implementation through close "
+    "(pipeline); find stale or done plans (review); refresh the plan index "
+    '(index); or backfill frontmatter (backfill). Triggers on "let\'s plan", '
+    '"write up a plan", "close this plan", or "review the plans".'
 )
 
 HOOKS = (
@@ -72,12 +71,14 @@ HOOKS = (
     # index instead of conflicting, but can leave a row duplicated when both sides
     # rewrote it; regenerating from the plan files is the only correct repair, and
     # only *after* the merge are both sides' plan files on disk. Git does not run
-    # `post-merge` when a merge stops on conflicts, and the regenerated index lands
-    # as an uncommitted change (git writes the merge tree before the hook runs).
+    # `post-merge` when a merge stops on conflicts. Git writes the merge commit
+    # before the hook runs, so the repair comes after it: `--after-merge` amends it
+    # into that commit while the commit is still local, and leaves it uncommitted
+    # otherwise (see `planners.aftermerge`).
     Hook(
         id="planners-index",
         name="regenerate plan index after merge",
-        args=("index", "."),
+        args=("index", ".", "--after-merge"),
         stage="post-merge",
         always_run=True,
         pass_filenames=False,
@@ -92,9 +93,54 @@ HOOKS = (
 INDEX_ATTR = Line(".gitattributes", INDEX_PATH.as_posix(), "merge=union")
 
 
+def _entry_before_after_merge(host: Host) -> re.Pattern[str]:
+    """The `planners-index` entry line a release before `--after-merge` wrote.
+
+    Matched exactly, in either install mode, so an entry someone set by hand to
+    anything else is not taken for one of ours.
+    """
+    invocations = "|".join(
+        re.escape(host.invocation(mode)) for mode in ("global", "local")
+    )
+    return re.compile(
+        rf"^([ \t]*entry: (?:{invocations}) index \.)[ \t]*(\r?)$", re.MULTILINE
+    )
+
+
+def _config_text(config: Path) -> str | None:
+    """The config's text with its line endings kept, or ``None`` when unreadable."""
+    try:
+        with config.open(encoding="utf-8", newline="") as handle:
+            return handle.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _upgrade_index_entry(config: Path, host: Host) -> bool:
+    """Give an earlier release's `planners-index` entry the `--after-merge` option.
+
+    `wire` keys a hook on its id and leaves an entry that is present alone, so a
+    config written before the option existed would go on running the hook without
+    it, and the repair would stay an uncommitted change in that repo.
+    """
+    text = _config_text(config)
+    if text is None:
+        return False
+    upgraded, count = _entry_before_after_merge(host).subn(r"\1 --after-merge\2", text)
+    if not count:
+        return False
+    with config.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(upgraded)
+    return True
+
+
 def _after_install(report: InstallReport) -> None:
     """Wire both hooks into the repo's pre-commit config and register their stages."""
     done = precommit.wire(report, HOOKS)
+    if not done.unreadable and _upgrade_index_entry(done.config, report.host):
+        typer.echo(
+            f"updated planners-index in {done.config.name}: it runs with --after-merge"
+        )
     if done.unreadable:
         typer.echo(
             f"note: {done.config.name} cannot be read, so the hooks were not "
@@ -115,7 +161,22 @@ def _after_install(report: InstallReport) -> None:
 
 def _extra_checks(host: Host, root: Path, mode: Mode | None) -> Sequence[ExtraCheck]:
     """Report (never gate on) whether each hook is registered in this clone."""
-    return precommit.checks(host, root, mode, HOOKS)
+    rows = list(precommit.checks(host, root, mode, HOOKS))
+    text = _config_text(root / precommit.CONFIG)
+    if text is not None and _entry_before_after_merge(host).search(text):
+        rows.append(
+            ExtraCheck(
+                "hook planners-index",
+                "outdated",
+                gates=False,
+                note=(
+                    "planners-index runs without --after-merge, so the index repair "
+                    "after a merge is left uncommitted; run "
+                    f"`{host.install_command(mode or printing_mode(host, root))}`"
+                ),
+            )
+        )
+    return rows
 
 
 HOST = Host(

@@ -84,7 +84,7 @@ def test_install_local_writes_stub_rule_hooks_and_merge_attribute(
     assert "files: '^\\.planners/plans/[^/]+/plan\\.md$'" in validate
     assert "pass_filenames" not in validate
     assert "stages: [pre-commit]" in validate
-    assert "entry: uv run planners index ." in index
+    assert "entry: uv run planners index . --after-merge\n" in index
     assert "stages: [post-merge]" in index
     assert "always_run: true" in index
     assert "pass_filenames: false" in index
@@ -162,6 +162,53 @@ def test_reinstall_keeps_an_existing_hook_entry(box: Sandbox) -> None:
     assert text.count("planners-validate") == 1
     assert "name: custom" in text
     assert "planners-index" in text
+
+
+_INDEX_HOOK = (
+    "repos:\n  - repo: local\n    hooks:\n      - id: planners-index\n"
+    "        name: regenerate plan index after merge\n        entry: {entry}\n"
+    "        language: system\n        stages: [post-merge]\n"
+)
+
+
+def test_install_gives_an_earlier_index_entry_the_after_merge_option(
+    box: Sandbox,
+) -> None:
+    # An entry a release before the option wrote: present, so `wire` leaves it.
+    config = box.repo / ".pre-commit-config.yaml"
+    config.write_text(
+        _INDEX_HOOK.format(entry="uv run planners index ."), encoding="utf-8"
+    )
+    checked = runner.invoke(app, ["install", "--local", "--check"])
+    assert "outdated" in checked.output
+    assert "runs without --after-merge" in checked.output
+
+    result = runner.invoke(app, ["install", "--local"])
+    assert result.exit_code == 0, result.output
+    assert "updated planners-index in .pre-commit-config.yaml" in result.output
+    text = config.read_text(encoding="utf-8")
+    assert "entry: uv run planners index . --after-merge\n" in text
+    assert text.count("planners-index") == 1
+
+    again = runner.invoke(app, ["install", "--local"])
+    assert "updated planners-index" not in again.output
+    assert config.read_text(encoding="utf-8") == text
+    checked = runner.invoke(app, ["install", "--local", "--check"])
+    assert "outdated" not in checked.output
+
+
+def test_install_leaves_an_index_entry_someone_changed(box: Sandbox) -> None:
+    config = box.repo / ".pre-commit-config.yaml"
+    custom = _INDEX_HOOK.format(entry="uv run planners index . --cols all")
+    config.write_text(custom, encoding="utf-8")
+    result = runner.invoke(app, ["install", "--local"])
+    assert result.exit_code == 0, result.output
+    assert "entry: uv run planners index . --cols all\n" in config.read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "outdated" not in runner.invoke(app, ["install", "--local", "--check"]).output
+    )
 
 
 def test_install_leaves_a_config_it_cannot_safely_edit(box: Sandbox) -> None:

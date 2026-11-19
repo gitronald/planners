@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-19
+
+### Changed
+
+- The `/planners` skill description is about half as long (424 characters, from
+  779). It loads into every session's skill listing, and still names each
+  subcommand.
+- The `pipeline` skill keeps the driving session's context small. The session
+  runs the lifecycle commands, the gate, and the merge; the work and the review
+  each run in a worker (a subagent, or a headless session), one at a time, and
+  hand back a short report. It checks each handoff by command, reads the plan's
+  frontmatter instead of the whole file, and resumes from the plan on disk after
+  an interruption. A plan of a few edits still runs in one session.
+- A reactivation covers a review round, not a review item. The `implement` and
+  `update` skills and the rule now say that the first change asked for on an
+  `implemented` plan returns it to `active` once, that it stays `active` through
+  the follow-ups, and that it is marked `implemented` again when the reviewer
+  says the round is done (or not at all when the next request is the close).
+  Before, the `implement` skill said to mark it implemented again after each
+  follow-up, which cost three plan commits per small change. `planners activate`
+  on an `implemented` plan prints a line saying the same.
+- The `implement` and `update` skills say to write a Log entry that records a
+  change with `planners log --no-commit` and commit it with that change, so the
+  entry and the change are one commit. `planners log` on its own stays for an
+  entry with no change beside it.
+- `planners start` stops once for its pushes. A first run does every local step
+  (the branch, the worktree, the setup) and then prints both pushes on one
+  line, the base first: `git push origin <base> && git push -u origin <branch>`.
+  Before, it stopped for the base's push and again for the branch's. A base that
+  carries commits other than the plan's own still stops first, before the
+  branch exists. A re-run from the plan's branch now stops when the base was
+  left unpushed, since the draft PR links the plan on the base.
+- The `post-merge` hook puts the regenerated index into the merge commit: same
+  parents, message, and author. Before, the repair was left as an uncommitted
+  change to commit by hand. It is still left uncommitted, with the reason
+  printed, after a fast-forward or a squash, when a remote branch already holds
+  the merge commit, when the commit is signed or merges a signed tag, or while
+  another operation is in progress.
+- The `implement` skill separates a check of your own work, which comes before
+  `planners implemented`, from the review, which comes after it.
+
+### Added
+
+- `planners index --after-merge`, which the `post-merge` hook passes. A plain
+  `planners index` never rewrites a commit, and neither does the option run by
+  hand, outside the hook.
+- `planners install` gives a `planners-index` hook entry written by an earlier
+  release the `--after-merge` option, and `planners install --check` reports an
+  entry without it as `outdated`. An entry someone changed by hand is left alone.
+
 ## [0.18.0] - 2026-11-19
 
 ### Removed

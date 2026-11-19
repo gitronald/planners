@@ -15,7 +15,7 @@ infer the action from the user's words or the plan's current state.
 |--------|----------|--------|
 | **activate** | "start", "activate", "begin" | `{cli} activate {NNN}` — on the mainline |
 | **implemented** | "implemented", "ready for review", "work is done" | `{cli} implemented {NNN}` — on the feature branch |
-| **reactivate** | "back to work", "more changes", "review asked for" | `{cli} activate {NNN}` on an `implemented` plan — on the feature branch |
+| **reactivate** | "back to work", "review asked for", the first change asked for on an `implemented` plan | `{cli} activate {NNN}` on an `implemented` plan, once per review round — on the feature branch |
 | **log** | "log", "note", "update" | Append a dated entry to the `## Log` section |
 | **close** | "close", "finish", "done", "complete" | Hand off to `/planners close` (review gate, merge, cleanup) |
 | **block** | "block", "waiting on", "stuck on" | `{cli} block {NNN}`; say what it waits on |
@@ -79,6 +79,12 @@ not guarded, and it logs a short `Reactivated` entry rather than a second
 activation entry. A nested subplan returns with
 `{cli} subplans {NNN} --set <letter>=active`.
 
+One reactivation covers the whole review round. A further change asked for on
+a plan that is already `active` is a commit, a push, and a Log entry, with no
+status change. Mark it `implemented` again when the reviewer says the round is
+done, not after each follow-up, and not at all when the next request is the
+close, which takes an `active` plan.
+
 **Log** — run the command; do not write the entry by hand:
 
 ```bash
@@ -102,9 +108,19 @@ become sub-bullets:
 EOF
 ```
 
-`--no-commit` writes only. There is no mainline guard: a Log entry belongs on
+`--no-commit` writes only. Use it for an entry that records a change you are
+about to commit, and commit the plan file with that change, so the entry and
+the change are one commit:
+
+```bash
+{cli} log {NNN} "<note>" --no-commit
+git add <the changed files> .planners/plans/{NNN}-<slug>/plan.md && git commit -m "<the change>"
+```
+
+The committing form is for an entry with no change beside it: a decision, an
+answer, a result. There is no mainline guard: a Log entry belongs on
 the feature branch, with the work. When the tracked index is stale (a local
-merge left a duplicated row, or the `post-merge` repair is still uncommitted),
+merge left a duplicated row, or a `post-merge` repair was left uncommitted),
 the command refreshes it and commits it with the entry. It refuses a note that
 names an absolute or home-directory path; describe the file, or copy it into the
 plan's directory as a sidecar (`--allow-local-paths` overrides).
