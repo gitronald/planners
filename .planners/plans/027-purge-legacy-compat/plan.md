@@ -1,0 +1,98 @@
+---
+id: 27
+slug: purge-legacy-compat
+status: draft
+branch: feature/purge-legacy-compat
+created: 2026-11-18T17:25:36-08:00
+concluded:
+pr:
+---
+
+# Remove the legacy layout and pre-pkgskills compatibility
+
+## Plan
+
+### Background
+
+planners still carries support for states no consumer is in: the old
+`docs/plans/{NNN}-{slug}.md` + `TODO.md` layout, the `completed` frontmatter key that
+`concluded` replaced in 0.2.0, and install files written before planners adopted
+pkgskills. Nobody asked for this compatibility, and some of it does harm. The full
+rule's `**/docs/plans/**` glob loads the convention into any repo that happens to
+have a `docs/plans/` directory, including repos that do not use planners.
+
+### Decisions
+
+1. **No layout but `.planners/`.** The tool, the rules, the skills, and the docs
+   describe one layout. A repo with no `.planners/plans/` has no plans, and planners
+   says nothing about other directories
+2. **No upgrade path from before pkgskills.** An install written before pkgskills
+   (the HTML-comment stamp, or a `plan-files.md` rule) is treated as a file planners
+   did not write: `install --check` reports it, and `--force` replaces it. Upgrades
+   between pkgskills-stamped releases are unchanged
+3. **History stays.** CHANGELOG entries and earlier plans are records and are not
+   edited. This plan's own CHANGELOG entry describes the removals under `Removed`
+
+### Changes
+
+Legacy layout:
+- `planners/prompts/rules/planners.md`: drop `**/docs/plans/**` from `paths`, the
+  "or the legacy `docs/plans/`" clause, the "Migration in progress" callout, and the
+  `docs/plans/...` example path (use `.planners/plans/...`)
+- `planners/review.py`: `_check_layout` drops the legacy branch and keeps only the
+  missing-plans-directory error. The `ReviewError` docstring stops naming the layout
+- `planners/prompts/skills/review/SKILL.md`: drop the legacy-layout refusal sentence
+- `planners/cli.py`: the `_repo_root_of` docstring stops naming `docs/plans/`
+- `README.md`: drop the "(or the legacy `docs/plans/`)" clause
+- `scripts/install.sh`: deleted (see below)
+- Tests: `test_validate_ignores_a_legacy_layout_plan`, `test_legacy_layout_is_refused`,
+  and `test_cli_refuses_the_legacy_layout` go. `SCOPE` in `tests/test_host.py` loses
+  the second glob. Keep a test that a repo with no `.planners/plans/` gets the
+  missing-directory error, adding one if none exists
+
+`completed` key:
+- The rule's "Field name" callout goes
+- `test_old_completed_key_parses_empty_and_fails_validate` goes. An unknown key is
+  already covered by the schema's own handling, so nothing replaces it
+
+Pre-pkgskills install:
+- `planners/host.py`: drop `PRE_ADOPTION_STAMP`, `legacy_stamps=`, and
+  `previous_names=("plan-files",)` with their comments, and any import they leave
+  unused
+- `README.md`: the Upgrading paragraph stops mentioning the removal of an old
+  `plan-files.md`, and the Convention rule section drops the `plan-files.md` sentence
+- `tests/test_host.py`: the `OLD_STAMPS` fixtures and the tests built on them go,
+  unless one of them tests a pkgskills-stamp case that still holds. Each removal is
+  checked for what it covered
+
+Rollout script:
+- `scripts/install.sh` is deleted. It installed planners across many repos during the
+  first rollout and has no callers. `planners install` does what it did, and its text
+  still names `plan-files` and a `docs/plans/` migration. If `scripts/` is then empty,
+  the directory goes too
+
+Small leftovers:
+- The rule's "(which replaces the retired `/plan-*` skills)" aside goes
+- The "legacy abandoned" comment in `tests/test_cli.py` becomes "a status outside
+  the enum"; the case stays
+
+CHANGELOG: one `Removed` section under `[Unreleased]` covering the four removals.
+
+### Order
+
+1. Legacy layout, with its tests
+2. `completed` callout and test
+3. Pre-pkgskills install path, with its tests and README text
+4. `scripts/install.sh`
+5. Small leftovers and the CHANGELOG
+6. A final grep for `legacy`, `docs/plans`, `TODO.md`, `plan-files`, `completed`,
+   `PRE_ADOPTION`, and `install.sh` outside CHANGELOG and `.planners/plans/`, then the
+   full suite and the three checks
+
+Each step is its own commit.
+
+### Out of scope
+
+- Rewriting CHANGELOG history or earlier plans
+- pkgskills' own `legacy_stamps` and `previous_names` features, which stay in that
+  library
