@@ -171,8 +171,8 @@ GitHub auto-renders on folder browse.
 `.claude/rules/` (per-repo):
 
 - `planners.md` is the full convention. Its `paths` frontmatter scopes it to plan files, so Claude
-  Code loads it when a session reads or writes a file under `.planners/` (or the legacy
-  `docs/plans/`) inside its working directory, and not before.
+  Code loads it when a session reads or writes a file under `.planners/` inside its working
+  directory, and not before.
 - `planners-core.md` is short and loads into every session. It holds what has to apply before a plan
   file is open: plans go through the skill and the CLI, the `plan [add]` and `plan [activate]`
   commits belong on the mainline, and a plan carries no personal or local specifics.

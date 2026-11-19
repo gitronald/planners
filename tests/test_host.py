@@ -374,7 +374,7 @@ def test_permissions_ladder() -> None:
 
 
 CORE_RULE = Path(".claude/rules/planners-core.md")
-SCOPE = 'paths:\n  - "**/.planners/**"\n  - "**/docs/plans/**"\n'
+SCOPE = 'paths:\n  - "**/.planners/**"\n'
 
 
 def _front(path: Path) -> Frontmatter:

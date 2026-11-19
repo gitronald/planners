@@ -118,7 +118,7 @@ _RS = "\x1e"
 
 
 class ReviewError(ValueError):
-    """A repo ``review`` cannot report on at all, such as the legacy layout."""
+    """A repo ``review`` cannot report on at all, such as one with no plans."""
 
 
 @dataclass(frozen=True)
@@ -609,12 +609,6 @@ def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
 def _check_layout(root: Path, plans_dir: Path) -> None:
     if plans_dir.is_dir():
         return
-    if (root / "docs" / "plans").is_dir() or (root / "TODO.md").is_file():
-        raise ReviewError(
-            "this repo is on the legacy docs/plans/ + TODO.md layout; `review` "
-            "reads only .planners/. Migrate the plans to "
-            ".planners/plans/<NNN>-<slug>/plan.md first."
-        )
     raise ReviewError(f"no plans directory at {plans_dir.relative_to(root)}.")
 
 

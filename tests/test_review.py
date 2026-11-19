@@ -517,9 +517,8 @@ def test_shallow_clone_downgrades_history(repo: Path, tmp_path: Path) -> None:
     assert "commits since: unknown" in review_mod.render_text(report)
 
 
-def test_legacy_layout_is_refused(tmp_path: Path) -> None:
-    (tmp_path / "docs" / "plans").mkdir(parents=True)
-    with pytest.raises(review_mod.ReviewError, match="legacy"):
+def test_a_repo_with_no_plans_directory_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(review_mod.ReviewError, match="no plans directory"):
         gather(tmp_path, tmp_path / ".planners" / "plans", now=NOW, gh=False)
 
 
@@ -582,14 +581,13 @@ def test_cli_rejects_bad_arguments(
     assert message in result.output
 
 
-def test_cli_refuses_the_legacy_layout(
+def test_cli_refuses_a_repo_with_no_plans_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "TODO.md").write_text("- [ ] thing\n")
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["review"])
     assert result.exit_code == 1
-    assert "legacy" in result.output
+    assert "no plans directory" in result.output
 
 
 def _append_log(repo: Path, rel: str, entry: str) -> None:

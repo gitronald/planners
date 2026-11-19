@@ -1342,23 +1342,6 @@ def test_validate_does_not_invent_a_missing_index(
     assert runner.invoke(app, ["validate", "."]).exit_code == 0
 
 
-def test_validate_ignores_a_legacy_layout_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A repo mid-migration: plans still under docs/plans/, and a .planners index
-    # that describes the (empty) new tree. A legacy plan must not be attributed to
-    # that index — matching on `plans` alone would do exactly that, and report a
-    # stale index for a plan the index was never generated from.
-    plan = _write_plan(tmp_path / "docs" / "plans", "001-thing", _VALID_PLAN)
-    (tmp_path / ".planners" / "plans").mkdir(parents=True)
-    (tmp_path / ".planners" / "README.md").write_text(
-        "# Plans\n\n| 001 | a row the new tree does not have |\n", encoding="utf-8"
-    )
-    monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["validate", str(plan)])
-    assert result.exit_code == 0, result.output
-
-
 def test_validate_survives_a_plan_file_with_no_room_for_a_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
