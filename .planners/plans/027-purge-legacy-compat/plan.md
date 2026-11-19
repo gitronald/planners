@@ -1,10 +1,10 @@
 ---
 id: 27
 slug: purge-legacy-compat
-status: implemented
+status: done
 branch: feature/purge-legacy-compat
 created: 2026-11-18T17:25:36-08:00
-concluded:
+concluded: 2026-11-18T18:41:36-08:00
 pr: https://github.com/gitronald/planners/pull/77
 ---
 
@@ -138,3 +138,26 @@ Each step is its own commit.
   - Conscious no-op: the `body` parameter of the `_plant` test helper has no caller left that passes it. The default is still what the surviving assertion checks, so it stays
   - Rejected on verification: the `pre-pkgskills` case of `test_anything_else_is_refused_until_forced` does not duplicate the new pre-pkgskills test. One checks that a plain install is refused and leaves the file untouched, the other the `--check` output and the `--force` replacement of both files
   - Verified at 81aaa44: full suite 818 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean
+
+## Retrospective
+
+- The code removals went as the spec laid them out. Every gap was in the tests: each of
+  the three reviews found a deleted test that had been the only cover for something
+  still live (the `.planners` parent check in `_repo_root_of`, decision 2 through
+  `install --check`, and a global install removing local copies). The suite stayed
+  green each time, so coverage and a passing run did not show them
+- A deleted test needs the same trace as deleted code. The spec said each removal is
+  "checked for what it covered", and that was not enough as a sentence. Listing, per
+  removed test, the live behavior it exercised and the test that still covers it would
+  have found all three in the first pass
+- Removing a recognition hook removes detection as well as the upgrade. Decision 2 said
+  an old file is reported and replaced by `--force`, and that holds for the old stamp
+  but not for an old `plan-files.md`: once install no longer knows the name, it neither
+  reports nor replaces the file. The spec stays as written, the CHANGELOG describes what
+  happens, and no test locks it in
+- The spec's final grep listed words, and the `abandoned` guards were the same kind of
+  history under a word the list did not have. They surfaced in review and were removed
+  on the owner's decision, reversing the spec's "the case stays". A removal plan should
+  name the kind of thing going, then derive the word list from a search for that kind
+- Not verified: an install over a real pre-pkgskills file. The behavior is tested
+  against a synthetic file carrying the old stamp verbatim, and no real one was found
