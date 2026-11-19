@@ -106,3 +106,10 @@ Each step is its own commit.
   - PR: pending
 - **2026-11-18T17:29:21-08:00** — PR opened: https://github.com/gitronald/planners/pull/77
 - **2026-11-18T17:29:31-08:00** — Implemented: 6 commits ahead of `dev`.
+- **2026-11-18T17:29:43-08:00** — All six steps done, one commit each: legacy layout (0aef2c4), completed note (dc5c864), pre-pkgskills install path (c9f80ca), scripts/install.sh (6211344), leftovers and CHANGELOG (f080d07).
+  - Departures from the spec: `test_anything_else_is_refused_until_forced` keeps its another-dist and no-stamp cases and gains a `pre-pkgskills` case with the old stamp verbatim, which locks in decision 2. Its three variants of the old stamp (ascii-hyphen, prose-after, bad-mode) went with the regex they tested. The two legacy-layout review tests were replaced by tests of the no-plans-directory error, which had none. The README's upgrade note now says "any release since 0.7.0" instead of "any earlier release"
+  - Kept: the test that upgrades the pre-split unscoped rule, a pkgskills-stamp upgrade that still holds. `pre-commit.legacy` in finish.py is pre-commit's own backup name, not planners history
+  - Surprise: with `previous_names` gone, install ignores an old `plan-files.md` entirely, so it is not reported either. The CHANGELOG says it is left in place to delete by hand
+  - Verified at f080d07: full suite 818 passed, coverage 95.14%; ruff check, ruff format --check, and pyrefly clean; the rendered rule's `paths` lists only the `.planners/` glob; a final grep finds no remaining references outside CHANGELOG and earlier plans
+  - Not verified: an install over a real pre-pkgskills file (none exist to test against)
+  - This entry was written after `implemented`: the first attempt was refused because the path check read a glob as a local path
