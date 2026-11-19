@@ -5,7 +5,7 @@ status: active
 branch: feature/028-review-rounds-and-lifecycle-paperwork
 created: 2026-11-19T14:30:37-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/79
 ---
 
 # Treat review follow-ups as one round and cut lifecycle paperwork
@@ -176,3 +176,4 @@ Docs: `CHANGELOG.md` under `[Unreleased]`; `README.md` where it describes the ho
   - Base: `dev` at `ec10f2a`
   - Worktree: `.worktrees/028-review-rounds-and-lifecycle-paperwork`
   - PR: pending
+- **2026-11-19T14:32:46-08:00** — PR opened: https://github.com/gitronald/planners/pull/79
