@@ -38,7 +38,7 @@ from pathlib import Path
 from planners import ahead as ahead_mod
 from planners import base as base_mod
 from planners import entries, proc
-from planners.finish import Stop, must
+from planners.finish import Stop, is_ancestor, must
 from planners.remote import RemoteKind
 
 __all__ = [
@@ -274,10 +274,7 @@ def check_activation_published(
     if not (tracking and tracking.strip() and fork and fork.strip()):
         return None
     upstream = tracking.strip()
-    if (
-        proc.git_out(work_dir, ["merge-base", "--is-ancestor", fork.strip(), upstream])
-        is not None
-    ):
+    if is_ancestor(work_dir, fork.strip(), upstream):
         return Step(DONE, f"the activation is on {upstream}")
     raise Stop(
         f"{base} is not pushed, so the plan's activation is not on {upstream}; push "
