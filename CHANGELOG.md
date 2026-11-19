@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-19
+
 ### Removed
 
 - Support for the old `docs/plans/` + `TODO.md` layout. The full rule's `paths` no
