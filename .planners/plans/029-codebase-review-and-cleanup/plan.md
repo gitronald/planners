@@ -1,7 +1,7 @@
 ---
 id: 29
 slug: codebase-review-and-cleanup
-status: active
+status: implemented
 branch: feature/029-codebase-review-and-cleanup
 created: 2026-11-20T11:14:12-08:00
 concluded:
@@ -249,3 +249,4 @@ that `planners install --check` reports what a reinstall would change.
   - Surprises, left alone: with no remote, the stop `finish` prints for an unmerged branch still ends in `&& git push`, since only a `single-branch` remote gets the wording without it (`finish --print-merge`, which the `close` skill uses, prints the merge alone). Two plans deferred in the same second were numbered in the reverse of the order they were staged in; the cause was not looked into.
   - Prompt checks: no rendered skill or rule carries a leftover `{cli}`. Run from this branch's build, `install --check` reports the two rule files as drifted, which is what a reinstall would change; nothing was reinstalled.
   - Not verified: the no-PR close was not run end to end on a `none`, `bare`, `other-forge`, or `single-branch` remote. Its table rests on reading `start` and `finish`, on the existing `finish` tests, and on running `git fetch`, `git pull`, and `git push` in a repository with no remote (the fetch exits 0, the other two fail). The review's negative results and its subprocess counts for O1 and O3 remain unchecked, as the plan says.
+- **2026-11-20T11:40:40-08:00** — Implemented: 13 commits ahead of `dev`.
