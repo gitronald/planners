@@ -1968,17 +1968,17 @@ def _check_merged(
     base: str,
     *,
     pr_url: str | None,
-    local_only: bool = False,
-    pushable: bool = True,
+    origin: remote_mod.RemoteKind | None = None,
 ) -> finish_mod.PullRequest | None:
     """The merged PR, or ``None`` on the no-PR path; a stop when not merged yet.
 
     The merge is the session's own command, never ``finish``'s (see
     :mod:`planners.finish`), so a branch that is not merged is a stop that
-    prints the command to run before the re-run. ``local_only`` checks the
-    no-PR merge against the local base and asks for no push: on a single-branch
-    remote that push is a publish, which stays the user's call. ``pushable``
-    false asks for no push either, for a repo with no remote to push to.
+    prints the command to run before the re-run. ``origin`` is the remote's
+    kind on the no-PR path, ``None`` when it was not classified. On a
+    single-branch remote the no-PR merge is checked against the local base and
+    no push is asked for: that push is a publish, which stays the user's call.
+    With no remote, no push is asked for either, as there is nowhere to push.
     """
     if pr_url is not None:
         pr = finish_mod.view_pr(root, pr_url)
@@ -1998,10 +1998,11 @@ def _check_merged(
         ),
         None,
     )
+    local_only = origin is remote_mod.RemoteKind.single_branch
     target = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
     if source is not None and not finish_mod.is_ancestor(root, source, target):
         merge = _merge_command(branch)
-        if local_only or not pushable:
+        if local_only or origin is remote_mod.RemoteKind.none:
             raise finish_mod.Stop(
                 f"{branch} is not merged into {base} yet. From {base}, merge it, "
                 f"then run finish again:\n  {merge}"
@@ -2098,8 +2099,7 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         branch,
         base or "",
         pr_url=None if no_pr else meta.pr,
-        local_only=local_only,
-        pushable=origin is not remote_mod.RemoteKind.none,
+        origin=origin,
     )
     if pr is not None:
         base = pr.base
