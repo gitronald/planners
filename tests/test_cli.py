@@ -1047,6 +1047,32 @@ def test_activate_commits_by_default_with_slug_subject(
     )
 
 
+def test_activate_detects_the_mainline_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The guard and the activation entry share one detection, and the line after
+    # the commit reads the branch alone.
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    commit_all(tmp_path, "initial commit")
+    detect = cli_mod.base_mod.detect
+    calls: list[Path] = []
+
+    def counting(root: Path) -> cli_mod.base_mod.Mainline:
+        calls.append(root)
+        return detect(root)
+
+    monkeypatch.setattr(cli_mod.base_mod, "detect", counting)
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert "committed the activation on main" in result.output
+    assert "  - Base: `main` at `" in (
+        tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_activate_fills_an_empty_branch_on_an_already_active_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

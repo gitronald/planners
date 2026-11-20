@@ -516,7 +516,13 @@ def _commit(root: Path, message: str, paths: Sequence[Path]) -> None:
     _git(root, ["commit", "-m", message, "--", *specs])
 
 
-def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
+def _guard_base_branch(
+    root: Path,
+    action: str,
+    *,
+    allow_branch: bool,
+    mainline: base_mod.Mainline | None = None,
+) -> None:
     """Refuse to commit ``action`` when HEAD is off the repo's mainline.
 
     The plan-file convention is that ``add``/``activate`` commits land on the
@@ -529,11 +535,14 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
     returns ``None`` for an unresolvable repo, a repo with no commits, or a HEAD
     already on the mainline, so the guard only speaks when the failure is
     demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
-    genuinely is not detectable by name.
+    genuinely is not detectable by name. ``mainline`` is a detection the caller
+    already made with nothing since that moves HEAD; without one, it detects.
     """
     if allow_branch:
         return
-    message = base_mod.guard_message(base_mod.detect(root), action)
+    if mainline is None:
+        mainline = base_mod.detect(root)
+    message = base_mod.guard_message(mainline, action)
     if message is None:
         return
     _err(f"error: {message}")
@@ -1399,11 +1408,17 @@ def _activate(
         )
         return
 
+    # One detection serves the guard and the activation entry: nothing between
+    # them commits, checks out, or fetches. A return to the branch needs neither.
+    mainline = None if returning else base_mod.detect(root)
+
     # Guard before writing, so a refusal leaves the plan exactly as it was — the
     # ordering `add` uses. Only the committing path is guarded: --no-commit writes
     # no commit, so there is nothing for a branch to strand.
-    if not no_commit and not returning:
-        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
+    if not no_commit and mainline is not None:
+        _guard_base_branch(
+            root, "plan [activate]", allow_branch=allow_branch, mainline=mainline
+        )
 
     if unchanged:
         # Reached only via the staged-but-uncommitted path above: the frontmatter is
@@ -1420,9 +1435,14 @@ def _activate(
         if returning:
             after = "a block" if from_block else "review"
             entry = entries.reactivation_entry(_now(), after)
-        elif meta.status != Status.active:
+        elif mainline is not None and meta.status != Status.active:
             entry = _activation_entry(
-                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
+                root,
+                meta,
+                new_branch,
+                mainline,
+                worktree=worktree,
+                no_worktree=no_worktree,
             )
         meta.status = Status.active
         meta.branch = new_branch
@@ -1474,6 +1494,7 @@ def _activation_entry(
     root: Path,
     meta: PlanMetadata,
     branch: str,
+    mainline: base_mod.Mainline,
     *,
     worktree: str | None,
     no_worktree: bool,
@@ -1482,8 +1503,8 @@ def _activation_entry(
 
     Called before the activation commit is made, so the commit it records is the
     one the activation sits on, which is where the feature branch will start.
+    ``mainline`` is the detection the guard used; nothing since it moved HEAD.
     """
-    mainline = base_mod.detect(root)
     sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
     if no_worktree:
         recorded = entries.NO_WORKTREE
@@ -1500,8 +1521,12 @@ def _activation_entry(
 
 
 def _current_branch(root: Path) -> str:
-    """The branch HEAD is on, in words fit for a message."""
-    return base_mod.detect(root).current or "a detached HEAD"
+    """The branch HEAD is on, in words fit for a message.
+
+    One git call: it needs the branch name only, not a full mainline detection.
+    """
+    shown = proc.git_out(root, ["branch", "--show-current"])
+    return (shown.strip() if shown else "") or "a detached HEAD"
 
 
 def _plan_base(text: str, mainline: base_mod.Mainline) -> str | None:
