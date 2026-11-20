@@ -1,10 +1,10 @@
 ---
 id: 30
 slug: review-leftovers
-status: implemented
+status: done
 branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
-concluded:
+concluded: 2026-11-20T12:32:24-08:00
 pr: https://github.com/gitronald/planners/pull/82
 ---
 
@@ -140,3 +140,18 @@ Checks:
   - Conscious no-ops: `_sync_base` re-reading the branch with `_current_branch` (now one git call; an earlier detection would be stale across the worktree removal and checkout); the review cache test asserting uniqueness only (the cache keys every argument, and the test checks the results too); a clock step between same-second defers (narrow).
   - Checks at `2535cae`: ruff check, ruff format --check, pyrefly check, pytest (852 passed, coverage 95.12%) all exit 0.
 - **2026-11-20T12:32:59-08:00** — Implemented: 14 commits ahead of `dev`.
+
+## Retrospective
+
+- All four items landed as specified, one commit each. The review's two findings were
+  about shape, not behavior: a `None` stood in for a named condition, and two bools
+  came from one remote kind. Both fixes let the code state its condition directly.
+- Passing the result in (a `Mainline`, a `RemoteKind`) did more than caching would
+  have for O1 and the finish check. Each caller now decides once, and any callee that
+  is given nothing still detects for itself, so other call sites did not change.
+- Reverting each fix and watching its test fail made the counting tests (detect calls,
+  git queries) trustworthy. Without that step, an assertion of "once" can pass because
+  the count is never taken.
+- Still not verified, and owned by no plan: a full no-PR `finish` in a repo with no
+  remote (the test covers only the stop), and staging order on a platform whose
+  `time_ns` clock is coarse.
