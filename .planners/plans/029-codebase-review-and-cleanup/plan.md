@@ -1,11 +1,11 @@
 ---
 id: 29
 slug: codebase-review-and-cleanup
-status: active
+status: done
 branch: feature/029-codebase-review-and-cleanup
 created: 2026-11-20T11:14:12-08:00
-concluded:
-pr:
+concluded: 2026-11-20T11:46:04-08:00
+pr: https://github.com/gitronald/planners/pull/81
 ---
 
 # Review and clean up the codebase
@@ -240,3 +240,23 @@ that `planners install --check` reports what a reinstall would change.
   - Base: `dev` at `69ae1bd`
   - Worktree: `.worktrees/029-codebase-review-and-cleanup`
   - PR: pending
+- **2026-11-20T11:35:03-08:00** — PR opened: https://github.com/gitronald/planners/pull/81
+- **2026-11-20T11:40:35-08:00** — Implemented all eleven steps of the order of work, one commit each, in the order given. The checks ran clean at `63b5148`, level with `dev`, which had not moved: `ruff check`, `ruff format --check`, `pyrefly check`, and `pytest` (846 passed, coverage 95%).
+  - What was done: C1 `5f64268`, C2 `7634829`, S3 `54c650f`, D4 and D5 `082bfde`, D3 `ba0253a`, D1 `78c5075`, D2 `b95815a`, S1 `48036d7`, D6 `15bf8c8`, S2 `1573bd4`, changelog `63b5148`.
+  - Each of the three behavior fixes has a regression test that was run with the fix reversed and failed, then passed with it restored.
+  - Now verified, where the plan said read or not verified: S2 (without the fix, a re-run of `start` after a refused `plan [pr]` commit prints `done pr` and leaves the record uncommitted); the hook failure in D6 (a stand-in hook that reads the staged index rejects the commit of the plan alone); the nested `add` guard in D3 (skipped when the umbrella is `active`); and D5 (in a scratch repository, a `finalize` whose commit a hook rejects leaves the plans numbered and added to git's index, staging gone, and a second `finalize` finds nothing staged).
+  - Departures from the spec: C2 asserts that nothing at all is under `plans/`, which is stricter than a check on the plan's own name; the report's added check that HEAD stays unborn was not written. D3 also names two cases the plan did not list: a nested subplan activated on the umbrella's branch, and a blocked plan returned on its own branch. D5 gives the recovery as well as the state (commit the paths with the subject the error names, do not run `finalize` again). D6 also corrects the `update` skill's sentence on it. S2 moves the pending-record test into one helper, `_pr_record_pending`, that `set-pr` and `start` both call. D1 adds that step 5's `pr:` check is skipped on the no-PR path.
+  - Surprises, left alone: with no remote, the stop `finish` prints for an unmerged branch still ends in `&& git push`, since only a `single-branch` remote gets the wording without it (`finish --print-merge`, which the `close` skill uses, prints the merge alone). Two plans deferred in the same second were numbered in the reverse of the order they were staged in; the cause was not looked into.
+  - Prompt checks: no rendered skill or rule carries a leftover `{cli}`. Run from this branch's build, `install --check` reports the two rule files as drifted, which is what a reinstall would change; nothing was reinstalled.
+  - Not verified: the no-PR close was not run end to end on a `none`, `bare`, `other-forge`, or `single-branch` remote. Its table rests on reading `start` and `finish`, on the existing `finish` tests, and on running `git fetch`, `git pull`, and `git push` in a repository with no remote (the fetch exits 0, the other two fail). The review's negative results and its subprocess counts for O1 and O3 remain unchecked, as the plan says.
+- **2026-11-20T11:40:40-08:00** — Implemented: 13 commits ahead of `dev`.
+- **2026-11-20T11:46:11-08:00** — Review gate run at medium on PR #81 (two finders, one verifier); review posted to the PR. One commit followed it, `838b780`, and the checks ran clean after it: ruff check, ruff format --check, pyrefly, pytest (846 passed, coverage 95%).
+  - Review follow-up: three nits survived of nine candidates. Actioned: the two log index tests repeated the duplicated-row setup; they now share `_commit_a_duplicated_row` and `_assert_log_committed_plan_and_index` (a test-only change, so no new regression test). Conscious no-op: `log` takes an untracked index that matches a fresh render into its commit, as `finish` does, and the index is tracked by design. Conscious no-op: `start` checks for a pending PR record and `set-pr` checks it again, two extra git calls on a rare re-run; `set-pr` needs its own check. Rejected: the pending path commits the whole plan file, which `set-pr` already did on `dev`.
+
+## Retrospective
+
+- Re-checking every finding at the current tree before deciding paid off: the report was two releases old, one finding (D2) was mostly superseded, and the line numbers had all moved.
+- Choosing the narrow fix over the report's proposed seam (S1: catch the read error in `_load`, not a shared discovery layer) kept the change small and left the larger refactor for a plan that wants it.
+- Reversing each behavior fix and watching its test fail turned three findings the plan had only read (S2, D6, D5) into verified ones.
+- The doc findings (D1, D3, D4, D5) came from skill and rule text that had drifted from the code. Checking a skill's claim against the code it describes, as the close skill's remote table was checked against `finish`, is worth a step in any plan that edits prompts.
+- Left open, and owned by no plan yet: the `finish` stop message with no remote ends in `&& git push`, two deferred plans finalized in the same second were numbered in reverse, and O1 to O4 (repeated work) were left as is.

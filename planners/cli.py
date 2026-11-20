@@ -554,7 +554,7 @@ def _index_is_stale(repo_root: Path) -> bool:
 
     What "stale" catches, in order of how often it happens: a plan edited without
     reindexing, and a local merge — the index carries ``merge=union`` (see
-    ``install.INDEX_MERGE_ATTR``), which resolves rather than conflicting and
+    :data:`planners.host.INDEX_ATTR`), which resolves rather than conflicting and
     never loses a row, but can leave a row duplicated when both sides rewrote the
     same one. Union's repair is a regeneration, and this is what notices one is
     due.
@@ -1537,6 +1537,19 @@ def set_pr(
     _set_pr(Path.cwd(), ref, url, no_commit=no_commit)
 
 
+def _pr_record_pending(root: Path, target: Path, url: str) -> bool:
+    """True when ``target`` records ``url`` and ``HEAD`` does not have it yet.
+
+    That is a record an earlier run wrote and then failed to commit. An
+    uncommitted edit to a file ``HEAD`` already has this URL in is not that, and
+    stays where it is.
+    """
+    return not (
+        _is_unmodified(root, target)
+        or _frontmatter_at_head(root, target).get("pr") == url
+    )
+
+
 def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
     """The work of ``set-pr``, on the plan under ``root``; ``start`` calls it too."""
     if not re.fullmatch(r"https?://\S+", url):
@@ -1562,13 +1575,8 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
 
     if recorded == url:
         # Nothing is written: the file already says so. What is left to settle is
-        # whether an earlier run wrote it and failed to commit. An uncommitted edit
-        # to a file HEAD already has this URL in is not that, and stays where it is.
-        if (
-            no_commit
-            or _is_unmodified(root, target)
-            or _frontmatter_at_head(root, target).get("pr") == url
-        ):
+        # whether an earlier run wrote it and failed to commit.
+        if no_commit or not _pr_record_pending(root, target, url):
             typer.echo(f"plan {label} already records {url}; nothing to do.")
             return
     else:
@@ -2179,6 +2187,8 @@ def _start_pr(
     The plan is read from ``work_dir``, since ``set-pr`` commits on the branch and
     the base's copy never records the URL. An open PR the plan does not record is
     a run that stopped between the two, so it is adopted rather than opened twice.
+    A URL the plan records and ``HEAD`` does not is a ``plan [pr]`` commit that was
+    refused, and this run makes it.
     """
     if origin is not remote_mod.RemoteKind.github:
         return start_mod.Step(
@@ -2192,6 +2202,15 @@ def _start_pr(
     except (PlanError, OSError, UnicodeDecodeError) as exc:
         raise finish_mod.Stop(f"cannot read {plan_rel} on {branch}: {exc}") from None
     if meta.pr:
+        if _pr_record_pending(work_dir, path, meta.pr):
+            # An earlier run wrote the record and its commit was refused. The
+            # push check before this compares commits, so it cannot see that.
+            _set_pr(work_dir, ref, meta.pr)
+            return start_mod.Step(
+                start_mod.RAN,
+                f"committed the record of {meta.pr}; publish it with "
+                f"`{start_mod.push_command(branch)}`",
+            )
         return start_mod.Step(start_mod.DONE, f"the plan records {meta.pr}")
     url = start_mod.open_pr(work_dir, branch)
     if url is None:
@@ -2602,7 +2621,10 @@ def log_(
     commit of the plan alone then trips the validate hook, since pre-commit
     stashes the unstaged repair and checks the stale index. So a tracked index
     that has gone stale is refreshed and committed with the entry, as every other
-    lifecycle command does. A repo with no index is left without one.
+    lifecycle command does. An index that was already regenerated and left
+    uncommitted reads as fresh, since the working file is what is compared, so it
+    is told apart by differing from ``HEAD`` and goes into the commit the same
+    way, as ``finish`` takes it. A repo with no index is left without one.
     """
     root = Path.cwd()
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
@@ -2640,10 +2662,18 @@ def log_(
     if no_commit:
         return
     paths = [target]
-    if (root / INDEX_PATH).is_file() and _index_is_stale(root):
-        readme = _refresh_index(root)
-        paths.append(readme)
-        typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+    index = root / INDEX_PATH
+    if index.is_file():
+        if _index_is_stale(root):
+            readme = _refresh_index(root)
+            paths.append(readme)
+            typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+        elif not _is_unmodified(root, index):
+            # Already regenerated, and not committed: the working file matches
+            # a fresh render, so the staleness check above passes, while HEAD
+            # still has the stale one.
+            paths.append(index)
+            typer.echo(f"included the repaired index {_shown(index, root)}")
     _commit(
         root,
         f"plan [log]: {label} - {summary.strip() if summary else slug}",

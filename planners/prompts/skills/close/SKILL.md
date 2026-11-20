@@ -244,14 +244,23 @@ Report: review run, plan closed, PR merged, and what `finish` printed.
 
 ## The no-PR path
 
-Used only when the user asks for it (see the opening). Steps 1 through 5 run as
-written, with step 2 at whichever gate the user chose, minus the gate's PR
-steps: there is no PR to post the review to and none to mark ready, so the
-full gate on this path is review -> fix -> verify with the review surfaced
-inline, and `gh pr ready` is skipped. What changes is step 6, and one check
-that comes before anything else.
+Used when the user asks for it, or when `{cli} remote` reports a kind other
+than `github` (see the opening). Steps 1 through 5 run as written, with step 2
+at whichever gate the user chose, minus the PR steps:
 
-**When a PR already exists, stop and ask.** Before any step, look:
+- **In the gate**, there is no PR to look up, none to post the review to, and
+  none to mark ready. The full gate on this path is review -> fix -> verify
+  with the review surfaced inline, and the `gh pr list`, `gh pr comment`, and
+  `gh pr ready` calls are skipped.
+- **In step 5**, skip the `pr:` check. There is no URL to record, and
+  `conclude --no-pr` writes `pr: null`.
+
+What changes after that is step 6, and one check that comes before anything
+else.
+
+**When a PR already exists, stop and ask.** This check is for a `github` remote,
+where the user asked for the no-PR path. Any other kind has no PR, and `gh`
+cannot ask it, so skip the check there. Before any step, look:
 
 ```bash
 gh pr list --head "$(git branch --show-current)" --state open --json number,url
@@ -271,15 +280,25 @@ Ask before step 1, but do not close the PR yet: a gate that finds a blocker
 can still end the close, and a PR closed early with a "merging locally"
 comment would then say something false.
 
-**Step 6 on the no-PR path.** Push the closing commit on the feature branch as
-in step 6 (`conclude --no-pr` made it in step 5). Then, when the user chose to close an existing PR
-unmerged, close it now:
+**Step 6 on the no-PR path.** Which pushes and pulls run depends on the remote,
+so read the row for the kind `{cli} remote` printed in step 1:
+
+| Remote kind | Closing commit on the feature branch | Base, before the merge | Base, after the merge |
+|---|---|---|---|
+| `github`, `other-forge`, `bare` | `git push` | `git pull` | `git push` |
+| `single-branch` | no push: the remote takes no feature branch | `git pull` | `git push` only once the user has agreed to it |
+| `none` | no push | no pull | no push |
+
+Push the closing commit on the feature branch where the row says to, as in
+step 6 (`conclude --no-pr` made it in step 5). Then, when the user chose to
+close an existing PR unmerged, close it now:
 
 ```bash
 gh pr close <number> --comment "Closing unmerged; the branch is merged locally into $({cli} base)."
 ```
 
-Then, from the **main checkout**, merge the branch, push, and finish:
+Then, from the **main checkout**, merge the branch, push, and finish. Leave out
+the `git pull` and the `git push` where the row says to:
 
 ```bash
 git checkout "$({cli} base)" && git pull
@@ -288,12 +307,18 @@ git push
 {cli} finish {NNN} --no-pr
 ```
 
+On a `single-branch` remote the push of the base is a publish into the live
+document, as the opening says: show what it would publish, ask, and run it only
+on a yes. `finish` does not wait for it. With no remote (`none`) both commands
+fail, since there is nothing to pull from or push to.
+
 For a merge made without a PR, the printed subject names the branch, cut with a
 trailing `...` past 60 characters. The plan records `pr: null`, which takes the
 no-PR path without the flag; the flag says so out loud. `finish` checks that the
 base's upstream contains the branch, and stops with the merge command if it
-does not. The rest is the same as step 6: the worktree, the branches, the index,
-and the hooks.
+does not. On a `single-branch` remote, and with no remote, it checks the local
+base instead. The rest is the same as step 6: the worktree, the branches, the
+index, and the hooks.
 
 The index is marked `merge=union`, so the local merge does not conflict on it,
 and `finish` regenerates and commits it when the merge left it stale.

@@ -572,7 +572,11 @@ class _Plan:
 
 
 def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
-    """The plans under ``plans_dir``, and a note for each one that failed to parse."""
+    """The plans under ``plans_dir``, and a note for each one that could not be loaded.
+
+    A plan that cannot be read, or is not UTF-8, is skipped with a note like one
+    that fails to parse, in the words :meth:`PlanMetadata.from_file` uses for it.
+    """
     plans: list[_Plan] = []
     skipped: list[str] = []
     if not plans_dir.is_dir():
@@ -581,11 +585,16 @@ def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
         plan = child / "plan.md"
         if not (child.is_dir() and DIRNAME_RE.match(child.name) and plan.is_file()):
             continue
-        text = plan.read_text(encoding="utf-8")
+        shown = plan.relative_to(root).as_posix()
+        try:
+            text = plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            skipped.append(f"{shown}: the file cannot be read ({exc})")
+            continue
         try:
             meta = PlanMetadata.from_text(text, dirname=child.name)
         except PlanError as exc:
-            skipped.append(f"{plan.relative_to(root).as_posix()}: {exc}")
+            skipped.append(f"{shown}: {exc}")
             continue
         _, body = split_frontmatter(text)
         subs: list[SubplanMetadata] = []

@@ -609,6 +609,48 @@ def test_start_retries_a_pr_gh_refused(scene: Scene) -> None:
     assert scene.gh_creates() == 1
 
 
+def test_start_commits_a_pr_record_whose_commit_was_refused(
+    scene: Scene, tmp_path: Path
+) -> None:
+    scene.to_worktree_stage()
+    scene.first_commit()
+    refuse = tmp_path / "refuse-commits"
+    write_script(
+        scene.root / ".git" / "hooks" / "pre-commit",
+        f'[ -e "{refuse}" ] && exit 1\nexit 0\n',
+    )
+    refuse.touch()
+    failed = scene.start(cwd=scene.worktree)
+    assert failed.exit_code == 1
+    # The record is written and the PR is open; only the commit is missing.
+    plan = scene.worktree / _REL_PLAN
+    assert f"pr: {_URL}" in plan.read_text(encoding="utf-8")
+    assert git_out(scene.worktree, "log", "-1", "--format=%s").strip() == "work"
+
+    refuse.unlink()
+    result = scene.start(cwd=scene.worktree)
+    assert result.exit_code == 0, result.output
+    assert f"ran pr: committed the record of {_URL}" in result.output
+    assert f"git push origin {_BRANCH}" in result.output
+    assert git_out(scene.worktree, "status", "--porcelain") == ""
+    assert git_out(scene.worktree, "log", "-1", "--format=%s").strip() == (
+        "plan [pr]: 005 - my-thing"
+    )
+    # Neither the PR nor its Log entry is made a second time.
+    assert scene.gh_creates() == 1
+    assert plan.read_text(encoding="utf-8").count("— PR opened:") == 1
+
+    # A later edit to the plan is not a pending record, and is left alone.
+    git(scene.worktree, "push", "-q", "origin", _BRANCH)
+    plan.write_text(plan.read_text(encoding="utf-8") + "\nA note.\n", encoding="utf-8")
+    after = scene.start(cwd=scene.worktree)
+    assert after.exit_code == 0, after.output
+    assert f"done pr: the plan records {_URL}" in after.output
+    assert git_out(scene.worktree, "status", "--porcelain").strip() == (
+        f"M {_REL_PLAN.as_posix()}"
+    )
+
+
 def test_start_adopts_an_open_pr_the_plan_does_not_record(scene: Scene) -> None:
     scene.to_worktree_stage()
     scene.first_commit()

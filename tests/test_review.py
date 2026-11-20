@@ -450,6 +450,23 @@ def test_a_plan_that_fails_to_parse_is_reported_as_skipped(repo: Path) -> None:
     )
 
 
+def test_a_plan_that_is_not_utf8_is_reported_as_skipped(repo: Path) -> None:
+    # The read used to sit outside the handler, so one such file ended the
+    # whole review in a UnicodeDecodeError traceback.
+    before = {p.prefix for p in _gather(repo).plans}
+    path = repo / ".planners/plans/005-latin/plan.md"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(_plan(5, "latin", "draft", DRAFT_CREATED).encode() + b"caf\xe9\n")
+
+    report = _gather(repo)
+    assert len(report.skipped) == 1
+    assert report.skipped[0].startswith(
+        ".planners/plans/005-latin/plan.md: the file cannot be read"
+    )
+    # Every other plan is still reviewed.
+    assert {p.prefix for p in report.plans} == before
+
+
 def test_plan_refs_carry_status(repo: Path) -> None:
     draft = _by_prefix(_gather(repo))["001"]
     assert [(r.ref, r.status) for r in draft.plan_refs] == [

@@ -120,10 +120,12 @@ git add <the changed files> .planners/plans/{NNN}-<slug>/plan.md && git commit -
 The committing form is for an entry with no change beside it: a decision, an
 answer, a result. There is no mainline guard: a Log entry belongs on
 the feature branch, with the work. When the tracked index is stale (a local
-merge left a duplicated row, or a `post-merge` repair was left uncommitted),
-the command refreshes it and commits it with the entry. It refuses a note that
-names an absolute or home-directory path; describe the file, or copy it into the
-plan's directory as a sidecar (`--allow-local-paths` overrides).
+merge left a duplicated row), the command refreshes it and commits it with the
+entry. An index that was already regenerated and left uncommitted (a
+`post-merge` repair, or `{cli} index .` run by hand) goes into the same commit.
+It refuses a note that names an absolute or home-directory path; describe the
+file, or copy it into the plan's directory as a sidecar (`--allow-local-paths`
+overrides).
 
 **Block** — set `status: blocked` for work that is waiting on a person: a
 decision, a manual check, access only they have. It is an open state, so
