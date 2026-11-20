@@ -2602,7 +2602,10 @@ def log_(
     commit of the plan alone then trips the validate hook, since pre-commit
     stashes the unstaged repair and checks the stale index. So a tracked index
     that has gone stale is refreshed and committed with the entry, as every other
-    lifecycle command does. A repo with no index is left without one.
+    lifecycle command does. An index that was already regenerated and left
+    uncommitted reads as fresh, since the working file is what is compared, so it
+    is told apart by differing from ``HEAD`` and goes into the commit the same
+    way, as ``finish`` takes it. A repo with no index is left without one.
     """
     root = Path.cwd()
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
@@ -2640,10 +2643,18 @@ def log_(
     if no_commit:
         return
     paths = [target]
-    if (root / INDEX_PATH).is_file() and _index_is_stale(root):
-        readme = _refresh_index(root)
-        paths.append(readme)
-        typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+    index = root / INDEX_PATH
+    if index.is_file():
+        if _index_is_stale(root):
+            readme = _refresh_index(root)
+            paths.append(readme)
+            typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+        elif not _is_unmodified(root, index):
+            # Already regenerated, and not committed: the working file matches
+            # a fresh render, so the staleness check above passes, while HEAD
+            # still has the stale one.
+            paths.append(index)
+            typer.echo(f"included the repaired index {_shown(index, root)}")
     _commit(
         root,
         f"plan [log]: {label} - {summary.strip() if summary else slug}",

@@ -169,6 +169,33 @@ def test_log_refreshes_and_commits_a_stale_index(
     assert git_out(tmp_path, "status", "--porcelain") == ""
 
 
+def test_log_commits_an_index_repair_left_uncommitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The post-merge hook, or `index .` by hand, regenerated the index and left
+    # it uncommitted. The working file is fresh, so only HEAD shows it is owed.
+    _repo(tmp_path, committed=True)
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    index = tmp_path / ".planners" / "README.md"
+    row = next(line for line in index.read_text().splitlines() if "| 005 |" in line)
+    index.write_text(index.read_text() + row + "\n", encoding="utf-8")
+    commit_all(tmp_path, "merge with a union-duplicated row")
+    assert runner.invoke(app, ["index", "."]).exit_code == 0
+    _duplicate_rows_hook(tmp_path)
+
+    result = runner.invoke(app, ["log", "005", "Merged the base."])
+    assert result.exit_code == 0, result.output
+    assert "refreshed the stale index" not in result.output
+    assert "included the repaired index" in result.output
+    changed = git_out(tmp_path, "show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(changed) == [
+        ".planners/README.md",
+        ".planners/plans/005-parser/plan.md",
+    ]
+    assert git_out(tmp_path, "status", "--porcelain") == ""
+
+
 def test_log_leaves_a_fresh_index_out_of_the_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
