@@ -574,15 +574,6 @@ def _staged_text(slug: str, created: str, title: str = "", body_extra: str = "")
     )
 
 
-def _write_staged(staging: Path, dirname: str, text: str) -> Path:
-    """Write a staged plan at ``<staging>/<dirname>/plan.md`` (direct test control)."""
-    d = staging / dirname
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / "plan.md"
-    path.write_text(text, encoding="utf-8")
-    return path
-
-
 def test_add_defer_stages_unnumbered_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -617,10 +608,10 @@ def test_finalize_orders_by_created_not_dirname(
     # Two staged plans whose directory order (alphabetical) is the REVERSE of their
     # created order: finalize must number by created, so the older one gets 000.
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(
+    _write_plan(
         staging, "aaaa-newer", _staged_text("newer", "2026-06-11T09:00:00-07:00")
     )
-    _write_staged(
+    _write_plan(
         staging, "zzzz-older", _staged_text("older", "2026-06-10T09:00:00-07:00")
     )
     monkeypatch.chdir(tmp_path)
@@ -646,7 +637,7 @@ def test_finalize_assigns_next_numbers_after_existing(
         _VALID_PLAN.replace("id: 1", "id: 0").replace("slug: thing", "slug: existing"),
     )
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(
+    _write_plan(
         staging, "tok-fresh", _staged_text("fresh", "2026-06-12T09:00:00-07:00")
     )
     monkeypatch.chdir(tmp_path)
@@ -663,12 +654,10 @@ def test_finalize_commits_batch_atomically_and_self_check_passes(
     # Distinct created times so the number<->slug mapping is deterministic (the CLI
     # clock has second precision, which would tie two back-to-back `add --defer`s).
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(
+    _write_plan(
         staging, "tok-alpha", _staged_text("alpha", "2026-06-10T09:00:00-07:00")
     )
-    _write_staged(
-        staging, "tok-beta", _staged_text("beta", "2026-06-11T09:00:00-07:00")
-    )
+    _write_plan(staging, "tok-beta", _staged_text("beta", "2026-06-11T09:00:00-07:00"))
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["finalize"])
@@ -702,9 +691,7 @@ def test_finalize_single_plan_uses_add_slug_commit_message(
     # A one-plan batch keeps the familiar `plan [add]: NNN - slug` message.
     init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(
-        staging, "tok-solo", _staged_text("solo", "2026-06-10T09:00:00-07:00")
-    )
+    _write_plan(staging, "tok-solo", _staged_text("solo", "2026-06-10T09:00:00-07:00"))
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["finalize"])
@@ -725,7 +712,7 @@ def test_finalize_preserves_drafted_body(
     # A body the creator drafted into the staged plan survives materialization.
     staging = tmp_path / ".planners" / "staging"
     body = "\n## Plan\n\nDo the thing carefully.\n"
-    _write_staged(
+    _write_plan(
         staging,
         "tok-drafted",
         _staged_text("drafted", "2026-06-12T09:00:00-07:00", body_extra=body),
@@ -754,8 +741,8 @@ def test_finalize_duplicate_slug_kept_distinct_by_number(
     # Two concurrent creators picking the same slug: finalize numbers them
     # distinctly (no clobber) and notes the duplicate.
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(staging, "tok1-dup", _staged_text("dup", "2026-06-10T09:00:00-07:00"))
-    _write_staged(staging, "tok2-dup", _staged_text("dup", "2026-06-11T09:00:00-07:00"))
+    _write_plan(staging, "tok1-dup", _staged_text("dup", "2026-06-10T09:00:00-07:00"))
+    _write_plan(staging, "tok2-dup", _staged_text("dup", "2026-06-11T09:00:00-07:00"))
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["finalize", "--no-commit"])
@@ -774,10 +761,8 @@ def test_finalize_invalid_entry_aborts_before_materializing_any(
     # filesystem mutation, so a valid earlier plan is never stranded materialized-
     # but-uncommitted. The valid "good" sorts first by created; the bad one second.
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(
-        staging, "tok-good", _staged_text("good", "2026-06-10T09:00:00-07:00")
-    )
-    _write_staged(
+    _write_plan(staging, "tok-good", _staged_text("good", "2026-06-10T09:00:00-07:00"))
+    _write_plan(
         staging, "tok-bad", _staged_text("Bad-Slug", "2026-06-11T09:00:00-07:00")
     )
     monkeypatch.chdir(tmp_path)
@@ -826,22 +811,6 @@ _DRAFT_PLAN = (
     "created: 2026-06-07T12:00:00-07:00\nconcluded:\npr:\n---\n\n"
     "# My thing\n\n## Plan\n\nBody text that must survive verbatim.\n"
 )
-
-
-def _commit_all(path: Path, message: str) -> None:
-    """Stage everything and commit, so HEAD is born and the guard is reachable."""
-    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
-    subprocess.run(["git", "commit", "-qm", message], cwd=path, check=True)
-
-
-def _git_log(path: Path) -> str:
-    return subprocess.run(
-        ["git", "log", "--oneline"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
 
 
 def test_activate_no_commit_flips_status_and_derives_branch(
@@ -999,14 +968,14 @@ def test_activate_on_already_active_plan_is_a_noop(
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", original)
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
 
     result = runner.invoke(app, ["activate", "005"])
     assert result.exit_code == 0, result.output
     assert "already active" in result.output
     # Nothing rewritten and — crucially — no empty commit attempted.
     assert path.read_text(encoding="utf-8") == original
-    assert "plan [activate]" not in _git_log(tmp_path)
+    assert "plan [activate]" not in git_out(tmp_path, "log", "--oneline")
 
 
 def test_activate_warns_when_branch_is_ignored(
@@ -1038,12 +1007,12 @@ def test_activate_commits_by_default_with_slug_subject(
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
 
     result = runner.invoke(app, ["activate", "005"])
     assert result.exit_code == 0, result.output
     # The subject names the slug, not the title ("My thing").
-    assert "plan [activate]: 005 - my-thing" in _git_log(tmp_path)
+    assert "plan [activate]: 005 - my-thing" in git_out(tmp_path, "log", "--oneline")
     # The index was refreshed and committed alongside the plan.
     readme = (tmp_path / ".planners" / "README.md").read_text(encoding="utf-8")
     assert "active" in readme
@@ -1087,7 +1056,7 @@ def test_activate_commits_an_explicit_branch(
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
 
     result = runner.invoke(app, ["activate", "005", "--branch", "spike/other"])
     assert result.exit_code == 0, result.output
@@ -1095,7 +1064,7 @@ def test_activate_commits_an_explicit_branch(
     assert "branch: spike/other" in path.read_text(encoding="utf-8")
     assert "feature/005-my-thing" not in path.read_text(encoding="utf-8")
     # The subject still names the slug, and the index was refreshed alongside it.
-    assert "plan [activate]: 005 - my-thing" in _git_log(tmp_path)
+    assert "plan [activate]: 005 - my-thing" in git_out(tmp_path, "log", "--oneline")
     assert "active" in (tmp_path / ".planners" / "README.md").read_text(
         encoding="utf-8"
     )
@@ -1120,7 +1089,7 @@ def test_activate_appends_the_activation_entry(
     )
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     branch, before = (
         subprocess.run(
             ["git", "rev-parse", *args],
@@ -1213,7 +1182,7 @@ def test_activate_returns_an_implemented_plan_on_its_feature_branch(
     )
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
 
     # Review sent it back: the return is made where the work is, unguarded.
@@ -1235,7 +1204,7 @@ def test_a_first_activation_prints_no_review_round_hint(
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     result = runner.invoke(app, ["activate", "005"])
     assert result.exit_code == 0, result.output
     assert "review round" not in result.output
@@ -1265,7 +1234,7 @@ def test_activate_still_guards_a_draft_on_a_feature_branch(
     path = _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-qb", "feature/my-thing"], cwd=tmp_path)
 
     result = runner.invoke(app, ["activate", "005"])
@@ -1560,7 +1529,7 @@ def test_activate_names_the_branch_recorded_and_the_branch_committed_on(
     init_git(tmp_path)
     subprocess.run(["git", "checkout", "-qb", "main"], cwd=tmp_path, check=True)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["activate", "005"])
@@ -1586,7 +1555,7 @@ def test_activate_on_a_detached_head_says_so(
 ) -> None:
     init_git(tmp_path)
     _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
-    _commit_all(tmp_path, "initial commit")
+    commit_all(tmp_path, "initial commit")
     subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["activate", "005", "--allow-branch"])
@@ -1599,7 +1568,7 @@ def test_finalize_refuses_an_invalid_created_before_moving_anything(
 ) -> None:
     init_git(tmp_path)
     staging = tmp_path / ".planners" / "staging"
-    _write_staged(staging, "tok-a", _staged_text("alpha", "not-a-date"))
+    _write_plan(staging, "tok-a", _staged_text("alpha", "not-a-date"))
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["finalize", "--no-commit"])
