@@ -284,7 +284,9 @@ resolve). `git fetch` does not refresh `origin/HEAD`; `git remote set-head origi
 re-derives it. `--allow-branch` is for a repo whose mainline is genuinely not detectable
 by name, not a way past the check.
 
-The guard covers activating a `draft`, `blocked`, or `inactive` plan. Returning one from
+The guard covers adding a plan, and activating a `draft`, `blocked`, or `inactive` one. A
+nested subplan added under an `active` umbrella is not guarded: it commits on the current
+branch, where the umbrella's work is, and it is marked `active` there too. Returning a plan from
 `implemented` is not guarded, nor is returning a blocked plan on the branch it records after
 an earlier activation, and `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
 `{cli} block`, `{cli} conclude`, and `{cli} retire` commit where they are run: the work is on its
@@ -297,7 +299,19 @@ HEAD is on the plan's recorded branch, since the date it records is that branch'
 `{cli} finalize`, `{cli} activate`, `{cli} set-pr`, `{cli} implemented`, `{cli} log`,
 `{cli} block`, `{cli} conclude` (`plan [close]`), and `{cli} retire` write. A slug is fixed by the
 directory name; a title can be reworded, so a title-derived subject drifts from the plan it names.
-(`log` is the exception: `--summary` replaces the slug with a brief summary of the entry.)
+A nested subplan's commits name it `{NNN}<letter> - <step>`.
+
+Three subjects take another form. `log --summary` replaces the slug with a brief summary of
+the entry. A `finalize` that numbers more than one plan writes the range and the count,
+`plan [add]: {NNN}-{MMM} (<n> plans)`. `review --commit` writes the count alone,
+`plan [review]: <n> plans`.
+
+A command that commits writes its own subject. Two steps leave the commit to the session, and
+the skill that describes each gives the subject to write: `add --no-commit` followed by the
+body (`plan [add]: {NNN} - <slug>`), and a nested subplan marked `active` with
+`subplans --set` (`plan [activate]: {NNN}<letter> - <step>`). The same holds for a commit the
+tool attempted and git refused, where its error names the subject. Do not write a plan subject
+anywhere else, and do not imitate the form in other commits.
 
 ## No Separate Summaries
 
