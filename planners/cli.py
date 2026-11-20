@@ -1537,6 +1537,19 @@ def set_pr(
     _set_pr(Path.cwd(), ref, url, no_commit=no_commit)
 
 
+def _pr_record_pending(root: Path, target: Path, url: str) -> bool:
+    """True when ``target`` records ``url`` and ``HEAD`` does not have it yet.
+
+    That is a record an earlier run wrote and then failed to commit. An
+    uncommitted edit to a file ``HEAD`` already has this URL in is not that, and
+    stays where it is.
+    """
+    return not (
+        _is_unmodified(root, target)
+        or _frontmatter_at_head(root, target).get("pr") == url
+    )
+
+
 def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
     """The work of ``set-pr``, on the plan under ``root``; ``start`` calls it too."""
     if not re.fullmatch(r"https?://\S+", url):
@@ -1562,13 +1575,8 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
 
     if recorded == url:
         # Nothing is written: the file already says so. What is left to settle is
-        # whether an earlier run wrote it and failed to commit. An uncommitted edit
-        # to a file HEAD already has this URL in is not that, and stays where it is.
-        if (
-            no_commit
-            or _is_unmodified(root, target)
-            or _frontmatter_at_head(root, target).get("pr") == url
-        ):
+        # whether an earlier run wrote it and failed to commit.
+        if no_commit or not _pr_record_pending(root, target, url):
             typer.echo(f"plan {label} already records {url}; nothing to do.")
             return
     else:
@@ -2179,6 +2187,8 @@ def _start_pr(
     The plan is read from ``work_dir``, since ``set-pr`` commits on the branch and
     the base's copy never records the URL. An open PR the plan does not record is
     a run that stopped between the two, so it is adopted rather than opened twice.
+    A URL the plan records and ``HEAD`` does not is a ``plan [pr]`` commit that was
+    refused, and this run makes it.
     """
     if origin is not remote_mod.RemoteKind.github:
         return start_mod.Step(
@@ -2192,6 +2202,15 @@ def _start_pr(
     except (PlanError, OSError, UnicodeDecodeError) as exc:
         raise finish_mod.Stop(f"cannot read {plan_rel} on {branch}: {exc}") from None
     if meta.pr:
+        if _pr_record_pending(work_dir, path, meta.pr):
+            # An earlier run wrote the record and its commit was refused. The
+            # push check before this compares commits, so it cannot see that.
+            _set_pr(work_dir, ref, meta.pr)
+            return start_mod.Step(
+                start_mod.RAN,
+                f"committed the record of {meta.pr}; publish it with "
+                f"`{start_mod.push_command(branch)}`",
+            )
         return start_mod.Step(start_mod.DONE, f"the plan records {meta.pr}")
     url = start_mod.open_pr(work_dir, branch)
     if url is None:
