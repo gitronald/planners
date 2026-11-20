@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-20
+
 ### Changed
 
 - The `close` skill's no-PR path says what to run for each kind of remote. It is
