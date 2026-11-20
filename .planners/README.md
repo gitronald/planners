@@ -2,7 +2,7 @@
 
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
-| 029 | [Review and clean up the codebase](plans/029-codebase-review-and-cleanup/plan.md) | active | — | — |
+| 029 | [Review and clean up the codebase](plans/029-codebase-review-and-cleanup/plan.md) | active | — | [#81](https://github.com/gitronald/planners/pull/81) |
 | 023 | [Link each open plan's feature-branch copy from the index](plans/023-index-branch-link/plan.md) | draft | — | — |
 | 028 | [Treat review follow-ups as one round and cut lifecycle paperwork](plans/028-review-rounds-and-lifecycle-paperwork/plan.md) | done | 2026-11-19 15:00 PT | [#79](https://github.com/gitronald/planners/pull/79) |
 | 027 | [Remove the legacy layout and pre-pkgskills compatibility](plans/027-purge-legacy-compat/plan.md) | done | 2026-11-18 18:41 PT | [#77](https://github.com/gitronald/planners/pull/77) |

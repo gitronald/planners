@@ -5,7 +5,7 @@ status: active
 branch: feature/029-codebase-review-and-cleanup
 created: 2026-11-20T11:14:12-08:00
 concluded:
-pr:
+pr: https://github.com/gitronald/planners/pull/81
 ---
 
 # Review and clean up the codebase
@@ -240,3 +240,4 @@ that `planners install --check` reports what a reinstall would change.
   - Base: `dev` at `69ae1bd`
   - Worktree: `.worktrees/029-codebase-review-and-cleanup`
   - PR: pending
+- **2026-11-20T11:35:03-08:00** — PR opened: https://github.com/gitronald/planners/pull/81
