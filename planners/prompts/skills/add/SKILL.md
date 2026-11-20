@@ -227,9 +227,10 @@ Use deferred numbering instead:
 {cli} finalize                               # once, after all creators finish
 ```
 
-- `--defer` writes an **unnumbered** plan under `.planners/staging/<token>-<slug>/`
-  with no number, no commit, and no shared state, so any number of creators run
-  safely in parallel. Edit the staged `plan.md` body just like a normal plan.
+- `--defer` writes an **unnumbered** plan under
+  `.planners/staging/<time>-<token>-<slug>/` with no number, no commit, and no
+  shared state, so any number of creators run safely in parallel. Edit the staged
+  `plan.md` body just like a normal plan.
 - `{cli} finalize` is the **single serialized writer**: it orders the staged
   plans by `created`, assigns the next sequential numbers, materializes them under
   `plans/` (sidecar files included), refreshes the index, commits the batch in one

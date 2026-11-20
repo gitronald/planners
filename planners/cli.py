@@ -19,6 +19,7 @@ import secrets
 import shlex
 import shutil
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from importlib import metadata
@@ -676,9 +677,10 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
     """Read staged (deferred) plans, ordered by ``created`` then directory name.
 
     Each staged plan directory contributes ``(dir, frontmatter, body)``. Ordering
-    by ``created`` (tie-broken by directory name for determinism) reproduces the
-    numbering a sequence of foreground ``add`` calls would have produced,
-    independent of the filesystem's iteration order.
+    by ``created`` reproduces the numbering a sequence of foreground ``add`` calls
+    would have produced, independent of the filesystem's iteration order. The
+    directory name breaks a tie within one second: ``add --defer`` leads it with
+    the staging time in nanoseconds, so the tie follows the order of staging.
     """
     if not staging.is_dir():
         return []
@@ -1024,10 +1026,13 @@ def add(
             raise typer.Exit(1)
         staging = root / STAGING_DIR
         staging.mkdir(parents=True, exist_ok=True)
-        # A random token keys the staging dir so two creators picking the same slug
-        # never collide on the directory name (the number, and any slug clash, are
+        # The directory name leads with the staging time in nanoseconds,
+        # zero-padded, so sorting by name follows the order of staging: finalize
+        # breaks a tie on `created`, which has whole-second precision, by name.
+        # A random token after it keeps two creators picking the same slug from
+        # colliding on the directory name (the number, and any slug clash, are
         # resolved at finalize, the sole writer).
-        staged_dir = staging / f"{secrets.token_hex(4)}-{slug}"
+        staged_dir = staging / f"{time.time_ns():019d}-{secrets.token_hex(4)}-{slug}"
         if staged_dir.exists():
             _err(f"staging collision at {staged_dir.relative_to(root)}; retry.")
             raise typer.Exit(1)
