@@ -554,7 +554,7 @@ def _index_is_stale(repo_root: Path) -> bool:
 
     What "stale" catches, in order of how often it happens: a plan edited without
     reindexing, and a local merge — the index carries ``merge=union`` (see
-    ``install.INDEX_MERGE_ATTR``), which resolves rather than conflicting and
+    :data:`planners.host.INDEX_ATTR`), which resolves rather than conflicting and
     never loses a row, but can leave a row duplicated when both sides rewrote the
     same one. Union's repair is a regeneration, and this is what notices one is
     due.
