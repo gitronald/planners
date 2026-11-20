@@ -599,7 +599,7 @@ def test_add_defer_stages_unnumbered_plan(
     assert "slug: my-feature" in text
     assert "# My Feature" in text
     # deferred creation never touches plans/ and never commits
-    assert not (tmp_path / ".planners" / "plans" / "000-alpha").exists()
+    assert not list((tmp_path / ".planners" / "plans").glob("*"))
 
 
 def test_add_defer_rejects_parent(
