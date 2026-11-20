@@ -1,7 +1,7 @@
 ---
 id: 30
 slug: review-leftovers
-status: active
+status: implemented
 branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
 concluded:
@@ -132,3 +132,4 @@ Checks:
   - Each new test was run with its fix reverted (the source file swapped back to the previous commit's, then restored): all four failed, item 3 with 3 detect calls against 1 and item 4 with 16 log/show queries against 11 distinct.
   - Checks at `5a2b982`: ruff check, ruff format --check, pyrefly check, and pytest (850 passed, coverage 95.11%) all exit 0. dev had not moved since the activation, so no merge of the base was needed.
   - Not verified: a full no-PR `finish` run to completion in a repo with no remote (the test covers the stop only); staging order on a platform with a coarse `time_ns` clock (tests ran on Linux).
+- **2026-11-20T12:27:56-08:00** — Implemented: 9 commits ahead of `dev`.
