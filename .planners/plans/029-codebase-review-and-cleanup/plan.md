@@ -1,10 +1,10 @@
 ---
 id: 29
 slug: codebase-review-and-cleanup
-status: implemented
+status: done
 branch: feature/029-codebase-review-and-cleanup
 created: 2026-11-20T11:14:12-08:00
-concluded:
+concluded: 2026-11-20T11:46:04-08:00
 pr: https://github.com/gitronald/planners/pull/81
 ---
 
@@ -252,3 +252,11 @@ that `planners install --check` reports what a reinstall would change.
 - **2026-11-20T11:40:40-08:00** — Implemented: 13 commits ahead of `dev`.
 - **2026-11-20T11:46:11-08:00** — Review gate run at medium on PR #81 (two finders, one verifier); review posted to the PR. One commit followed it, `838b780`, and the checks ran clean after it: ruff check, ruff format --check, pyrefly, pytest (846 passed, coverage 95%).
   - Review follow-up: three nits survived of nine candidates. Actioned: the two log index tests repeated the duplicated-row setup; they now share `_commit_a_duplicated_row` and `_assert_log_committed_plan_and_index` (a test-only change, so no new regression test). Conscious no-op: `log` takes an untracked index that matches a fresh render into its commit, as `finish` does, and the index is tracked by design. Conscious no-op: `start` checks for a pending PR record and `set-pr` checks it again, two extra git calls on a rare re-run; `set-pr` needs its own check. Rejected: the pending path commits the whole plan file, which `set-pr` already did on `dev`.
+
+## Retrospective
+
+- Re-checking every finding at the current tree before deciding paid off: the report was two releases old, one finding (D2) was mostly superseded, and the line numbers had all moved.
+- Choosing the narrow fix over the report's proposed seam (S1: catch the read error in `_load`, not a shared discovery layer) kept the change small and left the larger refactor for a plan that wants it.
+- Reversing each behavior fix and watching its test fail turned three findings the plan had only read (S2, D6, D5) into verified ones.
+- The doc findings (D1, D3, D4, D5) came from skill and rule text that had drifted from the code. Checking a skill's claim against the code it describes, as the close skill's remote table was checked against `finish`, is worth a step in any plan that edits prompts.
+- Left open, and owned by no plan yet: the `finish` stop message with no remote ends in `&& git push`, two deferred plans finalized in the same second were numbered in reverse, and O1 to O4 (repeated work) were left as is.
