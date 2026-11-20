@@ -58,7 +58,9 @@ the end of the Log:
 - `implemented`: stage 3, or stage 4 once the Log ends with a
   *Review follow-up* entry.
 - `done` or `retired`: closed. Run `{cli} finish {NNN}` if the worktree is
-  still there, and stop.
+  still there, and stop. `conclude` writes `done` before the merge, so a
+  `finish` that stops and prints a merge command means the merge is still owed:
+  the run was interrupted in stage 5, and it resumes there, at `close` step 6.
 
 **A plan that is a few edits to a file or two** runs in this session instead:
 follow `implement`, then `close`, as written. Say at the start which way the
