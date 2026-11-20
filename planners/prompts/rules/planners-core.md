@@ -15,10 +15,15 @@ judging, or describing a plan without it, run `{cli} rule planners`.
 - **`plan [add]` and `plan [activate]` commits belong on the mainline**, before the
   feature branch or worktree exists, so the plan is recorded there even if the branch
   never merges. `add`, `finalize`, and `activate` refuse off it; switch to the mainline,
-  and do not reach for `--allow-branch` to get past the refusal
-- **Plan commit subjects are the tool's**: `plan [<verb>]: {NNN} - <slug>`. Do not write
-  one by hand, imitate the format in other commits, or flag it against another
-  commit-message rule
+  and do not reach for `--allow-branch` to get past the refusal. Two cases commit on the
+  plan's branch, where the work is, and are not refused: a nested subplan added or
+  activated under an `active` umbrella, and a plan returned to `active` from `implemented`
+  or from a block set on that branch
+- **Plan commit subjects are the tool's**: `plan [<verb>]: {NNN} - <slug>`. A command
+  that commits writes its own. Write one by hand only where the printed skill gives the
+  subject, for a step its command leaves uncommitted (`add --no-commit`, a nested
+  subplan's `subplans --set`). Do not imitate the format in other commits, or flag it
+  against another commit-message rule
 - **A plan is shared.** Keep real names, personal emails, account handles, and absolute
   or home-directory paths out of the plan, its Log, and its sidecar files; use stand-ins
   (`Jane Doe`, `you@example.com`, `owner/repo`, repo-relative paths). On a public repo

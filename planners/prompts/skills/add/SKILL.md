@@ -97,11 +97,11 @@ sibling plan (see below).
 
 The first nested `add` **writes the table itself**, under a `### Subplans`
 heading of its own. It places the table after the first subsection of the
-umbrella's `## Plan` section (the opening summary), or at the top of that
-section when there are no subsections yet. Do not write a heading or a table
-beforehand, or the umbrella ends up with two. To place the table somewhere
-else, put the two marker comments there first, with nothing between them, and
-the command fills them in.
+umbrella's `## Plan` section (the opening summary), or at the end of that
+section, after its lead paragraph, when there are no subsections yet. Do not
+write a heading or a table beforehand, or the umbrella ends up with two. To
+place the table somewhere else, put the two marker comments there first, with
+nothing between them, and the command fills them in.
 
 - **Letters are fixed once assigned**, as plan numbers are. The command takes
   the next free letter, starting at `a`, so letters follow the order the
@@ -227,17 +227,25 @@ Use deferred numbering instead:
 {cli} finalize                               # once, after all creators finish
 ```
 
-- `--defer` writes an **unnumbered** plan under `.planners/staging/<token>-<slug>/`
-  with no number, no commit, and no shared state, so any number of creators run
-  safely in parallel. Edit the staged `plan.md` body just like a normal plan.
+- `--defer` writes an **unnumbered** plan under
+  `.planners/staging/<time>-<token>-<slug>/` with no number, no commit, and no
+  shared state, so any number of creators run safely in parallel. Edit the staged
+  `plan.md` body just like a normal plan.
 - `{cli} finalize` is the **single serialized writer**: it orders the staged
   plans by `created`, assigns the next sequential numbers, materializes them under
   `plans/` (sidecar files included), refreshes the index, commits the batch in one
   commit (`plan [add]: NNN - <slug>` for one plan, else `plan [add]: NNN-MMM
   (N plans)`), and runs a self-check. Run it **once**, after every deferred creator
   has finished (the explicit "batch complete" signal). It commits, so the same
-  mainline guard applies — run it from a mainline branch. A refused finalize
-  leaves the batch staged and recoverable, nothing half-materialized.
+  mainline guard applies — run it from a mainline branch.
+- **A refusal leaves the batch staged; a failed commit does not.** The mainline
+  guard and the validation of every staged plan run before anything moves, so a
+  finalize refused by either leaves the batch staged, nothing half-materialized:
+  fix what it names and run it again. A commit that fails after that (a hook
+  that rejects it, no commit identity) leaves the plans numbered under `plans/`,
+  the index refreshed, and staging empty: added to git's index, not committed.
+  A second `finalize` finds nothing staged, so do not run one. Fix what stopped
+  the commit, then commit those paths with the subject the error names.
 - Two creators may pick the same slug; finalize keeps them distinct by number and
   notes the duplicate. `--defer` is for top-level plans only (not `--parent`,
   nested or lettered).

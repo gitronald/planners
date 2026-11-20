@@ -3,6 +3,8 @@
 | # | Plan | Status | Concluded | PR |
 |---|---|---|---|---|
 | 023 | [Link each open plan's feature-branch copy from the index](plans/023-index-branch-link/plan.md) | draft | — | — |
+| 030 | [Fix the leftovers from the codebase review](plans/030-review-leftovers/plan.md) | done | 2026-11-20 12:32 PT | [#82](https://github.com/gitronald/planners/pull/82) |
+| 029 | [Review and clean up the codebase](plans/029-codebase-review-and-cleanup/plan.md) | done | 2026-11-20 11:46 PT | [#81](https://github.com/gitronald/planners/pull/81) |
 | 028 | [Treat review follow-ups as one round and cut lifecycle paperwork](plans/028-review-rounds-and-lifecycle-paperwork/plan.md) | done | 2026-11-19 15:00 PT | [#79](https://github.com/gitronald/planners/pull/79) |
 | 027 | [Remove the legacy layout and pre-pkgskills compatibility](plans/027-purge-legacy-compat/plan.md) | done | 2026-11-18 18:41 PT | [#77](https://github.com/gitronald/planners/pull/77) |
 | 026 | [Scope the generated rule to plan files and keep a short always-on part](plans/026-scope-generated-rule/plan.md) | done | 2026-11-18 13:44 PT | [#75](https://github.com/gitronald/planners/pull/75) |

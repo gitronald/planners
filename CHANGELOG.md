@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-20
+
+### Changed
+
+- The `close` skill's no-PR path says what to run for each kind of remote. It is
+  taken when the user asks or when `planners remote` reports a kind other than
+  `github`, its `gh` calls are for a GitHub remote only, and a table gives the
+  pushes and the pull each kind takes: none with no remote, and on a
+  `single-branch` remote no push of the feature branch and a push of the base
+  only once the user has agreed. Before, the section ran `gh pr list`,
+  `git pull`, and two pushes whatever the remote was.
+- The always-on rule and the full rule name the plan commits that land off the
+  mainline (a nested subplan added or activated under an `active` umbrella, a
+  plan returned to `active` on its own branch) and the plan subjects a session
+  writes by hand because a skill gives them (`add --no-commit`, a nested
+  subplan's `subplans --set`). The full rule also gives the subject of a batch
+  `finalize` and of `review --commit`. Before, the rule forbade what the `add`
+  and `implement` skills instruct.
+- The `add` skill says where the first nested `add` puts the subplans table when
+  `## Plan` has no subsections (at the end of the section, as the code does), and
+  what a `finalize` leaves behind when its commit fails: the plans numbered and
+  staging empty, to be committed by hand, not finalized again.
+- The `pipeline` skill says that a `done` plan whose `finish` stops with a merge
+  command was interrupted before the merge, and resumes at `close` step 6.
+- A first `planners activate` detects the mainline once, for the guard and the
+  activation entry both, and reads only the branch name after its commit. It
+  detected it three times, each up to six git calls.
+- `planners review` reads each file at a revision, and runs each history query,
+  once per review. It repeated the same `git show` and `git log` for every
+  reference that led to them.
+
+### Fixed
+
+- `planners review` no longer ends in a `UnicodeDecodeError` traceback when a
+  plan file is not valid UTF-8, or cannot be read. The plan is reported as
+  skipped, like one that fails to parse, and the rest are reviewed.
+- `planners log` commits an index that was already regenerated and left
+  uncommitted (by the `post-merge` hook, or by `planners index .`). It checked
+  only whether the working file was stale, so it left such a repair out, and
+  the validate hook could then reject the commit of the plan alone.
+- A re-run of `planners start` commits a PR record whose `plan [pr]` commit was
+  refused. Before, it reported the PR step as done as soon as the plan file held
+  the URL, and left the record uncommitted.
+- `planners finish` on the no-PR path, in a repo with no remote, prints the merge
+  to run without `&& git push`. It asked for a push with nowhere to push to.
+- `planners finalize` numbers plans staged within the same second in the order
+  they were staged. `add --defer` now leads the staging directory's name with the
+  staging time in nanoseconds; before, the tie followed the name's random token,
+  so two such plans could be numbered in reverse.
+
 ## [0.19.0] - 2026-11-19
 
 ### Changed

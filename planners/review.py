@@ -336,12 +336,19 @@ def _date(value: str | None) -> str | None:
 
 
 class _Git:
-    """Read-only git queries against one repo, with per-run caches."""
+    """Read-only git queries against one repo, with per-run caches.
+
+    An instance lives for one gather, so a cache never outlives the command.
+    Each is keyed by every argument of its query (the revision, the history
+    options, the pathspecs), and keeps a failed query's answer too.
+    """
 
     def __init__(self, root: Path) -> None:
         self.root = root
         self._trees: dict[str, list[str]] = {}
         self._tags: dict[str, list[Tag]] = {}
+        self._shows: dict[tuple[str, str], str | None] = {}
+        self._logs: dict[tuple[str, ...], tuple[Commit, ...]] = {}
         self._origin: bool | None = None
 
     def out(self, args: list[str], cwd: Path | None = None) -> str | None:
@@ -390,11 +397,20 @@ class _Git:
         return self._trees[rev]
 
     def show(self, rev: str, path: str) -> str | None:
-        # `./` reads ``path`` from the root, as ``ls-tree`` lists it. Bare, git
-        # reads it from the top of the repository.
-        return self.out(["show", f"{rev}:./{path}"])
+        key = (rev, path)
+        if key not in self._shows:
+            # `./` reads ``path`` from the root, as ``ls-tree`` lists it. Bare,
+            # git reads it from the top of the repository.
+            self._shows[key] = self.out(["show", f"{rev}:./{path}"])
+        return self._shows[key]
 
     def log(self, args: list[str]) -> list[Commit]:
+        key = tuple(args)
+        if key not in self._logs:
+            self._logs[key] = tuple(self._read_log(args))
+        return list(self._logs[key])
+
+    def _read_log(self, args: list[str]) -> list[Commit]:
         text = self.out(["log", f"--format={_RS}%h{_US}%aI{_US}%s", *args])
         commits: list[Commit] = []
         for record in (text or "").split(_RS):
@@ -572,7 +588,11 @@ class _Plan:
 
 
 def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
-    """The plans under ``plans_dir``, and a note for each one that failed to parse."""
+    """The plans under ``plans_dir``, and a note for each one that could not be loaded.
+
+    A plan that cannot be read, or is not UTF-8, is skipped with a note like one
+    that fails to parse, in the words :meth:`PlanMetadata.from_file` uses for it.
+    """
     plans: list[_Plan] = []
     skipped: list[str] = []
     if not plans_dir.is_dir():
@@ -581,11 +601,16 @@ def _load(root: Path, plans_dir: Path) -> tuple[list[_Plan], list[str]]:
         plan = child / "plan.md"
         if not (child.is_dir() and DIRNAME_RE.match(child.name) and plan.is_file()):
             continue
-        text = plan.read_text(encoding="utf-8")
+        shown = plan.relative_to(root).as_posix()
+        try:
+            text = plan.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            skipped.append(f"{shown}: the file cannot be read ({exc})")
+            continue
         try:
             meta = PlanMetadata.from_text(text, dirname=child.name)
         except PlanError as exc:
-            skipped.append(f"{plan.relative_to(root).as_posix()}: {exc}")
+            skipped.append(f"{shown}: {exc}")
             continue
         _, body = split_frontmatter(text)
         subs: list[SubplanMetadata] = []

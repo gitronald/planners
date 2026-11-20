@@ -19,6 +19,7 @@ import secrets
 import shlex
 import shutil
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from importlib import metadata
@@ -515,7 +516,13 @@ def _commit(root: Path, message: str, paths: Sequence[Path]) -> None:
     _git(root, ["commit", "-m", message, "--", *specs])
 
 
-def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
+def _guard_base_branch(
+    root: Path,
+    action: str,
+    *,
+    allow_branch: bool,
+    mainline: base_mod.Mainline | None = None,
+) -> None:
     """Refuse to commit ``action`` when HEAD is off the repo's mainline.
 
     The plan-file convention is that ``add``/``activate`` commits land on the
@@ -528,11 +535,14 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
     returns ``None`` for an unresolvable repo, a repo with no commits, or a HEAD
     already on the mainline, so the guard only speaks when the failure is
     demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
-    genuinely is not detectable by name.
+    genuinely is not detectable by name. ``mainline`` is a detection the caller
+    made, with nothing since that moved HEAD; without one, the guard detects.
     """
     if allow_branch:
         return
-    message = base_mod.guard_message(base_mod.detect(root), action)
+    if mainline is None:
+        mainline = base_mod.detect(root)
+    message = base_mod.guard_message(mainline, action)
     if message is None:
         return
     _err(f"error: {message}")
@@ -554,7 +564,7 @@ def _index_is_stale(repo_root: Path) -> bool:
 
     What "stale" catches, in order of how often it happens: a plan edited without
     reindexing, and a local merge — the index carries ``merge=union`` (see
-    ``install.INDEX_MERGE_ATTR``), which resolves rather than conflicting and
+    :data:`planners.host.INDEX_ATTR`), which resolves rather than conflicting and
     never loses a row, but can leave a row duplicated when both sides rewrote the
     same one. Union's repair is a regeneration, and this is what notices one is
     due.
@@ -676,9 +686,10 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
     """Read staged (deferred) plans, ordered by ``created`` then directory name.
 
     Each staged plan directory contributes ``(dir, frontmatter, body)``. Ordering
-    by ``created`` (tie-broken by directory name for determinism) reproduces the
-    numbering a sequence of foreground ``add`` calls would have produced,
-    independent of the filesystem's iteration order.
+    by ``created`` reproduces the numbering a sequence of foreground ``add`` calls
+    would have produced, independent of the filesystem's iteration order. The
+    directory name breaks a tie within one second: ``add --defer`` leads it with
+    the staging time in nanoseconds, so the tie follows the order of staging.
     """
     if not staging.is_dir():
         return []
@@ -1024,10 +1035,13 @@ def add(
             raise typer.Exit(1)
         staging = root / STAGING_DIR
         staging.mkdir(parents=True, exist_ok=True)
-        # A random token keys the staging dir so two creators picking the same slug
-        # never collide on the directory name (the number, and any slug clash, are
+        # The directory name leads with the staging time in nanoseconds,
+        # zero-padded, so sorting by name follows the order of staging: finalize
+        # breaks a tie on `created`, which has whole-second precision, by name.
+        # A random token after it keeps two creators picking the same slug from
+        # colliding on the directory name (the number, and any slug clash, are
         # resolved at finalize, the sole writer).
-        staged_dir = staging / f"{secrets.token_hex(4)}-{slug}"
+        staged_dir = staging / f"{time.time_ns():019d}-{secrets.token_hex(4)}-{slug}"
         if staged_dir.exists():
             _err(f"staging collision at {staged_dir.relative_to(root)}; retry.")
             raise typer.Exit(1)
@@ -1394,11 +1408,33 @@ def _activate(
         )
         return
 
-    # Guard before writing, so a refusal leaves the plan exactly as it was — the
-    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit and not returning:
-        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
+    # Only the committing path is guarded: --no-commit writes no commit, so there
+    # is nothing for a branch to strand, and a return to the branch is not guarded.
+    guarded = not (no_commit or returning or allow_branch)
+    # An already-active plan that only gains its branch was activated before, so
+    # it gets no second entry; that keeps a re-run idempotent.
+    first_activation = not returning and meta.status != Status.active
+
+    # One detection serves the guard and the activation entry, and neither
+    # detects when nothing reads it. Nothing between the detection and the entry
+    # commits, checks out, or fetches. Guard before writing, so a refusal leaves
+    # the plan exactly as it was, the ordering `add` uses.
+    entry: str | None = None
+    if guarded or first_activation:
+        mainline = base_mod.detect(root)
+        if guarded:
+            _guard_base_branch(
+                root, "plan [activate]", allow_branch=allow_branch, mainline=mainline
+            )
+        if first_activation:
+            entry = _activation_entry(
+                root,
+                meta,
+                new_branch,
+                mainline,
+                worktree=worktree,
+                no_worktree=no_worktree,
+            )
 
     if unchanged:
         # Reached only via the staged-but-uncommitted path above: the frontmatter is
@@ -1409,16 +1445,9 @@ def _activate(
         )
     else:
         _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-        # An already-active plan that only gains its branch was activated before,
-        # so it gets no second entry; that keeps a re-run idempotent.
-        entry = None
         if returning:
             after = "a block" if from_block else "review"
             entry = entries.reactivation_entry(_now(), after)
-        elif meta.status != Status.active:
-            entry = _activation_entry(
-                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
-            )
         meta.status = Status.active
         meta.branch = new_branch
         if entry is not None:
@@ -1469,6 +1498,7 @@ def _activation_entry(
     root: Path,
     meta: PlanMetadata,
     branch: str,
+    mainline: base_mod.Mainline,
     *,
     worktree: str | None,
     no_worktree: bool,
@@ -1477,8 +1507,8 @@ def _activation_entry(
 
     Called before the activation commit is made, so the commit it records is the
     one the activation sits on, which is where the feature branch will start.
+    ``mainline`` is the caller's detection; nothing since it moved HEAD.
     """
-    mainline = base_mod.detect(root)
     sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
     if no_worktree:
         recorded = entries.NO_WORKTREE
@@ -1495,8 +1525,12 @@ def _activation_entry(
 
 
 def _current_branch(root: Path) -> str:
-    """The branch HEAD is on, in words fit for a message."""
-    return base_mod.detect(root).current or "a detached HEAD"
+    """The branch HEAD is on, in words fit for a message.
+
+    One git call: it needs the branch name only, not a full mainline detection.
+    """
+    shown = proc.git_out(root, ["branch", "--show-current"])
+    return (shown.strip() if shown else "") or "a detached HEAD"
 
 
 def _plan_base(text: str, mainline: base_mod.Mainline) -> str | None:
@@ -1537,6 +1571,19 @@ def set_pr(
     _set_pr(Path.cwd(), ref, url, no_commit=no_commit)
 
 
+def _pr_record_pending(root: Path, target: Path, url: str) -> bool:
+    """True when ``target`` records ``url`` and ``HEAD`` does not have it yet.
+
+    That is a record an earlier run wrote and then failed to commit. An
+    uncommitted edit to a file ``HEAD`` already has this URL in is not that, and
+    stays where it is.
+    """
+    return not (
+        _is_unmodified(root, target)
+        or _frontmatter_at_head(root, target).get("pr") == url
+    )
+
+
 def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
     """The work of ``set-pr``, on the plan under ``root``; ``start`` calls it too."""
     if not re.fullmatch(r"https?://\S+", url):
@@ -1562,13 +1609,8 @@ def _set_pr(root: Path, ref: str, url: str, *, no_commit: bool = False) -> None:
 
     if recorded == url:
         # Nothing is written: the file already says so. What is left to settle is
-        # whether an earlier run wrote it and failed to commit. An uncommitted edit
-        # to a file HEAD already has this URL in is not that, and stays where it is.
-        if (
-            no_commit
-            or _is_unmodified(root, target)
-            or _frontmatter_at_head(root, target).get("pr") == url
-        ):
+        # whether an earlier run wrote it and failed to commit.
+        if no_commit or not _pr_record_pending(root, target, url):
             typer.echo(f"plan {label} already records {url}; nothing to do.")
             return
     else:
@@ -1926,15 +1968,17 @@ def _check_merged(
     base: str,
     *,
     pr_url: str | None,
-    local_only: bool = False,
+    origin: remote_mod.RemoteKind | None = None,
 ) -> finish_mod.PullRequest | None:
     """The merged PR, or ``None`` on the no-PR path; a stop when not merged yet.
 
     The merge is the session's own command, never ``finish``'s (see
     :mod:`planners.finish`), so a branch that is not merged is a stop that
-    prints the command to run before the re-run. ``local_only`` checks the
-    no-PR merge against the local base and asks for no push: on a single-branch
-    remote that push is a publish, which stays the user's call.
+    prints the command to run before the re-run. ``origin`` is the remote's
+    kind on the no-PR path, ``None`` when it was not classified. On a
+    single-branch remote the no-PR merge is checked against the local base and
+    no push is asked for: that push is a publish, which stays the user's call.
+    With no remote, no push is asked for either, as there is nowhere to push.
     """
     if pr_url is not None:
         pr = finish_mod.view_pr(root, pr_url)
@@ -1954,10 +1998,11 @@ def _check_merged(
         ),
         None,
     )
+    local_only = origin is remote_mod.RemoteKind.single_branch
     target = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
     if source is not None and not finish_mod.is_ancestor(root, source, target):
         merge = _merge_command(branch)
-        if local_only:
+        if local_only or origin is remote_mod.RemoteKind.none:
             raise finish_mod.Stop(
                 f"{branch} is not merged into {base} yet. From {base}, merge it, "
                 f"then run finish again:\n  {merge}"
@@ -2044,18 +2089,17 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         raise _no_recorded_pr(label)
     if no_pr and not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
+    origin = remote_mod.classify(root).kind if no_pr else None
     # A single-branch remote's base is the live document: the local merge is
     # the merge, and publishing it is left to the user.
-    local_only = (
-        no_pr and remote_mod.classify(root).kind is remote_mod.RemoteKind.single_branch
-    )
+    local_only = origin is remote_mod.RemoteKind.single_branch
 
     pr = _check_merged(
         root,
         branch,
         base or "",
         pr_url=None if no_pr else meta.pr,
-        local_only=local_only,
+        origin=origin,
     )
     if pr is not None:
         base = pr.base
@@ -2179,6 +2223,8 @@ def _start_pr(
     The plan is read from ``work_dir``, since ``set-pr`` commits on the branch and
     the base's copy never records the URL. An open PR the plan does not record is
     a run that stopped between the two, so it is adopted rather than opened twice.
+    A URL the plan records and ``HEAD`` does not is a ``plan [pr]`` commit that was
+    refused, and this run makes it.
     """
     if origin is not remote_mod.RemoteKind.github:
         return start_mod.Step(
@@ -2192,6 +2238,15 @@ def _start_pr(
     except (PlanError, OSError, UnicodeDecodeError) as exc:
         raise finish_mod.Stop(f"cannot read {plan_rel} on {branch}: {exc}") from None
     if meta.pr:
+        if _pr_record_pending(work_dir, path, meta.pr):
+            # An earlier run wrote the record and its commit was refused. The
+            # push check before this compares commits, so it cannot see that.
+            _set_pr(work_dir, ref, meta.pr)
+            return start_mod.Step(
+                start_mod.RAN,
+                f"committed the record of {meta.pr}; publish it with "
+                f"`{start_mod.push_command(branch)}`",
+            )
         return start_mod.Step(start_mod.DONE, f"the plan records {meta.pr}")
     url = start_mod.open_pr(work_dir, branch)
     if url is None:
@@ -2602,7 +2657,10 @@ def log_(
     commit of the plan alone then trips the validate hook, since pre-commit
     stashes the unstaged repair and checks the stale index. So a tracked index
     that has gone stale is refreshed and committed with the entry, as every other
-    lifecycle command does. A repo with no index is left without one.
+    lifecycle command does. An index that was already regenerated and left
+    uncommitted reads as fresh, since the working file is what is compared, so it
+    is told apart by differing from ``HEAD`` and goes into the commit the same
+    way, as ``finish`` takes it. A repo with no index is left without one.
     """
     root = Path.cwd()
     plan, nested, label = _resolve_ref(root / PLANS_DIR, ref)
@@ -2640,10 +2698,18 @@ def log_(
     if no_commit:
         return
     paths = [target]
-    if (root / INDEX_PATH).is_file() and _index_is_stale(root):
-        readme = _refresh_index(root)
-        paths.append(readme)
-        typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+    index = root / INDEX_PATH
+    if index.is_file():
+        if _index_is_stale(root):
+            readme = _refresh_index(root)
+            paths.append(readme)
+            typer.echo(f"refreshed the stale index {_shown(readme, root)}")
+        elif not _is_unmodified(root, index):
+            # Already regenerated, and not committed: the working file matches
+            # a fresh render, so the staleness check above passes, while HEAD
+            # still has the stale one.
+            paths.append(index)
+            typer.echo(f"included the repaired index {_shown(index, root)}")
     _commit(
         root,
         f"plan [log]: {label} - {summary.strip() if summary else slug}",

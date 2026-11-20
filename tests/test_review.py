@@ -435,6 +435,27 @@ def test_a_symbol_is_found_in_any_same_named_module(repo: Path) -> None:
     assert refs["util.helper"].path == "b/util.py"
 
 
+def test_one_gather_runs_each_history_and_file_query_once(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `src/app.py` is named three times: as a path and through `app.run` and
+    # `app.missing`, which read the same file at the same revision.
+    queries: list[tuple[str, tuple[str, ...]]] = []
+    git_out = review_mod.proc.git_out
+
+    def recording(root: Path, args: list[str]) -> str | None:
+        if args[0] in ("log", "show"):
+            queries.append((str(root), tuple(args)))
+        return git_out(root, args)
+
+    monkeypatch.setattr(review_mod.proc, "git_out", recording)
+    refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
+    assert refs["src/app.py"].changed
+    assert refs["app.run"].state == "present"
+    assert any(args[0] == "show" for _, args in queries)
+    assert len(queries) == len(set(queries))
+
+
 def test_a_plan_that_fails_to_parse_is_reported_as_skipped(repo: Path) -> None:
     _write(
         repo,
@@ -448,6 +469,23 @@ def test_a_plan_that_fails_to_parse_is_reported_as_skipped(repo: Path) -> None:
     assert "warning: skipped .planners/plans/005-broken/plan.md" in (
         review_mod.render_text(report)
     )
+
+
+def test_a_plan_that_is_not_utf8_is_reported_as_skipped(repo: Path) -> None:
+    # The read used to sit outside the handler, so one such file ended the
+    # whole review in a UnicodeDecodeError traceback.
+    before = {p.prefix for p in _gather(repo).plans}
+    path = repo / ".planners/plans/005-latin/plan.md"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(_plan(5, "latin", "draft", DRAFT_CREATED).encode() + b"caf\xe9\n")
+
+    report = _gather(repo)
+    assert len(report.skipped) == 1
+    assert report.skipped[0].startswith(
+        ".planners/plans/005-latin/plan.md: the file cannot be read"
+    )
+    # Every other plan is still reviewed.
+    assert {p.prefix for p in report.plans} == before
 
 
 def test_plan_refs_carry_status(repo: Path) -> None:
