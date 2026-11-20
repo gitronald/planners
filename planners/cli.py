@@ -536,7 +536,7 @@ def _guard_base_branch(
     already on the mainline, so the guard only speaks when the failure is
     demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
     genuinely is not detectable by name. ``mainline`` is a detection the caller
-    already made with nothing since that moves HEAD; without one, it detects.
+    made, with nothing since that moved HEAD; without one, the guard detects.
     """
     if allow_branch:
         return
