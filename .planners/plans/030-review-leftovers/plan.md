@@ -1,8 +1,8 @@
 ---
 id: 30
 slug: review-leftovers
-status: draft
-branch:
+status: active
+branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
 concluded:
 pr:
@@ -113,3 +113,11 @@ Checks:
 - O2 and O4.
 - Any other wording in `finish` or the `close` skill. Plan 029 already gave the no-PR
   table per remote kind.
+
+## Log
+
+- **2026-11-20T12:20:51-08:00** — Activated.
+  - Branch: `feature/030-review-leftovers`
+  - Base: `dev` at `58cec7f`
+  - Worktree: `.worktrees/030-review-leftovers`
+  - PR: pending
