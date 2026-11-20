@@ -1,7 +1,7 @@
 ---
 id: 30
 slug: review-leftovers
-status: active
+status: implemented
 branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
 concluded:
@@ -139,3 +139,4 @@ Checks:
   - Actioned (with tests): `30ef2bc` names `guarded` and `first_activation`, detects only when one holds, and builds the activation entry in the same block, so the type narrows without a `None` check. New test `test_activate_detects_nothing_when_nothing_reads_it` (parametrized over `--no-commit` and `--allow-branch`) expects 0 detections; it failed (both cases) with the previous `cli.py` and passes now; the one-detect test is kept. `2535cae` has `_check_merged` take `origin: RemoteKind | None` and derive both itself; `_finish` keeps its own `local_only` from the same `origin` for `merged_ref`. The existing finish tests (single-branch, no remote, bare and github) pass unchanged; no test passed the old keywords.
   - Conscious no-ops: `_sync_base` re-reading the branch with `_current_branch` (now one git call; an earlier detection would be stale across the worktree removal and checkout); the review cache test asserting uniqueness only (the cache keys every argument, and the test checks the results too); a clock step between same-second defers (narrow).
   - Checks at `2535cae`: ruff check, ruff format --check, pyrefly check, pytest (852 passed, coverage 95.12%) all exit 0.
+- **2026-11-20T12:32:59-08:00** — Implemented: 14 commits ahead of `dev`.
