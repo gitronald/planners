@@ -121,3 +121,4 @@ Checks:
   - Base: `dev` at `58cec7f`
   - Worktree: `.worktrees/030-review-leftovers`
   - PR: pending
+- **2026-11-20T12:21:02-08:00** — Choices for this run, made by the owner: change O1 and O3, and leave O2 and O4 as plan 029 decided. Run as a full pipeline: a worker implements the plan, the review gate is the repo's `/code-review` at medium, and the close merges through the PR.
