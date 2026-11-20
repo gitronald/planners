@@ -1,7 +1,7 @@
 ---
 id: 30
 slug: review-leftovers
-status: implemented
+status: active
 branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
 concluded:
@@ -133,3 +133,4 @@ Checks:
   - Checks at `5a2b982`: ruff check, ruff format --check, pyrefly check, and pytest (850 passed, coverage 95.11%) all exit 0. dev had not moved since the activation, so no merge of the base was needed.
   - Not verified: a full no-PR `finish` run to completion in a repo with no remote (the test covers the stop only); staging order on a platform with a coarse `time_ns` clock (tests ran on Linux).
 - **2026-11-20T12:27:56-08:00** — Implemented: 9 commits ahead of `dev`.
+- **2026-11-20T12:30:44-08:00** — Reactivated: back to active after review.
