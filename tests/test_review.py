@@ -435,6 +435,27 @@ def test_a_symbol_is_found_in_any_same_named_module(repo: Path) -> None:
     assert refs["util.helper"].path == "b/util.py"
 
 
+def test_one_gather_runs_each_history_and_file_query_once(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `src/app.py` is named three times: as a path and through `app.run` and
+    # `app.missing`, which read the same file at the same revision.
+    queries: list[tuple[str, tuple[str, ...]]] = []
+    git_out = review_mod.proc.git_out
+
+    def recording(root: Path, args: list[str]) -> str | None:
+        if args[0] in ("log", "show"):
+            queries.append((str(root), tuple(args)))
+        return git_out(root, args)
+
+    monkeypatch.setattr(review_mod.proc, "git_out", recording)
+    refs = {r.ref: r for r in _by_prefix(_gather(repo))["001"].code_refs}
+    assert refs["src/app.py"].changed
+    assert refs["app.run"].state == "present"
+    assert any(args[0] == "show" for _, args in queries)
+    assert len(queries) == len(set(queries))
+
+
 def test_a_plan_that_fails_to_parse_is_reported_as_skipped(repo: Path) -> None:
     _write(
         repo,

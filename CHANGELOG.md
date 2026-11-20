@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   staging empty, to be committed by hand, not finalized again.
 - The `pipeline` skill says that a `done` plan whose `finish` stops with a merge
   command was interrupted before the merge, and resumes at `close` step 6.
+- A first `planners activate` detects the mainline once, for the guard and the
+  activation entry both, and reads only the branch name after its commit. It
+  detected it three times, each up to six git calls.
+- `planners review` reads each file at a revision, and runs each history query,
+  once per review. It repeated the same `git show` and `git log` for every
+  reference that led to them.
 
 ### Fixed
 
@@ -42,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A re-run of `planners start` commits a PR record whose `plan [pr]` commit was
   refused. Before, it reported the PR step as done as soon as the plan file held
   the URL, and left the record uncommitted.
+- `planners finish` on the no-PR path, in a repo with no remote, prints the merge
+  to run without `&& git push`. It asked for a push with nowhere to push to.
+- `planners finalize` numbers plans staged within the same second in the order
+  they were staged. `add --defer` now leads the staging directory's name with the
+  staging time in nanoseconds; before, the tie followed the name's random token,
+  so two such plans could be numbered in reverse.
 
 ## [0.19.0] - 2026-11-19
 

@@ -476,6 +476,22 @@ def test_finish_leaves_a_single_branch_base_unpushed(
     )
 
 
+def test_finish_asks_no_push_with_no_remote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With no origin there is nowhere to push, so the stop prints the merge alone.
+    scene = Scene(tmp_path, monkeypatch, pr=None)
+    git(scene.root, "remote", "remove", "origin")
+
+    unmerged = scene.finish()
+    assert unmerged.exit_code == 1
+    assert f"{_BRANCH} is not merged into main yet" in unmerged.output
+    assert f"git merge --no-ff {_BRANCH} -m 'merge: {_BRANCH}'\n" in unmerged.output
+    assert "git push" not in unmerged.output
+    assert scene.worktree.is_dir()
+    assert scene.has_branch(f"refs/heads/{_BRANCH}")
+
+
 def test_finish_repoints_a_hook_installed_from_the_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

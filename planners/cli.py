@@ -19,6 +19,7 @@ import secrets
 import shlex
 import shutil
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import asdict
 from importlib import metadata
@@ -515,7 +516,13 @@ def _commit(root: Path, message: str, paths: Sequence[Path]) -> None:
     _git(root, ["commit", "-m", message, "--", *specs])
 
 
-def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
+def _guard_base_branch(
+    root: Path,
+    action: str,
+    *,
+    allow_branch: bool,
+    mainline: base_mod.Mainline | None = None,
+) -> None:
     """Refuse to commit ``action`` when HEAD is off the repo's mainline.
 
     The plan-file convention is that ``add``/``activate`` commits land on the
@@ -528,11 +535,14 @@ def _guard_base_branch(root: Path, action: str, *, allow_branch: bool) -> None:
     returns ``None`` for an unresolvable repo, a repo with no commits, or a HEAD
     already on the mainline, so the guard only speaks when the failure is
     demonstrable. ``--allow-branch`` is the escape hatch for a repo whose mainline
-    genuinely is not detectable by name.
+    genuinely is not detectable by name. ``mainline`` is a detection the caller
+    made, with nothing since that moved HEAD; without one, the guard detects.
     """
     if allow_branch:
         return
-    message = base_mod.guard_message(base_mod.detect(root), action)
+    if mainline is None:
+        mainline = base_mod.detect(root)
+    message = base_mod.guard_message(mainline, action)
     if message is None:
         return
     _err(f"error: {message}")
@@ -676,9 +686,10 @@ def _collect_staged(staging: Path) -> list[tuple[Path, dict[str, str | None], st
     """Read staged (deferred) plans, ordered by ``created`` then directory name.
 
     Each staged plan directory contributes ``(dir, frontmatter, body)``. Ordering
-    by ``created`` (tie-broken by directory name for determinism) reproduces the
-    numbering a sequence of foreground ``add`` calls would have produced,
-    independent of the filesystem's iteration order.
+    by ``created`` reproduces the numbering a sequence of foreground ``add`` calls
+    would have produced, independent of the filesystem's iteration order. The
+    directory name breaks a tie within one second: ``add --defer`` leads it with
+    the staging time in nanoseconds, so the tie follows the order of staging.
     """
     if not staging.is_dir():
         return []
@@ -1024,10 +1035,13 @@ def add(
             raise typer.Exit(1)
         staging = root / STAGING_DIR
         staging.mkdir(parents=True, exist_ok=True)
-        # A random token keys the staging dir so two creators picking the same slug
-        # never collide on the directory name (the number, and any slug clash, are
+        # The directory name leads with the staging time in nanoseconds,
+        # zero-padded, so sorting by name follows the order of staging: finalize
+        # breaks a tie on `created`, which has whole-second precision, by name.
+        # A random token after it keeps two creators picking the same slug from
+        # colliding on the directory name (the number, and any slug clash, are
         # resolved at finalize, the sole writer).
-        staged_dir = staging / f"{secrets.token_hex(4)}-{slug}"
+        staged_dir = staging / f"{time.time_ns():019d}-{secrets.token_hex(4)}-{slug}"
         if staged_dir.exists():
             _err(f"staging collision at {staged_dir.relative_to(root)}; retry.")
             raise typer.Exit(1)
@@ -1394,11 +1408,33 @@ def _activate(
         )
         return
 
-    # Guard before writing, so a refusal leaves the plan exactly as it was — the
-    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit and not returning:
-        _guard_base_branch(root, "plan [activate]", allow_branch=allow_branch)
+    # Only the committing path is guarded: --no-commit writes no commit, so there
+    # is nothing for a branch to strand, and a return to the branch is not guarded.
+    guarded = not (no_commit or returning or allow_branch)
+    # An already-active plan that only gains its branch was activated before, so
+    # it gets no second entry; that keeps a re-run idempotent.
+    first_activation = not returning and meta.status != Status.active
+
+    # One detection serves the guard and the activation entry, and neither
+    # detects when nothing reads it. Nothing between the detection and the entry
+    # commits, checks out, or fetches. Guard before writing, so a refusal leaves
+    # the plan exactly as it was, the ordering `add` uses.
+    entry: str | None = None
+    if guarded or first_activation:
+        mainline = base_mod.detect(root)
+        if guarded:
+            _guard_base_branch(
+                root, "plan [activate]", allow_branch=allow_branch, mainline=mainline
+            )
+        if first_activation:
+            entry = _activation_entry(
+                root,
+                meta,
+                new_branch,
+                mainline,
+                worktree=worktree,
+                no_worktree=no_worktree,
+            )
 
     if unchanged:
         # Reached only via the staged-but-uncommitted path above: the frontmatter is
@@ -1409,16 +1445,9 @@ def _activate(
         )
     else:
         _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-        # An already-active plan that only gains its branch was activated before,
-        # so it gets no second entry; that keeps a re-run idempotent.
-        entry = None
         if returning:
             after = "a block" if from_block else "review"
             entry = entries.reactivation_entry(_now(), after)
-        elif meta.status != Status.active:
-            entry = _activation_entry(
-                root, meta, new_branch, worktree=worktree, no_worktree=no_worktree
-            )
         meta.status = Status.active
         meta.branch = new_branch
         if entry is not None:
@@ -1469,6 +1498,7 @@ def _activation_entry(
     root: Path,
     meta: PlanMetadata,
     branch: str,
+    mainline: base_mod.Mainline,
     *,
     worktree: str | None,
     no_worktree: bool,
@@ -1477,8 +1507,8 @@ def _activation_entry(
 
     Called before the activation commit is made, so the commit it records is the
     one the activation sits on, which is where the feature branch will start.
+    ``mainline`` is the caller's detection; nothing since it moved HEAD.
     """
-    mainline = base_mod.detect(root)
     sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
     if no_worktree:
         recorded = entries.NO_WORKTREE
@@ -1495,8 +1525,12 @@ def _activation_entry(
 
 
 def _current_branch(root: Path) -> str:
-    """The branch HEAD is on, in words fit for a message."""
-    return base_mod.detect(root).current or "a detached HEAD"
+    """The branch HEAD is on, in words fit for a message.
+
+    One git call: it needs the branch name only, not a full mainline detection.
+    """
+    shown = proc.git_out(root, ["branch", "--show-current"])
+    return (shown.strip() if shown else "") or "a detached HEAD"
 
 
 def _plan_base(text: str, mainline: base_mod.Mainline) -> str | None:
@@ -1934,15 +1968,17 @@ def _check_merged(
     base: str,
     *,
     pr_url: str | None,
-    local_only: bool = False,
+    origin: remote_mod.RemoteKind | None = None,
 ) -> finish_mod.PullRequest | None:
     """The merged PR, or ``None`` on the no-PR path; a stop when not merged yet.
 
     The merge is the session's own command, never ``finish``'s (see
     :mod:`planners.finish`), so a branch that is not merged is a stop that
-    prints the command to run before the re-run. ``local_only`` checks the
-    no-PR merge against the local base and asks for no push: on a single-branch
-    remote that push is a publish, which stays the user's call.
+    prints the command to run before the re-run. ``origin`` is the remote's
+    kind on the no-PR path, ``None`` when it was not classified. On a
+    single-branch remote the no-PR merge is checked against the local base and
+    no push is asked for: that push is a publish, which stays the user's call.
+    With no remote, no push is asked for either, as there is nowhere to push.
     """
     if pr_url is not None:
         pr = finish_mod.view_pr(root, pr_url)
@@ -1962,10 +1998,11 @@ def _check_merged(
         ),
         None,
     )
+    local_only = origin is remote_mod.RemoteKind.single_branch
     target = f"refs/heads/{base}" if local_only else _remote_or_local(root, base)
     if source is not None and not finish_mod.is_ancestor(root, source, target):
         merge = _merge_command(branch)
-        if local_only:
+        if local_only or origin is remote_mod.RemoteKind.none:
             raise finish_mod.Stop(
                 f"{branch} is not merged into {base} yet. From {base}, merge it, "
                 f"then run finish again:\n  {merge}"
@@ -2052,18 +2089,17 @@ def _finish(root: Path, ref: str, *, no_pr: bool, say: finish_mod.Say) -> None:
         raise _no_recorded_pr(label)
     if no_pr and not base:
         raise finish_mod.Stop("cannot tell which branch is the base")
+    origin = remote_mod.classify(root).kind if no_pr else None
     # A single-branch remote's base is the live document: the local merge is
     # the merge, and publishing it is left to the user.
-    local_only = (
-        no_pr and remote_mod.classify(root).kind is remote_mod.RemoteKind.single_branch
-    )
+    local_only = origin is remote_mod.RemoteKind.single_branch
 
     pr = _check_merged(
         root,
         branch,
         base or "",
         pr_url=None if no_pr else meta.pr,
-        local_only=local_only,
+        origin=origin,
     )
     if pr is not None:
         base = pr.base

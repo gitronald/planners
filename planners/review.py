@@ -336,12 +336,19 @@ def _date(value: str | None) -> str | None:
 
 
 class _Git:
-    """Read-only git queries against one repo, with per-run caches."""
+    """Read-only git queries against one repo, with per-run caches.
+
+    An instance lives for one gather, so a cache never outlives the command.
+    Each is keyed by every argument of its query (the revision, the history
+    options, the pathspecs), and keeps a failed query's answer too.
+    """
 
     def __init__(self, root: Path) -> None:
         self.root = root
         self._trees: dict[str, list[str]] = {}
         self._tags: dict[str, list[Tag]] = {}
+        self._shows: dict[tuple[str, str], str | None] = {}
+        self._logs: dict[tuple[str, ...], tuple[Commit, ...]] = {}
         self._origin: bool | None = None
 
     def out(self, args: list[str], cwd: Path | None = None) -> str | None:
@@ -390,11 +397,20 @@ class _Git:
         return self._trees[rev]
 
     def show(self, rev: str, path: str) -> str | None:
-        # `./` reads ``path`` from the root, as ``ls-tree`` lists it. Bare, git
-        # reads it from the top of the repository.
-        return self.out(["show", f"{rev}:./{path}"])
+        key = (rev, path)
+        if key not in self._shows:
+            # `./` reads ``path`` from the root, as ``ls-tree`` lists it. Bare,
+            # git reads it from the top of the repository.
+            self._shows[key] = self.out(["show", f"{rev}:./{path}"])
+        return self._shows[key]
 
     def log(self, args: list[str]) -> list[Commit]:
+        key = tuple(args)
+        if key not in self._logs:
+            self._logs[key] = tuple(self._read_log(args))
+        return list(self._logs[key])
+
+    def _read_log(self, args: list[str]) -> list[Commit]:
         text = self.out(["log", f"--format={_RS}%h{_US}%aI{_US}%s", *args])
         commits: list[Commit] = []
         for record in (text or "").split(_RS):

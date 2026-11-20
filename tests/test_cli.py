@@ -582,7 +582,7 @@ def test_add_defer_stages_unnumbered_plan(
         app, ["add", "my-feature", "--title", "My Feature", "--defer"]
     )
     assert result.exit_code == 0, result.output
-    # staged under .planners/staging/<token>-my-feature, no number, no commit
+    # staged under .planners/staging/<time>-<token>-my-feature, no number or commit
     staged = list((tmp_path / ".planners" / "staging").glob("*-my-feature/plan.md"))
     assert len(staged) == 1
     text = staged[0].read_text(encoding="utf-8")
@@ -625,6 +625,25 @@ def test_finalize_orders_by_created_not_dirname(
     # staging is drained (the root dir is removed) and the self-check reports OK
     assert not staging.exists()
     assert "self-check OK" in result.output
+
+
+def test_finalize_orders_same_second_defers_by_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two defers in one clock second tie on `created`; the tie follows the order
+    # they were staged in, not their random tokens, which here sort the reverse.
+    monkeypatch.setattr(cli_mod, "_now", lambda: "2026-06-10T09:00:00-07:00")
+    tokens = iter(["ffffffff", "00000000"])
+    monkeypatch.setattr(cli_mod.secrets, "token_hex", lambda _n: next(tokens))
+    monkeypatch.chdir(tmp_path)
+    for slug in ("first", "second"):
+        result = runner.invoke(app, ["add", slug, "--defer"])
+        assert result.exit_code == 0, result.output
+
+    result = runner.invoke(app, ["finalize", "--no-commit"])
+    assert result.exit_code == 0, result.output
+    plans = tmp_path / ".planners" / "plans"
+    assert sorted(p.name for p in plans.iterdir()) == ["000-first", "001-second"]
 
 
 def test_finalize_assigns_next_numbers_after_existing(
@@ -1026,6 +1045,59 @@ def test_activate_commits_by_default_with_slug_subject(
         ).stdout
         == ""
     )
+
+
+def _count_detects(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Record each mainline detection from here on; the list fills as they run."""
+    detect = cli_mod.base_mod.detect
+    calls: list[Path] = []
+
+    def counting(root: Path) -> cli_mod.base_mod.Mainline:
+        calls.append(root)
+        return detect(root)
+
+    monkeypatch.setattr(cli_mod.base_mod, "detect", counting)
+    return calls
+
+
+def test_activate_detects_the_mainline_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The guard and the activation entry share one detection, and the line after
+    # the commit reads the branch alone.
+    _write_plan(tmp_path / ".planners" / "plans", "005-my-thing", _DRAFT_PLAN)
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    commit_all(tmp_path, "initial commit")
+    calls = _count_detects(monkeypatch)
+    result = runner.invoke(app, ["activate", "005"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert "committed the activation on main" in result.output
+    assert "  - Base: `main` at `" in (
+        tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md"
+    ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("flag", ["--no-commit", "--allow-branch"])
+def test_activate_detects_nothing_when_nothing_reads_it(
+    flag: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An active plan gaining its branch writes no activation entry, and with
+    # either flag there is no guard to run, so no detection either.
+    path = _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: active"),
+    )
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    commit_all(tmp_path, "initial commit")
+    calls = _count_detects(monkeypatch)
+    result = runner.invoke(app, ["activate", "005", flag])
+    assert result.exit_code == 0, result.output
+    assert calls == []
+    assert "branch: feature/005-my-thing" in path.read_text(encoding="utf-8")
 
 
 def test_activate_fills_an_empty_branch_on_an_already_active_plan(

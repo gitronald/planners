@@ -1,11 +1,11 @@
 ---
 id: 30
 slug: review-leftovers
-status: active
+status: done
 branch: feature/030-review-leftovers
 created: 2026-11-20T12:20:14-08:00
-concluded:
-pr:
+concluded: 2026-11-20T12:32:24-08:00
+pr: https://github.com/gitronald/planners/pull/82
 ---
 
 # Fix the leftovers from the codebase review
@@ -121,3 +121,37 @@ Checks:
   - Base: `dev` at `58cec7f`
   - Worktree: `.worktrees/030-review-leftovers`
   - PR: pending
+- **2026-11-20T12:21:02-08:00** — Choices for this run, made by the owner: change O1 and O3, and leave O2 and O4 as plan 029 decided. Run as a full pipeline: a worker implements the plan, the review gate is the repo's `/code-review` at medium, and the close merges through the PR.
+- **2026-11-20T12:22:29-08:00** — PR opened: https://github.com/gitronald/planners/pull/82
+- **2026-11-20T12:27:52-08:00** — Implemented items 1 to 4 and the CHANGELOG entries, one commit each, plus a docstring rewording.
+  - 1, `7a02e94`: `_finish` classifies origin once (on the no-PR path, as before) and passes `pushable` to `_check_merged`; with origin `none` the stop prints the merge alone. Test `test_finish_asks_no_push_with_no_remote` removes origin from the scene and checks the stop has no `git push`. The bare and single-branch tests are unchanged and pass.
+  - 2, `b763a7e`: `add --defer` names the staging directory `{time_ns:019d}-{token}-{slug}`. Grep found no code that parses the staging name back (finalize reads the slug from frontmatter). The `add` skill's staging line now reads `<time>-<token>-<slug>`; the `--defer` help and README do not describe the name and are unchanged. Test `test_finalize_orders_same_second_defers_by_staging` freezes `_now()` and forces tokens that sort in reverse.
+  - 3, `b5dc53a`: `_activate` detects once (skipped for a return from review or a block) and passes the `Mainline` to `_guard_base_branch` (new optional `mainline` argument; other callers still detect) and to `_activation_entry`. `_current_branch` reads `git branch --show-current` only; that also serves `finish`'s `_sync_base`. Test `test_activate_detects_the_mainline_once` counts detect calls on a first activation.
+  - 4, `03591d5`: review's `_Git` caches `show` by `(rev, path)` and `log` by the full argument tuple, failures included; `log` returns a fresh list from a cached tuple. Test `test_one_gather_runs_each_history_and_file_query_once` records every `git log` and `git show` in one gather of the fixture and asserts none repeats.
+  - `645d68a`: CHANGELOG `[Unreleased]`: Fixed for 1 and 2, Changed for 3 and 4. `5a2b982` rewords the guard's new docstring sentence.
+  - Each new test was run with its fix reverted (the source file swapped back to the previous commit's, then restored): all four failed, item 3 with 3 detect calls against 1 and item 4 with 16 log/show queries against 11 distinct.
+  - Checks at `5a2b982`: ruff check, ruff format --check, pyrefly check, and pytest (850 passed, coverage 95.11%) all exit 0. dev had not moved since the activation, so no merge of the base was needed.
+  - Not verified: a full no-PR `finish` run to completion in a repo with no remote (the test covers the stop only); staging order on a platform with a coarse `time_ns` clock (tests ran on Linux).
+- **2026-11-20T12:27:56-08:00** — Implemented: 9 commits ahead of `dev`.
+- **2026-11-20T12:30:44-08:00** — Reactivated: back to active after review.
+- **2026-11-20T12:32:57-08:00** — Fixed the two review findings, one commit each, and reran the full checks.
+  - Review follow-up: raised: (1) `_activate` detected the mainline whenever the plan was not returning, including when neither the guard nor the entry read it (`--no-commit` or `--allow-branch` on an active plan gaining its branch), with `mainline is None` standing in for `returning`; (2) `_check_merged` took `local_only` and `pushable`, two bools from one remote kind, so a caller could pass a pair no kind produces.
+  - Actioned (with tests): `30ef2bc` names `guarded` and `first_activation`, detects only when one holds, and builds the activation entry in the same block, so the type narrows without a `None` check. New test `test_activate_detects_nothing_when_nothing_reads_it` (parametrized over `--no-commit` and `--allow-branch`) expects 0 detections; it failed (both cases) with the previous `cli.py` and passes now; the one-detect test is kept. `2535cae` has `_check_merged` take `origin: RemoteKind | None` and derive both itself; `_finish` keeps its own `local_only` from the same `origin` for `merged_ref`. The existing finish tests (single-branch, no remote, bare and github) pass unchanged; no test passed the old keywords.
+  - Conscious no-ops: `_sync_base` re-reading the branch with `_current_branch` (now one git call; an earlier detection would be stale across the worktree removal and checkout); the review cache test asserting uniqueness only (the cache keys every argument, and the test checks the results too); a clock step between same-second defers (narrow).
+  - Checks at `2535cae`: ruff check, ruff format --check, pyrefly check, pytest (852 passed, coverage 95.12%) all exit 0.
+- **2026-11-20T12:32:59-08:00** — Implemented: 14 commits ahead of `dev`.
+
+## Retrospective
+
+- All four items landed as specified, one commit each. The review's two findings were
+  about shape, not behavior: a `None` stood in for a named condition, and two bools
+  came from one remote kind. Both fixes let the code state its condition directly.
+- Passing the result in (a `Mainline`, a `RemoteKind`) did more than caching would
+  have for O1 and the finish check. Each caller now decides once, and any callee that
+  is given nothing still detects for itself, so other call sites did not change.
+- Reverting each fix and watching its test fail made the counting tests (detect calls,
+  git queries) trustworthy. Without that step, an assertion of "once" can pass because
+  the count is never taken.
+- Still not verified, and owned by no plan: a full no-PR `finish` in a repo with no
+  remote (the test covers only the stop), and staging order on a platform whose
+  `time_ns` clock is coarse.
