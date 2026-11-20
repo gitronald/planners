@@ -1047,6 +1047,19 @@ def test_activate_commits_by_default_with_slug_subject(
     )
 
 
+def _count_detects(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Record each mainline detection from here on; the list fills as they run."""
+    detect = cli_mod.base_mod.detect
+    calls: list[Path] = []
+
+    def counting(root: Path) -> cli_mod.base_mod.Mainline:
+        calls.append(root)
+        return detect(root)
+
+    monkeypatch.setattr(cli_mod.base_mod, "detect", counting)
+    return calls
+
+
 def test_activate_detects_the_mainline_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1056,14 +1069,7 @@ def test_activate_detects_the_mainline_once(
     init_git(tmp_path)
     monkeypatch.chdir(tmp_path)
     commit_all(tmp_path, "initial commit")
-    detect = cli_mod.base_mod.detect
-    calls: list[Path] = []
-
-    def counting(root: Path) -> cli_mod.base_mod.Mainline:
-        calls.append(root)
-        return detect(root)
-
-    monkeypatch.setattr(cli_mod.base_mod, "detect", counting)
+    calls = _count_detects(monkeypatch)
     result = runner.invoke(app, ["activate", "005"])
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
@@ -1071,6 +1077,27 @@ def test_activate_detects_the_mainline_once(
     assert "  - Base: `main` at `" in (
         tmp_path / ".planners" / "plans" / "005-my-thing" / "plan.md"
     ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("flag", ["--no-commit", "--allow-branch"])
+def test_activate_detects_nothing_when_nothing_reads_it(
+    flag: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An active plan gaining its branch writes no activation entry, and with
+    # either flag there is no guard to run, so no detection either.
+    path = _write_plan(
+        tmp_path / ".planners" / "plans",
+        "005-my-thing",
+        _DRAFT_PLAN.replace("status: draft", "status: active"),
+    )
+    init_git(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    commit_all(tmp_path, "initial commit")
+    calls = _count_detects(monkeypatch)
+    result = runner.invoke(app, ["activate", "005", flag])
+    assert result.exit_code == 0, result.output
+    assert calls == []
+    assert "branch: feature/005-my-thing" in path.read_text(encoding="utf-8")
 
 
 def test_activate_fills_an_empty_branch_on_an_already_active_plan(

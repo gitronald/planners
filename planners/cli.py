@@ -1408,17 +1408,33 @@ def _activate(
         )
         return
 
-    # One detection serves the guard and the activation entry: nothing between
-    # them commits, checks out, or fetches. A return to the branch needs neither.
-    mainline = None if returning else base_mod.detect(root)
+    # Only the committing path is guarded: --no-commit writes no commit, so there
+    # is nothing for a branch to strand, and a return to the branch is not guarded.
+    guarded = not (no_commit or returning or allow_branch)
+    # An already-active plan that only gains its branch was activated before, so
+    # it gets no second entry; that keeps a re-run idempotent.
+    first_activation = not returning and meta.status != Status.active
 
-    # Guard before writing, so a refusal leaves the plan exactly as it was — the
-    # ordering `add` uses. Only the committing path is guarded: --no-commit writes
-    # no commit, so there is nothing for a branch to strand.
-    if not no_commit and mainline is not None:
-        _guard_base_branch(
-            root, "plan [activate]", allow_branch=allow_branch, mainline=mainline
-        )
+    # One detection serves the guard and the activation entry, and neither
+    # detects when nothing reads it. Nothing between the detection and the entry
+    # commits, checks out, or fetches. Guard before writing, so a refusal leaves
+    # the plan exactly as it was, the ordering `add` uses.
+    entry: str | None = None
+    if guarded or first_activation:
+        mainline = base_mod.detect(root)
+        if guarded:
+            _guard_base_branch(
+                root, "plan [activate]", allow_branch=allow_branch, mainline=mainline
+            )
+        if first_activation:
+            entry = _activation_entry(
+                root,
+                meta,
+                new_branch,
+                mainline,
+                worktree=worktree,
+                no_worktree=no_worktree,
+            )
 
     if unchanged:
         # Reached only via the staged-but-uncommitted path above: the frontmatter is
@@ -1429,21 +1445,9 @@ def _activate(
         )
     else:
         _, body = split_frontmatter(path.read_text(encoding="utf-8"))
-        # An already-active plan that only gains its branch was activated before,
-        # so it gets no second entry; that keeps a re-run idempotent.
-        entry = None
         if returning:
             after = "a block" if from_block else "review"
             entry = entries.reactivation_entry(_now(), after)
-        elif mainline is not None and meta.status != Status.active:
-            entry = _activation_entry(
-                root,
-                meta,
-                new_branch,
-                mainline,
-                worktree=worktree,
-                no_worktree=no_worktree,
-            )
         meta.status = Status.active
         meta.branch = new_branch
         if entry is not None:
@@ -1503,7 +1507,7 @@ def _activation_entry(
 
     Called before the activation commit is made, so the commit it records is the
     one the activation sits on, which is where the feature branch will start.
-    ``mainline`` is the detection the guard used; nothing since it moved HEAD.
+    ``mainline`` is the caller's detection; nothing since it moved HEAD.
     """
     sha = proc.git_out(root, ["rev-parse", "--short", "HEAD"])
     if no_worktree:
