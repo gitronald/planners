@@ -1,8 +1,8 @@
 ---
 id: 29
 slug: codebase-review-and-cleanup
-status: draft
-branch:
+status: active
+branch: feature/029-codebase-review-and-cleanup
 created: 2026-11-20T11:14:12-08:00
 concluded:
 pr:
@@ -232,3 +232,11 @@ that `planners install --check` reports what a reinstall would change.
   `add` skill says it does.
 - The review's negative results (no legacy shims left, README current) were not
   re-derived.
+
+## Log
+
+- **2026-11-20T11:31:58-08:00** — Activated.
+  - Branch: `feature/029-codebase-review-and-cleanup`
+  - Base: `dev` at `69ae1bd`
+  - Worktree: `.worktrees/029-codebase-review-and-cleanup`
+  - PR: pending
